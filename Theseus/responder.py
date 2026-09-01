@@ -1,16 +1,13 @@
-from parser import parse
+from matcher import pattern_matcher
 
 brain = {
-    "greeting": "Hey.",
-    "identity": "Nice to meet you!",
-    "name": "That's a great name! I'm Theseus, your virtual assistant.",
+    "intro": "Hey, nice to meet you. I'm Theseus."
 }
 
-def response(meaning):
+def response(pattern):
     response = ""
-    for category in meaning:
-        if category in brain:
-            response += brain[category] + "\n"
-        else:
-            response += "I'm sorry, I don't understand.\n"
+    if pattern in brain:
+        response = brain[pattern]
+    else:
+        response = "I'm sorry, I don't understand."
     return response

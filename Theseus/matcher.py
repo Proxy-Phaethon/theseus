@@ -1,12 +1,13 @@
 from parser import parse
 
 pattern = {
-    ("greeting", "identity", "name"): "intro"
+    ("greeting", "identity", "name"): "intro",
+    ("question", "question"): "casual",
+    ("question", "greeting"): "talk",
 }
 
 def pattern_matcher(meaning):
-    meaning = tuple(meaning)
-    if meaning in pattern:
-        return pattern[meaning]
-    else:
-        return "unknown"
+    for key in pattern:
+        if all(category in key for category in meaning):
+            return pattern[key]
+    return "unknown"

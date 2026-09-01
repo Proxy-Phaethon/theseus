@@ -5,8 +5,12 @@ dictionary = {
     "hello": "greeting",
     "im": "identity",
     "i'm": "identity",
+    "i": "identity",
     "z": "name",
-    "bob": "name"
+    "bob": "name",
+    "what's": "question",
+    "whats": "question",
+    "up": "question",
 }
 
 def parse(tokens):

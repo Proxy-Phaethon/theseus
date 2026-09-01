@@ -10,10 +10,15 @@ chat = input("How may I help you today?\n" )
 
 def respond_to_user(chat):
     tokens = tokenize(chat)
+    print("Tokens:", tokens)
     meaning = parse(tokens)
+    print("Meaning:", meaning)
     sanitized_list = sanitize(meaning)
+    print("Sanitized List:", sanitized_list)
     pattern = pattern_matcher(sanitized_list)
+    print("Pattern:", pattern)
     response = generate_response(pattern)
+    print("Response:", response)
 
     return response
 

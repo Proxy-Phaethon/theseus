@@ -25,5 +25,3 @@ while True:
 
     response = respond_to_user(chat)
     print(response)
-
-# note for tmrw - add the sanitizer

@@ -1,13 +1,8 @@
-from parser import parse
+from sanitizer import sanitize
+from library.patterns import patterns
 
-pattern = {
-    ("greeting", "identity", "name"): "intro",
-    ("question", "question"): "casual",
-    ("question", "greeting"): "talk",
-}
-
-def pattern_matcher(meaning):
-    for key in pattern:
-        if all(category in key for category in meaning):
-            return pattern[key]
+def pattern_matcher(sanitized_list):
+    for key in patterns:
+        if all(category in key for category in sanitized_list):
+            return patterns[key]
     return "unknown"

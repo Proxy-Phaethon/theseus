@@ -1,3 +1,4 @@
+from sanitizer import sanitize
 from tokenizer import tokenize
 from parser import parse
 from matcher import pattern_matcher
@@ -10,7 +11,8 @@ chat = input("How may I help you today?\n" )
 def respond_to_user(chat):
     tokens = tokenize(chat)
     meaning = parse(tokens)
-    pattern = pattern_matcher(meaning)
+    sanitized_list = sanitize(meaning)
+    pattern = pattern_matcher(sanitized_list)
     response = generate_response(pattern)
 
     return response

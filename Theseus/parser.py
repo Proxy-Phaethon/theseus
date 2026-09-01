@@ -1,17 +1,5 @@
 from tokenizer import tokenize
-
-dictionary = {
-    "hi": "greeting",
-    "hello": "greeting",
-    "im": "identity",
-    "i'm": "identity",
-    "i": "identity",
-    "z": "name",
-    "bob": "name",
-    "what's": "question",
-    "whats": "question",
-    "up": "question",
-}
+from library.dictionary import dictionary
 
 def parse(tokens):
     meaning = []

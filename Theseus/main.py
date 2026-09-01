@@ -5,19 +5,25 @@ from matcher import pattern_matcher
 from responder import response as generate_response
 
 print("Hello, I am Theseus.")
+print("How may I help you today?")
 
-chat = input("How may I help you today?\n" )
+while True:
+    chat = input("> ")
 
-def respond_to_user(chat):
-    tokens = tokenize(chat)
-    meaning = parse(tokens)
-    sanitized_list = sanitize(meaning)
-    pattern = pattern_matcher(sanitized_list)
-    response = generate_response(pattern)
+    if chat.lower() in ("exit", "quit"):
+        print("Goodbye.")
+        break
 
-    return response
+    def respond_to_user(chat):
+        tokens = tokenize(chat)
+        meaning = parse(tokens)
+        sanitized_list = sanitize(meaning)
+        pattern = pattern_matcher(sanitized_list)
+        response = generate_response(pattern)
 
-response = respond_to_user(chat)
-print(response)
+        return response
+
+    response = respond_to_user(chat)
+    print(response)
 
 # note for tmrw - add the sanitizer

@@ -10,7 +10,7 @@ def response(meaning):
     response = ""
     for category in meaning:
         if category in brain:
-            response += brain[category] + " "
+            response += brain[category] + "\n"
         else:
-            response += "I'm sorry, I don't understand. "
+            response += "I'm sorry, I don't understand.\n"
     return response

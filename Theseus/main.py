@@ -4,7 +4,7 @@ from responder import response as generate_response
 
 print("Hello, I am Theseus.")
 
-chat = input("How may I help you today? ")
+chat = input("How may I help you today?\n" )
 
 def respond_to_user(chat):
     tokens = tokenize(chat)

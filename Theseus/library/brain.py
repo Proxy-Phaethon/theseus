@@ -3,7 +3,7 @@
 brain = {
 
     # Conversation
-    "greeting": "Hello. How can I assist you?",
+    "greeting": "Hey. Need help?",
 
     # Research
     "research": "What would you like to research?",
@@ -11,67 +11,67 @@ brain = {
 
     # Search / retrieval
     "search": "What would you like me to search for?",
-    "web_search": "I'll search the web for that.",
-    "source_search": "I'll look for relevant sources.",
-    "paper_search": "I'll look for relevant papers.",
-    "retrieve": "I'll retrieve the requested information.",
-    "source_retrieval": "I'll retrieve the relevant source.",
-    "document_retrieval": "I'll retrieve the requested document.",
+    "web_search": "[loading]",
+    "source_search": "[loading]",
+    "paper_search": "[loading]",
+    "retrieve": "[loading]",
+    "source_retrieval": "[loading]",
+    "document_retrieval": "[loading]",
 
     # Analysis
     "analyze": "What would you like me to analyze?",
-    "analyze_data": "I'll analyze the data.",
-    "analyze_source": "I'll analyze the source.",
-    "analyze_paper": "I'll analyze the paper.",
+    "analyze_data": "[loading]",
+    "analyze_source": "[loading]",
+    "analyze_paper": "[loading]",
 
     # Comparison
     "compare": "What would you like me to compare?",
-    "compare_sources": "I'll compare the sources.",
-    "compare_papers": "I'll compare the papers.",
-    "compare_data": "I'll compare the data.",
+    "compare_sources": "[loading]",
+    "compare_papers": "[loading]",
+    "compare_data": "[loading]",
 
     # Summarization
     "summarize": "What would you like me to summarize?",
-    "summarize_document": "I'll summarize the document.",
-    "summarize_paper": "I'll summarize the paper.",
-    "summarize_source": "I'll summarize the source.",
+    "summarize_document": "[loading]",
+    "summarize_paper": "[loading]",
+    "summarize_source": "[loading]",
 
     # Explanation
     "explain": "What would you like me to explain?",
-    "explain_concept": "I'll explain the concept.",
-    "define": "I'll provide a definition.",
-    "describe": "I'll provide a description.",
+    "explain_concept": "[loading]",
+    "define": "[loading]",
+    "describe": "[loading]",
 
     # Documents
     "document": "What would you like me to do with the document?",
     "file": "What would you like me to do with the file?",
-    "create_document": "I'll create the document.",
-    "edit_document": "I'll edit the document.",
-    "update_document": "I'll update the document.",
-    "rewrite_document": "I'll rewrite the document.",
+    "create_document": "[loading]",
+    "edit_document": "[loading]",
+    "update_document": "[loading]",
+    "rewrite_document": "[loading]",
 
     # Writing
     "write": "What would you like me to write?",
-    "draft": "I'll create a draft.",
-    "create": "What would you like me to create?",
-    "edit": "What would you like me to edit?",
-    "rewrite": "I'll rewrite it.",
+    "draft": "[loading]",
+    "create": "[loading]",
+    "edit": "[loading]",
+    "rewrite": "[loading]",
 
     # Computation
-    "calculate": "I'll calculate that.",
-    "solve_equation": "I'll solve the equation.",
-    "solve": "What would you like me to solve?",
-    "formula": "What formula would you like me to work with?",
+    "calculate": "[loading]",
+    "solve_equation": "[loading]",
+    "solve": "[loading]",
+    "formula": "[loading]",
 
     # Code
     "code": "What would you like me to implement?",
-    "execute": "I'll execute that.",
-    "compile": "I'll compile it.",
-    "test": "I'll run the tests.",
-    "debug": "I'll investigate the issue.",
+    "execute": "[loading]",
+    "compile": "[loading]",
+    "test": "[loading]",
+    "debug": "[loading]",
 
     # Web
     "web": "What would you like me to find on the web?",
     "website": "What would you like me to do with the website?",
-    "inspect_website": "I'll inspect the website.",
+    "inspect_website": "[loading]",
 }

@@ -5,6 +5,9 @@ dictionary = {
     # Conversation
     "hi": "greeting",
     "hello": "greeting",
+    "hey": "greeting",
+    "wassup": "greeting",
+    "what's up": "greeting",
 
     # Research
     "research": "research",

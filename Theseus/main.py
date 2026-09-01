@@ -10,8 +10,8 @@ print("How may I help you today?")
 while True:
     chat = input("> ")
 
-    if chat.lower() in ("exit", "quit"):
-        print("Goodbye.")
+    if chat.lower() in ("exit", "quit", "nah", "no", "bye"):
+        print("See ya.")
         break
 
     def respond_to_user(chat):

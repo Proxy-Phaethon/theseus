@@ -258,3 +258,6 @@ The initial work focuses on:
 * Developing retrieval and search capabilities
 
 More advanced research automation will be built on top of these foundations.
+
+## note
+i'm trying to build this with no AI at all, the old-fashioned way, so this is gonna take a LONG time. if anyone ever happens to look at this repo, please don't judge. i studied python from 'the farmer was replaced', alright?

@@ -25,3 +25,5 @@ while True:
 
     response = respond_to_user(chat)
     print(response)
+
+# next step: give theseus access to a browser ahahahahahahahhaha

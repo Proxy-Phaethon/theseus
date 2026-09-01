@@ -8,9 +8,7 @@ chat = input("How may I help you today? ")
 
 def respond_to_user(chat):
     tokens = tokenize(chat)
-    print(tokens)
     meaning = parse(tokens)
-    print(meaning)
     response = generate_response(meaning)
 
     return response

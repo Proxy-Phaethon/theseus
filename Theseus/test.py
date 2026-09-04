@@ -1,6 +1,6 @@
-from tokenizer import tokenize
+from parser import parse
 
-print(tokenize("hi"))
-print(tokenize("search John Smith"))
-print(tokenize('search "John Smith"'))
-print(tokenize('search "John Smith" "Acme Corporation"'))
+print(parse(["hi"]))
+print(parse(["search", "John", "Smith"]))
+print(parse(["search", "John Smith"]))
+print(parse([]))

@@ -8,6 +8,7 @@ from executor import execute
 from responder import respond
 import threading
 import ui
+import conversation
 
 EXIT_COMMANDS = {
     "bye",
@@ -32,6 +33,12 @@ def main():
         if user_input.strip().lower() in EXIT_COMMANDS:
             print("See ya.")
             break
+
+        conversational_response = conversation.respond(user_input)
+
+        if conversational_response is not None:
+            print(conversational_response)
+            continue
 
         try:
             tokens = tokenize(user_input)

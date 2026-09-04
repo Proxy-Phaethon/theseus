@@ -1,6 +1,9 @@
-from parser import parse
+from identifier import identify
 
-print(parse(["hi"]))
-print(parse(["search", "John", "Smith"]))
-print(parse(["search", "John Smith"]))
-print(parse([]))
+
+instruction = {
+    "command": "SEARCH",
+    "arguments": ["John Smith"]
+}
+
+print(identify(instruction))

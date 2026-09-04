@@ -10,13 +10,22 @@ def main():
     user_input = input("> ")
 
     tokens = tokenize(user_input)
-    instructions = parse(tokens)
-    operations = identify(instructions)
-    parameters = extract(operations)
-    results = execute(parameters)
-    response = respond(results)
+    print("Tokens:", tokens)
 
-    print(response)
+    instruction = parse(tokens)
+    print("Instructions:", instruction)
+
+    operation = identify(instruction)
+    print("Operations:", operation)
+
+    parameters = extract(operation)
+    print("Parameters:", parameters)
+
+    result = execute(operation, parameters)
+    print("Results:", result)
+
+    response = respond(result)
+    print("Response:", response)
 
 
 if __name__ == "__main__":

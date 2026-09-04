@@ -1,3 +1,5 @@
 # Raw input → tokens
-def tokenize(input_string):
-    return input_string.split()
+import shlex
+
+def tokenize(user_input):
+    return shlex.split(user_input)

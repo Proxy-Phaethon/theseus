@@ -1,0 +1,1 @@
+# for scraping, extraction, entity identification, source comparison, ranking, OSINT analysis, etc.

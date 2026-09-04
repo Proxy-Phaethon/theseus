@@ -21,8 +21,10 @@ def main():
     parameters = extract(operation)
     print("Parameters:", parameters)
 
-    result = execute(operation, parameters)
+    result = execute(operation["operation"], parameters)
     print("Results:", result)
+
+    # need to add the processor here later
 
     response = respond(result)
     print("Response:", response)

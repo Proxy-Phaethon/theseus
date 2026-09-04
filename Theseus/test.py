@@ -1,9 +1,9 @@
-from extractor import extract
+from executor import execute
 
 
-operation = {
-    "operation": "SEARCH",
-    "parameters": []
+operation = "SEARCH"
+parameters = {
+    "query": "John Smith"
 }
 
-print(extract(operation))
+print(execute(operation, parameters))

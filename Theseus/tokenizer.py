@@ -1,9 +1,4 @@
 # Raw input → tokens
-def parse(tokens):
-    if not tokens:
-        return None
-
-    return {
-        "command": tokens[0],
-        "arguments": tokens[1:]
-    }
+def tokenize(input_string):
+    return input_string.split()
+    "arguments": tokens[1:]

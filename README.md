@@ -33,3 +33,11 @@ The project explores how software can support investigative research by transfor
 * Reproducible investigative workflows
 
 Theseus is primarily a learning and research project focused on the intersection of **computer science, information retrieval, data analysis, and investigative research**.
+
+## notes for next work session (to-do)
+terminal-related bs, if you ever figure out the ascii shit. goddammit.
+look into nlp for the conversation flow. 
+add a scraper for the search pipeline.
+data analyzing system???
+how to visualize the data, or present it at all
+other commands

@@ -1,9 +1,9 @@
-from identifier import identify
+from extractor import extract
 
 
-instruction = {
-    "command": "SEARCH",
-    "arguments": ["John Smith"]
+operation = {
+    "operation": "SEARCH",
+    "parameters": []
 }
 
-print(identify(instruction))
+print(extract(operation))

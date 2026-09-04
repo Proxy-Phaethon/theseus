@@ -1,16 +1,7 @@
 # Execution result → user-facing response
-import time
+# Execution result → user-facing response
 
 def respond(result):
-    print()
-    print("Searching", end="", flush=True)
-
-    for _ in range(3):
-        time.sleep(0.3)
-        print(".", end="", flush=True)
-
-    print()
-
     if result is None:
         print("No results found.")
         return

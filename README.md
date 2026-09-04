@@ -18,8 +18,6 @@
 
 ### Theseus
 
-[![Python](https://img.shields.io/badge/Python-3.x-blue?logo=python)](https://www.python.org/)
-
 **Python · Research & OSINT Assistant**
 
 Theseus is a Python-based research assistant for structured information retrieval and OSINT-oriented analysis.

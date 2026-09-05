@@ -1,10 +1,21 @@
-import re
+from command_helper import nlp
 
-def read(pages, query):
-    if not pages:
-        return None
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
-    documents = []
+def read(operation, query, pages):
+    if operation == "SEARCH":
+        return search(query, pages)
+
+    if operation == "FIND":
+        return find(query, pages)
+
+    raise ValueError(f"Unknown operation: {operation}")
+
+def search(query, pages):
+    terms = nlp.match(query)
+
+    matches = []
 
     for page in pages:
         text = page.get("text")
@@ -14,78 +25,14 @@ def read(pages, query):
 
         sentences = split_sentences(text)
 
-        if not sentences:
-            continue
+        for sentence in sentences:
+            score = score_sentence(sentence, terms)
 
-        documents.append({
-            "title": page.get("title"),
-            "url": page.get("url"),
-            "sentences": sentences
-        })
-
-    if not documents:
-        return None
-
-    relevant_sentences = find_relevant_sentences(
-        documents,
-        query
-    )
-
-    if not relevant_sentences:
-        return None
-
-    paragraph = build_paragraph(relevant_sentences)
-
-    sources = []
-
-    for document in documents:
-        sources.append({
-            "title": document["title"],
-            "url": document["url"]
-        })
-
-    return {
-        "title": query,
-        "paragraph": paragraph,
-        "sources": sources
-    }
-
-def split_sentences(text):
-    text = re.sub(r"\s+", " ", text).strip()
-
-    if not text:
-        return []
-
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-
-    return [
-        sentence.strip()
-        for sentence in sentences
-        if sentence.strip()
-    ]
-
-def find_relevant_sentences(documents, query):
-    query_words = set(
-        word.lower()
-        for word in re.findall(r"\b\w+\b", query)
-    )
-
-    matches = []
-
-    for document in documents:
-        for sentence in document["sentences"]:
-            sentence_words = set(
-                word.lower()
-                for word in re.findall(r"\b\w+\b", sentence)
-            )
-
-            overlap = query_words & sentence_words
-
-            if overlap:
+            if score > 0:
                 matches.append({
                     "sentence": sentence,
-                    "score": len(overlap),
-                    "url": document["url"]
+                    "score": score,
+                    "url": page.get("url")
                 })
 
     matches.sort(
@@ -93,12 +40,96 @@ def find_relevant_sentences(documents, query):
         reverse=True
     )
 
-    return matches
+    cleaned_matches = clean_matches(matches)
+
+    return build_paragraph(cleaned_matches)
+
+def split_sentences(text):
+    return text.split(".")
+
+def score_sentence(sentence, terms):
+    words = set(
+        sentence.lower().split()
+    )
+
+    return sum(
+        term in words
+        for term in terms
+    )
+
+def clean_matches(matches):
+    if not matches:
+        return []
+
+    sentences = [
+        match["sentence"].strip()
+        for match in matches
+        if match["sentence"].strip()
+    ]
+
+    if not sentences:
+        return []
+
+    vectorizer = TfidfVectorizer()
+
+    matrix = vectorizer.fit_transform(sentences)
+
+    similarities = cosine_similarity(matrix)
+
+    keep = []
+    
+    threshold = 0.75
+
+    for i, sentence in enumerate(sentences):
+        duplicate = False
+
+        for j in keep:
+            if similarities[i][j] >= threshold:
+                duplicate = True
+                break
+
+        if not duplicate:
+            keep.append(i)
+
+    return [
+        matches[i]
+        for i in keep
+    ]
+
+def find(query, pages):
+    pass
 
 def build_paragraph(matches):
+    if not matches:
+        return None
+
     sentences = []
+    sources = []
+    seen_urls = set()
 
-    for match in matches[:3]:
-        sentences.append(match["sentence"])
+    for match in matches:
+        sentence = match["sentence"].strip()
 
-    return " ".join(sentences)
+        if not sentence:
+            continue
+
+        sentence = sentence[0].upper() + sentence[1:]
+
+        if sentence[-1] not in ".!?":
+            sentence += "."
+
+        sentences.append(sentence)
+
+        url = match.get("url")
+
+        if url and url not in seen_urls:
+            sources.append(url)
+            seen_urls.add(url)
+
+    if not sentences:
+        return None
+
+    return {
+        "paragraph": " ".join(sentences),
+        "sources": sources
+    }

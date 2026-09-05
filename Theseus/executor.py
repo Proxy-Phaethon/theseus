@@ -31,7 +31,8 @@ def search(query):
     return [
         {
             "title": result.get("title"),
-            "url": result.get("url")
+            "url": result.get("url"),
+            "snippet": result.get("content")
         }
         for result in results
     ]

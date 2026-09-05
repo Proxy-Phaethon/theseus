@@ -1,20 +1,40 @@
 import re
 
-from nltk.corpus import wordnet
+import spacy
+from sentence_transformers import SentenceTransformer
+
+nlp = spacy.load("en_core_web_sm")
+
+model = SentenceTransformer("all-MiniLM-L6-v2")
 
 def expand(query):
     """
-    Expand a query into useful search terms.
+    Expand a query into semantically useful search terms.
 
-    Returns a set containing the original terms,
-    morphological variants, and lexical synonyms.
+    The original query is always preserved.
     """
 
     normalized = normalize(query)
-    morphological = morphology(normalized)
-    lexical = synonyms(morphological)
 
-    return lexical
+    if not normalized:
+        return []
+
+    doc = nlp(normalized)
+
+    candidates = generate_candidates(doc)
+
+    expansions = semantic_rank(
+        normalized,
+        candidates
+    )
+
+    terms = [normalized]
+
+    for term in expansions:
+        if term not in terms:
+            terms.append(term)
+
+    return terms
 
 def normalize(query):
     """
@@ -37,48 +57,62 @@ def normalize(query):
 
     return query
 
-def morphology(query):
+def generate_candidates(doc):
     """
-    Generate simple morphological variants.
-    """
+    Generate possible query expansions.
 
-    words = query.split()
-    forms = set(words)
-
-    for word in words:
-
-        if word.endswith("ies") and len(word) > 4:
-            forms.add(word[:-3] + "y")
-
-        elif word.endswith("es") and len(word) > 4:
-            forms.add(word[:-2])
-
-        elif word.endswith("s") and len(word) > 3:
-            forms.add(word[:-1])
-
-        if word.endswith("ing") and len(word) > 5:
-            forms.add(word[:-3])
-
-        if word.endswith("ed") and len(word) > 4:
-            forms.add(word[:-2])
-
-    return forms
-
-def synonyms(words):
-    """
-    Expand words using WordNet synonyms.
+    This is deliberately conservative for now.
     """
 
-    expanded = set(words)
+    candidates = set()
 
-    for word in words:
+    for token in doc:
 
-        for synset in wordnet.synsets(word):
+        if token.is_stop or token.is_punct:
+            continue
 
-            for lemma in synset.lemmas():
+        word = token.text.lower()
+        lemma = token.lemma_.lower()
 
-                expanded.add(
-                    lemma.name().replace("_", " ")
-                )
+        if lemma != word:
+            candidates.add(lemma)
 
-    return expanded
+    return list(candidates)
+
+def semantic_rank(query, candidates):
+    """
+    Rank candidate terms according to semantic
+    similarity with the original query.
+    """
+
+    if not candidates:
+        return []
+
+    query_embedding = model.encode(
+        query,
+        normalize_embeddings=True
+    )
+
+    candidate_embeddings = model.encode(
+        candidates,
+        normalize_embeddings=True
+    )
+
+    scores = candidate_embeddings @ query_embedding
+
+    ranked = sorted(
+        zip(candidates, scores),
+        key=lambda item: item[1],
+        reverse=True
+    )
+
+    expansions = []
+
+    for term, score in ranked:
+
+        if score < 0.5:
+            continue
+
+        expansions.append(term)
+
+    return expansions

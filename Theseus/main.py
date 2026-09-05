@@ -5,6 +5,7 @@ from parser import parse
 from identifier import identify
 from extractor import extract
 from executor import execute
+from processor import process
 from responder import respond
 import threading
 import ui
@@ -62,7 +63,9 @@ def main():
                 stop_event.set()
                 loading_thread.join()
 
-            response = respond(result)
+            processed_result = process(operation["operation"], result)
+
+            response = respond(processed_result)
             print(response)
 
         except ValueError:

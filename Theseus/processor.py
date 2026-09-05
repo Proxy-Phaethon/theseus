@@ -2,6 +2,7 @@
 import requests
 
 from command_helper import scraper
+from command_helper import reader
 
 def process(operation, data):
     if operation == "SEARCH":
@@ -9,13 +10,47 @@ def process(operation, data):
 
     raise ValueError(f"Unknown operation: {operation}")
 
-def process_search(results):
-    if results is None:
+def process_search(data):
+    query = data["query"]
+    results = data["results"]
+
+    if not results:
         return None
 
-    processed_results = []
+    pages = collect_pages(results)
+
+    if not pages:
+        return None
+
+    pages = filter_pages(
+        query,
+        pages
+    )
+
+    if not pages:
+        return None
+
+    interpretation = reader.read(
+        pages,
+        query
+    )
+
+    if not interpretation:
+        return None
+
+    verified = verify(
+        interpretation,
+        pages
+    )
+
+    if not verified:
+        return None
+
+    return verified
+
+def collect_pages(results):
+    pages = []
     seen_urls = set()
-    seen_text = set()
 
     for result in results:
         url = result.get("url")
@@ -34,53 +69,92 @@ def process_search(results):
         except requests.RequestException:
             continue
 
-        if page is None:
-            continue
+        if page:
+            pages.append(page)
 
-        title = page.get("title")
-        summary = page.get("summary")
+    return pages
+
+def filter_pages(query, pages):
+    scored_pages = []
+
+    query_words = set(
+        query.lower().split()
+    )
+
+    for page in pages:
         text = page.get("text")
 
-        if not title:
+        if not text:
             continue
 
-        if not summary and not text:
-            continue
+        text_words = set(
+            text.lower().split()
+        )
 
-        content = text or summary
+        score = len(
+            query_words & text_words
+        )
 
-        if content:
-            normalized_text = " ".join(content.lower().split())
+        scored_pages.append(
+            (score, page)
+        )
 
-            if normalized_text in seen_text:
-                continue
+    scored_pages.sort(
+        key=lambda item: item[0],
+        reverse=True
+    )
 
-            seen_text.add(normalized_text)
+    return [
+        page
+        for score, page in scored_pages[:5]
+        if score > 0
+    ]
 
-        processed_results.append({
-            "title": title,
-            "summary": summary,
-            "text": text,
-            "url": page["url"],
-            "source": page["source"],
-            "author": page["author"],
-            "date": page["date"]
-        })
+def verify(interpretation, pages):
+    paragraph = interpretation.get("paragraph")
 
-    if not processed_results:
+    if not paragraph:
         return None
 
-    summary = processed_results[0]["summary"]
+    source_text = " ".join(
+        page.get("text", "")
+        for page in pages
+    )
 
-    sources = []
+    if not source_text:
+        return None
 
-    for result in processed_results:
-        sources.append({
-            "title": result["title"],
-            "url": result["url"]
-        })
+    source_text = source_text.lower()
 
-    return {
-        "summary": summary,
-        "sources": sources
-    }
+    sentences = paragraph.split(".")
+
+    for sentence in sentences:
+        sentence = sentence.strip()
+
+        if not sentence:
+            continue
+
+        words = set(
+            sentence.lower().split()
+        )
+
+        words = {
+            word.strip(" ,;:!?()[]{}")
+            for word in words
+            if len(word.strip(" ,;:!?()[]{}")) > 3
+        }
+
+        if not words:
+            continue
+
+        overlap = sum(
+            word in source_text
+            for word in words
+        )
+
+        confidence = overlap / len(words)
+
+        if confidence < 0.6:
+            return None
+
+    return interpretation

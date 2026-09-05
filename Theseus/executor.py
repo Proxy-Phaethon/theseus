@@ -3,7 +3,12 @@ import requests
 
 def execute(operation, parameters):
     if operation == "SEARCH":
-        return search(parameters["query"])
+        query = parameters["query"]
+
+        return {
+            "query": query,
+            "results": search(query)
+        }
 
     raise ValueError(f"Unknown operation: {operation}")
 
@@ -28,5 +33,5 @@ def search(query):
             "title": result.get("title"),
             "url": result.get("url")
         }
-        for result in results[:5]
+        for result in results
     ]

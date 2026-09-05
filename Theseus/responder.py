@@ -4,24 +4,29 @@ def respond(result):
     if result is None:
         return "No results found."
 
-    summary = result.get("summary")
+    title = result.get("title")
+    paragraph = result.get("paragraph")
     sources = result.get("sources", [])
 
     response = []
 
-    if summary:
-        response.append(summary)
+    if title:
+        response.append(title)
+
+    if paragraph:
+        response.append("")
+        response.append(paragraph)
 
     if sources:
         response.append("")
         response.append("Sources:")
 
         for index, source in enumerate(sources, start=1):
-            title = source.get("title")
+            source_title = source.get("title")
             url = source.get("url")
 
-            if title and url:
-                response.append(f"[{index}] {title}")
+            if source_title and url:
+                response.append(f"[{index}] {source_title}")
                 response.append(f"    {url}")
 
             elif url:

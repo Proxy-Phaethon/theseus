@@ -57,13 +57,19 @@ def main():
             loading_thread.start()
 
             try:
-                result = execute(operation["operation"], parameters)
+                result = execute(
+                    operation["operation"],
+                    parameters
+                )
+
+                processed_result = process(
+                    operation["operation"],
+                    result
+                )
 
             finally:
                 stop_event.set()
                 loading_thread.join()
-
-            processed_result = process(operation["operation"], result)
 
             response = respond(processed_result)
             print(response)

@@ -28,7 +28,23 @@ def extract_page_data(soup, url):
 
     domain = urlparse(url).hostname
 
-    text = soup.get_text(" ", strip=True)
+    content = soup.find("div", id="mw-content-text")
+
+    summary = None
+    text = None
+
+    if content:
+        paragraphs = []
+
+        for paragraph in content.find_all("p"):
+            paragraph_text = paragraph.get_text(" ", strip=True)
+
+            if paragraph_text:
+                paragraphs.append(paragraph_text)
+
+        if paragraphs:
+            summary = paragraphs[0]
+            text = " ".join(paragraphs)
 
     author = extract_author(soup)
     date = extract_date(soup)
@@ -37,6 +53,7 @@ def extract_page_data(soup, url):
         "url": url,
         "domain": domain,
         "title": title,
+        "summary": summary,
         "text": text,
         "author": author,
         "date": date

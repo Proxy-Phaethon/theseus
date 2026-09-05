@@ -23,4 +23,10 @@ def search(query):
     if not results:
         return None
 
-    return results[0]["url"]
+    return [
+        {
+            "title": result.get("title"),
+            "url": result.get("url")
+        }
+        for result in results[:5]
+    ]

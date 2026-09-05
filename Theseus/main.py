@@ -10,6 +10,22 @@ from responder import respond
 import threading
 import ui
 import conversation
+import random
+
+GOODBYES = [
+    "See ya.",
+    "Ta-ta.",
+    "Sayonara.",
+    "Farewell.",
+    "Until next time.",
+    "Cheerio.",
+    "Adieu.",
+    "Ciao.",
+    "So long.",
+    "Safe travels.",
+    "Until we meet again.",
+    "The thread ends here.",
+]
 
 EXIT_COMMANDS = {
     "bye",
@@ -32,8 +48,8 @@ def main():
             continue
 
         if user_input.strip().lower() in EXIT_COMMANDS:
-            print("See ya.")
-            break
+            print(random.choice(GOODBYES))
+        break
 
         conversational_response = conversation.respond(user_input)
 

@@ -41,7 +41,7 @@ The core search pipeline is currently functional, with active development focuse
 
 ## notes for next work session (to-do)
 terminal-related bs, if you ever figure out the ascii shit. goddammit.
-look into nlp for the conversation flow. 
+look into nlp for the conversation flow/creating responses (almost there)
 data analyzing system???
 how to visualize the data, or present it at all
 other commands

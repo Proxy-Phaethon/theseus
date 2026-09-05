@@ -10,10 +10,13 @@ def respond(results):
     response = []
 
     for result in results:
-        response.append(
-            f"Found: {result['title']}\n"
-            f"{result['description']}\n"
-            f"Source: {result['url']}"
-        )
+        entry = f"Found: {result['title']}"
+
+        if result["description"]:
+            entry += f"\n{result['description']}"
+
+        entry += f"\nSource: {result['url']}"
+
+        response.append(entry)
 
     return "\n\n".join(response)

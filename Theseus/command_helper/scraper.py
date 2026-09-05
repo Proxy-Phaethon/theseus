@@ -117,8 +117,13 @@ def extract_institutional(soup, url, source):
 def extract_generic(soup, url, source=None):
     paragraphs = get_paragraphs(soup)
 
-    summary = paragraphs[0] if paragraphs else None
-    text = " ".join(paragraphs) if paragraphs else None
+    if paragraphs:
+        summary = paragraphs[0]
+        text = " ".join(paragraphs)
+
+    else:
+        summary = extract_description(soup)
+        text = summary
 
     return build_result(
         soup,
@@ -127,6 +132,17 @@ def extract_generic(soup, url, source=None):
         summary,
         text
     )
+
+def extract_description(soup):
+    description_tag = soup.find(
+        "meta",
+        attrs={"name": "description"}
+    )
+
+    if description_tag:
+        return description_tag.get("content")
+
+    return None
 
 def get_paragraphs(element):
     paragraphs = []

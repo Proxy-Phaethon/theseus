@@ -2,6 +2,8 @@ import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 
+from command_helper.sources import SOURCES
+
 def scrape(url):
     headers = {
         "User-Agent": "Theseus/0.1"
@@ -17,47 +19,143 @@ def scrape(url):
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    return extract_page_data(soup, url)
+    source = identify_source(url)
 
-def extract_page_data(soup, url):
-    title = (
-        soup.title.string.strip()
-        if soup.title and soup.title.string
-        else None
-    )
+    if source is None:
+        return extract_generic(soup, url)
 
-    domain = urlparse(url).hostname
+    source_type = source["type"]
 
+    if source_type == "encyclopedia":
+        return extract_encyclopedia(soup, url, source)
+
+    if source_type == "news":
+        return extract_news(soup, url, source)
+
+    if source_type == "international_organization":
+        return extract_institutional(soup, url, source)
+
+    return extract_generic(soup, url, source)
+
+def identify_source(url):
+    hostname = urlparse(url).hostname
+
+    if hostname is None:
+        return None
+
+    for domain, source in SOURCES.items():
+        if hostname == domain or hostname.endswith("." + domain):
+            return source
+
+    return None
+
+def extract_encyclopedia(soup, url, source):
     content = soup.find("div", id="mw-content-text")
 
     summary = None
     text = None
 
     if content:
-        paragraphs = []
-
-        for paragraph in content.find_all("p"):
-            paragraph_text = paragraph.get_text(" ", strip=True)
-
-            if paragraph_text:
-                paragraphs.append(paragraph_text)
+        paragraphs = get_paragraphs(content)
 
         if paragraphs:
             summary = paragraphs[0]
             text = " ".join(paragraphs)
 
-    author = extract_author(soup)
-    date = extract_date(soup)
+    return build_result(
+        soup,
+        url,
+        source,
+        summary,
+        text
+    )
 
+def extract_news(soup, url, source):
+    article = (
+        soup.find("article")
+        or soup.find("main")
+    )
+
+    if article:
+        paragraphs = get_paragraphs(article)
+    else:
+        paragraphs = get_paragraphs(soup)
+
+    summary = paragraphs[0] if paragraphs else None
+    text = " ".join(paragraphs) if paragraphs else None
+
+    return build_result(
+        soup,
+        url,
+        source,
+        summary,
+        text
+    )
+
+def extract_institutional(soup, url, source):
+    content = (
+        soup.find("main")
+        or soup.find("article")
+    )
+
+    if content:
+        paragraphs = get_paragraphs(content)
+    else:
+        paragraphs = get_paragraphs(soup)
+
+    summary = paragraphs[0] if paragraphs else None
+    text = " ".join(paragraphs) if paragraphs else None
+
+    return build_result(
+        soup,
+        url,
+        source,
+        summary,
+        text
+    )
+
+def extract_generic(soup, url, source=None):
+    paragraphs = get_paragraphs(soup)
+
+    summary = paragraphs[0] if paragraphs else None
+    text = " ".join(paragraphs) if paragraphs else None
+
+    return build_result(
+        soup,
+        url,
+        source,
+        summary,
+        text
+    )
+
+def get_paragraphs(element):
+    paragraphs = []
+
+    for paragraph in element.find_all("p"):
+        text = paragraph.get_text(" ", strip=True)
+
+        if text:
+            paragraphs.append(text)
+
+    return paragraphs
+
+def build_result(soup, url, source, summary, text):
     return {
         "url": url,
-        "domain": domain,
-        "title": title,
+        "domain": urlparse(url).hostname,
+        "source": source,
+        "title": extract_title(soup),
         "summary": summary,
         "text": text,
-        "author": author,
-        "date": date
+        "author": extract_author(soup),
+        "date": extract_date(soup)
     }
+
+def extract_title(soup):
+    if soup.title and soup.title.string:
+        return soup.title.string.strip()
+
+    return None
 
 def extract_author(soup):
     author_tag = soup.find(

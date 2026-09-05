@@ -1,24 +1,21 @@
 SOURCES = {
-    "wikipedia.org": {
-        "type": "encyclopedia",
-        "tier": 2
+    # Government
+    "usa.gov": {
+        "type": "government",
+        "tier": 1
     },
 
-    "reuters.com": {
-        "type": "news",
-        "tier": 2
+    "gov.uk": {
+        "type": "government",
+        "tier": 1
     },
 
-    "apnews.com": {
-        "type": "news",
-        "tier": 2
+    "europa.eu": {
+        "type": "government",
+        "tier": 1
     },
 
-    "bbc.com": {
-        "type": "news",
-        "tier": 2
-    },
-
+    # International organizations
     "un.org": {
         "type": "international_organization",
         "tier": 1
@@ -37,5 +34,32 @@ SOURCES = {
     "imf.org": {
         "type": "international_organization",
         "tier": 1
+    },
+
+    "oecd.org": {
+        "type": "international_organization",
+        "tier": 1
+    },
+
+    "interpol.int": {
+        "type": "international_organization",
+        "tier": 1
+    },
+
+    # Reference
+    "wikipedia.org": {
+        "type": "encyclopedia",
+        "tier": 2
+    },
+
+    # News
+    "reuters.com": {
+        "type": "news",
+        "tier": 2
+    },
+
+    "apnews.com": {
+        "type": "news",
+        "tier": 2
     }
 }

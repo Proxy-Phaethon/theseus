@@ -1,4 +1,5 @@
-# for scraping, extraction, entity identification, source comparison, ranking, OSINT analysis, etc.
+# Scraping, extraction, entity identification,
+# source comparison, ranking, and OSINT analysis.
 
 from command_helper import scraper
 from command_helper import reader
@@ -26,19 +27,11 @@ def process_search(data):
 
         try:
             page = scraper.scrape(url)
-
         except Exception:
             continue
 
-        if not page:
-            continue
-
-        pages.append({
-            "url": url,
-            "text": page.get("text", ""),
-            "title": result.get("title"),
-            "snippet": result.get("snippet")
-        })
+        if page:
+            pages.append(page)
 
     if not pages:
         return None

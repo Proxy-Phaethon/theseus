@@ -2,15 +2,25 @@ import re
 
 from nltk.corpus import wordnet
 
-def match(query):
+def expand(query):
+    """
+    Expand a query into useful search terms.
+
+    Returns a set containing the original terms,
+    morphological variants, and lexical synonyms.
+    """
+
     normalized = normalize(query)
     morphological = morphology(normalized)
     lexical = synonyms(morphological)
-    semantic = semantic_similarity(lexical)
 
-    return semantic
+    return lexical
 
 def normalize(query):
+    """
+    Normalize a search query.
+    """
+
     query = query.lower()
 
     query = re.sub(
@@ -28,10 +38,15 @@ def normalize(query):
     return query
 
 def morphology(query):
+    """
+    Generate simple morphological variants.
+    """
+
     words = query.split()
     forms = set(words)
 
     for word in words:
+
         if word.endswith("ies") and len(word) > 4:
             forms.add(word[:-3] + "y")
 
@@ -50,16 +65,20 @@ def morphology(query):
     return forms
 
 def synonyms(words):
+    """
+    Expand words using WordNet synonyms.
+    """
+
     expanded = set(words)
 
     for word in words:
+
         for synset in wordnet.synsets(word):
+
             for lemma in synset.lemmas():
+
                 expanded.add(
                     lemma.name().replace("_", " ")
                 )
 
     return expanded
-
-def semantic_similarity(words):
-    return words

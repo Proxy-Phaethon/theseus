@@ -1,4 +1,6 @@
+import re
 import requests
+
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 
@@ -15,7 +17,10 @@ def scrape(url):
 
     response.raise_for_status()
 
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(
+        response.text,
+        "html.parser"
+    )
 
     clean_html(soup)
 
@@ -37,7 +42,9 @@ def clean_html(soup):
         "footer",
         "header",
         "form",
-        "aside"
+        "aside",
+        "iframe",
+        "svg"
     ]):
         element.decompose()
 
@@ -45,10 +52,13 @@ def extract_title(soup):
     title = soup.find("title")
 
     if title:
-        text = title.get_text(" ", strip=True)
+        text = title.get_text(
+            " ",
+            strip=True
+        )
 
         if text:
-            return text
+            return clean_text(text)
 
     return None
 
@@ -56,7 +66,12 @@ def extract_text(soup):
     paragraphs = []
 
     for paragraph in soup.find_all("p"):
-        text = paragraph.get_text(" ", strip=True)
+        text = paragraph.get_text(
+            " ",
+            strip=True
+        )
+
+        text = clean_text(text)
 
         if text:
             paragraphs.append(text)
@@ -73,17 +88,38 @@ def extract_author(soup):
     )
 
     if author_tag:
-        return author_tag.get("content")
+        author = author_tag.get("content")
+
+        if author:
+            return clean_text(author)
 
     return None
 
 def extract_date(soup):
-    date_tag = soup.find(
-        "meta",
-        attrs={"property": "article:published_time"}
-    )
+    date_properties = [
+        "article:published_time",
+        "article:modified_time"
+    ]
 
-    if date_tag:
-        return date_tag.get("content")
+    for property_name in date_properties:
+        date_tag = soup.find(
+            "meta",
+            attrs={"property": property_name}
+        )
+
+        if date_tag:
+            date = date_tag.get("content")
+
+            if date:
+                return date
 
     return None
+
+def clean_text(text):
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    ).strip()
+
+    return text

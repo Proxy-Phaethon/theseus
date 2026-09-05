@@ -1,9 +1,11 @@
-from command_helper import nlp
-
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+# Evidence extraction, ranking, cleaning,
+# and answer construction.
 
 import re
+
+import spacy
+
+nlp = spacy.load("en_core_web_sm")
 
 def read(operation, query, pages):
     if operation == "SEARCH":
@@ -15,9 +17,10 @@ def read(operation, query, pages):
     raise ValueError(f"Unknown operation: {operation}")
 
 def search(query, pages):
-    terms = nlp.match(query)
-
     matches = []
+
+    # Process the query only once.
+    query_doc = nlp(query)
 
     for page in pages:
         text = page.get("text")
@@ -25,25 +28,26 @@ def search(query, pages):
         if not text:
             continue
 
-        sentences = split_sentences(text)
+        # Process each page only once.
+        doc = nlp(text)
 
-        for sentence in sentences:
-            sentence = clean_sentence(sentence)
+        for sentence in doc.sents:
+            cleaned = clean_sentence(sentence.text)
 
-            if not sentence:
+            if not cleaned:
                 continue
 
-            score = score_sentence(sentence, terms)
+            score = score_sentence(
+                query_doc,
+                sentence
+            )
 
             if score > 0:
                 matches.append({
-                    "text": sentence,
+                    "sentence": cleaned,
                     "score": score,
-                    "source": page.get("url")
+                    "url": page.get("url")
                 })
-
-    if not matches:
-        return None
 
     matches.sort(
         key=lambda match: match["score"],
@@ -51,26 +55,14 @@ def search(query, pages):
     )
 
     matches = deduplicate(matches)
-    matches = select_evidence(matches)
 
-    return {
-        "query": query,
-        "matches": matches
-    }
-
-def split_sentences(text):
-    text = re.sub(
-        r"\s+",
-        " ",
-        text
-    ).strip()
-
-    return re.split(
-        r"(?<=[.!?])\s+",
-        text
-    )
+    return build_paragraph(matches)
 
 def clean_sentence(sentence):
+    """
+    Clean common scraper artifacts.
+    """
+
     sentence = re.sub(
         r"\s+",
         " ",
@@ -95,72 +87,130 @@ def clean_sentence(sentence):
         sentence
     )
 
+    if not sentence:
+        return None
+
     return sentence
 
-def score_sentence(sentence, terms):
-    words = set(
-        re.findall(
-            r"\b[\w'-]+\b",
-            sentence.lower()
-        )
+def score_sentence(query_doc, sentence):
+    """
+    Score how strongly a sentence relates
+    to the original query.
+    """
+
+    query_lemmas = {
+        token.lemma_.lower()
+        for token in query_doc
+        if not token.is_stop
+        and not token.is_punct
+        and token.is_alpha
+    }
+
+    sentence_lemmas = {
+        token.lemma_.lower()
+        for token in sentence
+        if not token.is_stop
+        and not token.is_punct
+        and token.is_alpha
+    }
+
+    if not query_lemmas:
+        return 0
+
+    overlap = (
+        query_lemmas
+        & sentence_lemmas
     )
 
     score = 0
 
-    for term in terms:
-        term = term.lower()
+    score += len(overlap) * 5
 
-        if " " not in term:
-            if term in words:
-                score += 1
-        else:
-            if term in sentence.lower():
-                score += len(term.split())
+    query_text = query_doc.text.lower().strip()
+    sentence_text = sentence.text.lower()
+
+    if query_text in sentence_text:
+        score += 10
+
+    for token in query_doc:
+        if token.is_stop or token.is_punct:
+            continue
+
+        if token.text.lower() in sentence_text:
+            score += 2
 
     return score
 
 def deduplicate(matches):
-    if len(matches) <= 1:
-        return matches
+    """
+    Remove duplicate sentences and repeated evidence.
+    """
 
-    sentences = [
-        match["text"]
-        for match in matches
-    ]
+    seen = set()
+    unique = []
 
-    try:
-        vectorizer = TfidfVectorizer(
-            stop_words="english"
+    for match in matches:
+        sentence = match["sentence"]
+
+        key = re.sub(
+            r"\W+",
+            " ",
+            sentence.lower()
+        ).strip()
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        unique.append(match)
+
+    return unique
+
+def build_paragraph(matches):
+    """
+    Construct the final reader result.
+    """
+
+    if not matches:
+        return None
+
+    selected = matches[:8]
+
+    sentences = []
+    sources = []
+    seen_urls = set()
+
+    for match in selected:
+        sentence = clean_sentence(
+            match["sentence"]
         )
 
-        matrix = vectorizer.fit_transform(sentences)
+        if not sentence:
+            continue
 
-    except ValueError:
-        return matches
+        sentence = (
+            sentence[0].upper()
+            + sentence[1:]
+        )
 
-    similarities = cosine_similarity(matrix)
+        if sentence[-1] not in ".!?":
+            sentence += "."
 
-    keep = []
-    threshold = 0.75
+        sentences.append(sentence)
 
-    for i in range(len(matches)):
-        duplicate = False
+        url = match.get("url")
 
-        for j in keep:
-            if similarities[i][j] >= threshold:
-                duplicate = True
-                break
+        if url and url not in seen_urls:
+            sources.append(url)
+            seen_urls.add(url)
 
-        if not duplicate:
-            keep.append(i)
+    if not sentences:
+        return None
 
-    return [
-        matches[i]
-        for i in keep
-    ]
-
-def select_evidence(matches, limit=8):
-    return matches[:limit]
+    return {
+        "paragraph": " ".join(sentences),
+        "sources": sources
+    }
 
 def find(query, pages):
     pass

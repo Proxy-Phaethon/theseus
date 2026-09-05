@@ -1,22 +1,30 @@
 # Execution result → user-facing response
 
-def respond(results):
-    if results is None:
+def respond(result):
+    if result is None:
         return "No results found."
 
-    if not results:
-        return "No usable sources found."
+    summary = result.get("summary")
+    sources = result.get("sources", [])
 
     response = []
 
-    for result in results:
-        entry = f"Found: {result['title']}"
+    if summary:
+        response.append(summary)
 
-        if result["description"]:
-            entry += f"\n{result['description']}"
+    if sources:
+        response.append("")
+        response.append("Sources:")
 
-        entry += f"\nSource: {result['url']}"
+        for index, source in enumerate(sources, start=1):
+            title = source.get("title")
+            url = source.get("url")
 
-        response.append(entry)
+            if title and url:
+                response.append(f"[{index}] {title}")
+                response.append(f"    {url}")
 
-    return "\n\n".join(response)
+            elif url:
+                response.append(f"[{index}] {url}")
+
+    return "\n".join(response)

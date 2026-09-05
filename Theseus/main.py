@@ -42,14 +42,16 @@ EXIT_COMMANDS = {
 
 def main():
     print("Hey.")
+
     while True:
         user_input = input("> ")
+
         if not user_input.strip():
             continue
 
         if user_input.strip().lower() in EXIT_COMMANDS:
             print(random.choice(GOODBYES))
-        break
+            break
 
         conversational_response = conversation.respond(user_input)
 

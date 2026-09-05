@@ -3,6 +3,8 @@ from command_helper import nlp
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+import re
+
 def read(operation, query, pages):
     if operation == "SEARCH":
         return search(query, pages)
@@ -26,61 +28,122 @@ def search(query, pages):
         sentences = split_sentences(text)
 
         for sentence in sentences:
+            sentence = clean_sentence(sentence)
+
+            if not sentence:
+                continue
+
             score = score_sentence(sentence, terms)
 
             if score > 0:
                 matches.append({
-                    "sentence": sentence,
+                    "text": sentence,
                     "score": score,
-                    "url": page.get("url")
+                    "source": page.get("url")
                 })
+
+    if not matches:
+        return None
 
     matches.sort(
         key=lambda match: match["score"],
         reverse=True
     )
 
-    cleaned_matches = clean_matches(matches)
+    matches = deduplicate(matches)
+    matches = select_evidence(matches)
 
-    return build_paragraph(cleaned_matches)
+    return {
+        "query": query,
+        "matches": matches
+    }
 
 def split_sentences(text):
-    return text.split(".")
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    ).strip()
+
+    return re.split(
+        r"(?<=[.!?])\s+",
+        text
+    )
+
+def clean_sentence(sentence):
+    sentence = re.sub(
+        r"\s+",
+        " ",
+        sentence
+    ).strip()
+
+    sentence = re.sub(
+        r"\s+([,.;:!?])",
+        r"\1",
+        sentence
+    )
+
+    sentence = re.sub(
+        r"([(\[])\s+",
+        r"\1",
+        sentence
+    )
+
+    sentence = re.sub(
+        r"\s+([)\]])",
+        r"\1",
+        sentence
+    )
+
+    return sentence
 
 def score_sentence(sentence, terms):
     words = set(
-        sentence.lower().split()
+        re.findall(
+            r"\b[\w'-]+\b",
+            sentence.lower()
+        )
     )
 
-    return sum(
-        term in words
-        for term in terms
-    )
+    score = 0
 
-def clean_matches(matches):
-    if not matches:
-        return []
+    for term in terms:
+        term = term.lower()
+
+        if " " not in term:
+            if term in words:
+                score += 1
+        else:
+            if term in sentence.lower():
+                score += len(term.split())
+
+    return score
+
+def deduplicate(matches):
+    if len(matches) <= 1:
+        return matches
 
     sentences = [
-        match["sentence"].strip()
+        match["text"]
         for match in matches
-        if match["sentence"].strip()
     ]
 
-    if not sentences:
-        return []
+    try:
+        vectorizer = TfidfVectorizer(
+            stop_words="english"
+        )
 
-    vectorizer = TfidfVectorizer()
+        matrix = vectorizer.fit_transform(sentences)
 
-    matrix = vectorizer.fit_transform(sentences)
+    except ValueError:
+        return matches
 
     similarities = cosine_similarity(matrix)
 
     keep = []
-    
     threshold = 0.75
 
-    for i, sentence in enumerate(sentences):
+    for i in range(len(matches)):
         duplicate = False
 
         for j in keep:
@@ -96,40 +159,8 @@ def clean_matches(matches):
         for i in keep
     ]
 
+def select_evidence(matches, limit=8):
+    return matches[:limit]
+
 def find(query, pages):
     pass
-
-def build_paragraph(matches):
-    if not matches:
-        return None
-
-    sentences = []
-    sources = []
-    seen_urls = set()
-
-    for match in matches:
-        sentence = match["sentence"].strip()
-
-        if not sentence:
-            continue
-
-        sentence = sentence[0].upper() + sentence[1:]
-
-        if sentence[-1] not in ".!?":
-            sentence += "."
-
-        sentences.append(sentence)
-
-        url = match.get("url")
-
-        if url and url not in seen_urls:
-            sources.append(url)
-            seen_urls.add(url)
-
-    if not sentences:
-        return None
-
-    return {
-        "paragraph": " ".join(sentences),
-        "sources": sources
-    }

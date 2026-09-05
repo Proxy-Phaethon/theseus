@@ -1,5 +1,7 @@
 import re
 
+from nltk.corpus import wordnet
+
 def match(query):
     normalized = normalize(query)
     morphological = morphology(normalized)
@@ -10,8 +12,18 @@ def match(query):
 
 def normalize(query):
     query = query.lower()
-    query = re.sub(r"[^\w\s]", "", query)
-    query = re.sub(r"\s+", " ", query).strip()
+
+    query = re.sub(
+        r"[^\w\s]",
+        " ",
+        query
+    )
+
+    query = re.sub(
+        r"\s+",
+        " ",
+        query
+    ).strip()
 
     return query
 
@@ -20,11 +32,14 @@ def morphology(query):
     forms = set(words)
 
     for word in words:
-        if word.endswith("s") and len(word) > 3:
-            forms.add(word[:-1])
+        if word.endswith("ies") and len(word) > 4:
+            forms.add(word[:-3] + "y")
 
-        if word.endswith("es") and len(word) > 4:
+        elif word.endswith("es") and len(word) > 4:
             forms.add(word[:-2])
+
+        elif word.endswith("s") and len(word) > 3:
+            forms.add(word[:-1])
 
         if word.endswith("ing") and len(word) > 5:
             forms.add(word[:-3])
@@ -35,7 +50,16 @@ def morphology(query):
     return forms
 
 def synonyms(words):
-    return words
+    expanded = set(words)
+
+    for word in words:
+        for synset in wordnet.synsets(word):
+            for lemma in synset.lemmas():
+                expanded.add(
+                    lemma.name().replace("_", " ")
+                )
+
+    return expanded
 
 def semantic_similarity(words):
     return words

@@ -1,4 +1,5 @@
 # for scraping, extraction, entity identification, source comparison, ranking, OSINT analysis, etc.
+
 from command_helper import scraper
 from command_helper import reader
 
@@ -29,8 +30,15 @@ def process_search(data):
         except Exception:
             continue
 
-        if page:
-            pages.append(page)
+        if not page:
+            continue
+
+        pages.append({
+            "url": url,
+            "text": page.get("text", ""),
+            "title": result.get("title"),
+            "snippet": result.get("snippet")
+        })
 
     if not pages:
         return None

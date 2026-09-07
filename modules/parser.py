@@ -15,6 +15,14 @@ FAREWELLS = {
     "end convo",
     "end",
     "end conversation",
+    "ta-ta",
+    "adios",
+    "ciao",
+    "farewell",
+    "until next time",
+    "see you later",
+    "until we meet again",
+    "see ya",
 }
 
 def parse(tokens):

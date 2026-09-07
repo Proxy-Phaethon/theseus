@@ -9,17 +9,19 @@ FAREWELLS = [
     "Bye.",
     "Ta-ta",
     "Sayonara",
+    "Adios",
+    "Ciao",
     "Farewell",
     "Until next time",
     "See you later",
     "Until we meet again",
+    "See ya",
 ]
 
 GREETINGS = [
-    "Hello",
-    "Greetings",
-    "Hi",
-    "At your service.",
+    "Hey",
+    "What's Up",
+    "What can I do for you?",
 ]
 
 def main():

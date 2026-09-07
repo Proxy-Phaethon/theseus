@@ -18,30 +18,165 @@
 
 # Theseus
 
-**Python · Research & OSINT Assistant**
+Theseus is an open-source OSINT system designed to discover, collect, connect, evaluate, and explain publicly available information.
 
-Theseus is a Python-based research assistant for structured information retrieval and OSINT-oriented analysis.
+The project is developed incrementally. Each release introduces a distinct investigative capability, with the goal of building a complete OSINT workflow by version `1.0.0`.
 
-The project explores how software can support investigative research by transforming natural-language queries into structured operations, retrieving information from multiple sources, processing and analyzing retrieved content, and producing concise, source-aware results.
+## Roadmap
 
-### Core Focus
+### 0.1.0 — Search [In Progress]
 
-* Structured information retrieval
-* OSINT-oriented research workflows
-* Natural language processing
-* Deterministic information analysis
-* Source-aware research
-* Reproducible investigative workflows
+The foundation of Theseus.
 
-Theseus is primarily a learning and research project focused on the intersection of **computer science, information retrieval, natural language processing, data analysis, and investigative research**.
+Theseus can interpret a search query and find useful sources on the open web.
 
-### Current Development
+For example:
 
-The core search pipeline is currently functional, with active development focused on the intelligence layer responsible for understanding queries, identifying relevant information, reducing redundancy, and constructing coherent research results.
+```text
+search guava origin
+```
 
-## notes for next work session (to-do)
-terminal-related bs, if you ever figure out the ascii shit. goddammit.
-look into nlp for the conversation flow/creating responses (almost there)
-data analyzing system???
-how to visualize the data, or present it at all
-other commands
+The goal is not simply to return search results, but to identify sources that can answer the user's query.
+
+---
+
+### 0.2.0 — Retrieval & Scraping
+
+Theseus can retrieve information from discovered sources.
+
+Initial source types:
+
+* Web pages
+* PDF documents
+
+The system moves from finding information to actually collecting it.
+
+---
+
+### 0.3.0 — Entity Extraction
+
+Theseus identifies entities within collected information.
+
+Examples include:
+
+* People
+* Organizations
+* Locations
+* Dates
+* Other relevant identifiers
+
+---
+
+### 0.4.0 — Relationship Identification
+
+Theseus identifies relationships between entities.
+
+For example:
+
+```text
+Person
+  ↓
+works for
+  ↓
+Organization
+```
+
+or:
+
+```text
+Organization
+  ↓
+located in
+  ↓
+Location
+```
+
+---
+
+### 0.5.0 — Correlation
+
+Theseus connects information across different sources.
+
+The system can identify when separate pieces of information may refer to the same entity, event, relationship, or activity.
+
+---
+
+### 0.6.0 — Provenance
+
+Theseus tracks where information came from.
+
+Collected information, extracted entities, relationships, and claims retain their connection to their originating sources.
+
+The goal is to make the investigative trail recoverable rather than treating extracted information as detached facts.
+
+---
+
+### 0.7.0 — Source Comparison & Confidence
+
+Theseus evaluates information across sources.
+
+Capabilities include:
+
+* Comparing sources
+* Ranking evidence
+* Identifying conflicting information
+* Weighing confidence
+* Distinguishing stronger evidence from weaker evidence
+
+---
+
+### 0.8.0 — Internal Database & Search
+
+Theseus develops its own internal information store.
+
+Collected entities, relationships, sources, evidence, and investigations can be retained and searched internally.
+
+This allows an investigation to build upon information that Theseus has already discovered.
+
+---
+
+### 0.9.0 — Professional Answering System
+
+Theseus turns collected and evaluated information into coherent investigative answers.
+
+Rather than simply returning sources or isolated facts, the system can explain findings while preserving the evidence supporting them.
+
+---
+
+### 1.0.0 — Complete OSINT System
+
+Theseus becomes a complete, robust search and investigation system.
+
+This stage focuses on:
+
+* Comprehensive error handling
+* Reliable search workflows
+* Robust operation
+* Integration of the preceding capabilities
+* Refinement of the complete investigative process
+
+The objective is a system capable of moving from an initial question to a sourced, connected, evaluated, and clearly presented body of intelligence.
+
+## The Progression
+
+```text
+Search
+  ↓
+Retrieve
+  ↓
+Extract
+  ↓
+Identify relationships
+  ↓
+Correlate
+  ↓
+Trace provenance
+  ↓
+Evaluate evidence
+  ↓
+Store knowledge
+  ↓
+Explain findings
+  ↓
+Version 1 of Theseus
+```

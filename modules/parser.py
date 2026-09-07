@@ -38,9 +38,14 @@ def parse(tokens):
         return {"operation": "FAREWELL"}
 
     if command == "search":
+        query_tokens = tokens[1:]
+
+        if query_tokens and query_tokens[0].lower() == "for":
+            query_tokens = query_tokens[1:]
+
         return {
             "operation": "SEARCH",
-            "query": " ".join(tokens[1:])
+            "query": " ".join(query_tokens)
         }
 
     return {"operation": "UNKNOWN"}

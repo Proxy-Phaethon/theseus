@@ -1,6 +1,10 @@
 from modules.tokenizer import tokenize
 from modules.parser import parse
-from modules.commands.search import search
+from modules.commands.search import (
+    search,
+    classify_query,
+    recognize_answer,
+)
 from modules.responder import respond, start_thinking
 
 import random
@@ -41,15 +45,20 @@ def main():
             break
 
         elif parsed["operation"] == "SEARCH":
+            query = parsed["query"]
+
+            answer_type = classify_query(query)
+
             stop_thinking, thinking_thread = start_thinking()
 
             try:
-                results = search(parsed["query"])
+                results = search(query)
+                answer = recognize_answer(query, results, answer_type)
             finally:
                 stop_thinking.set()
                 thinking_thread.join()
 
-            respond(results)
+            respond(answer)
 
         else:
             print("sorry?")

@@ -21,8 +21,14 @@ def classify_query(query):
     if re.match(r"^(who|whom)\b", query):
         return "PERSON", "UNKNOWN"
 
+    if re.search(r"\bpopulation\b", query):
+        return "NUMBER", "POPULATION"
+
     if re.match(r"^where\b", query):
-        if re.search(r"\borigin\b|\boriginated\b", query):
+        if re.search(
+            r"\borigin\b|\boriginate\b|\boriginated\b|\borigins\b",
+            query
+        ):
             return "PLACE", "ORIGIN"
 
         return "PLACE", "UNKNOWN"
@@ -34,6 +40,12 @@ def classify_query(query):
         return "DATE", "UNKNOWN"
 
     if re.match(r"^(how many|how much)\b", query):
+        if re.search(
+            r"\bpeople\b|\bpopulation\b|\binhabitants\b",
+            query
+        ):
+            return "NUMBER", "POPULATION"
+
         return "NUMBER", "UNKNOWN"
 
     if re.match(r"^(what is|what are|define|definition of)\b", query):
@@ -183,7 +195,7 @@ def extract_answer(sentence, answer_type, relation):
         return extract_date(sentence, relation)
 
     if answer_type == "NUMBER":
-        return extract_number(sentence)
+        return extract_number(sentence, relation)
 
     if answer_type == "PLACE":
         return extract_place(sentence, relation)
@@ -237,6 +249,31 @@ def extract_person(sentence, relation):
             if match:
                 return match.group(1).strip()
 
+    if relation == "INVENTED":
+        patterns = [
+            # "Alexander Graham Bell invented the telephone"
+            r"^([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)+)\s+"
+            r"invented\b",
+
+            # "The telephone was invented by Alexander Graham Bell"
+            r"\binvented\s+by\s+"
+            r"([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)+)",
+
+            # "Alexander Graham Bell is credited with inventing the telephone"
+            r"^([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)+)\s+"
+            r"is\s+credited\s+with\s+inventing\b",
+
+            # "The inventor of the telephone was Alexander Graham Bell"
+            r"\binventor\s+of\b.*?\bwas\s+"
+            r"([A-Z][A-Za-z]+(?:\s+[A-Z][A-Za-z]+)+)",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, sentence)
+
+            if match:
+                return match.group(1).strip()
+
     return None
 
 def extract_date(sentence, relation):
@@ -281,7 +318,34 @@ def extract_date(sentence, relation):
 
     return None
 
-def extract_number(sentence):
+def extract_number(sentence, relation):
+    if relation == "POPULATION":
+        patterns = [
+            # "The current population of Japan is 122,330,957"
+            r"\bpopulation\b.*?\bis\s+"
+            r"(\d+(?:,\d{3})*(?:\.\d+)?(?:\s*[KMB])?)",
+
+            # "Japan's population stood at 123,767,642"
+            r"\bpopulation\b.*?\bstood at\s+"
+            r"(\d+(?:,\d{3})*(?:\.\d+)?(?:\s*[KMB])?)",
+
+            # "Japan has a total population of 122,427,731"
+            r"\bpopulation\s+of\s+"
+            r"(\d+(?:,\d{3})*(?:\.\d+)?(?:\s*[KMB])?)",
+        ]
+
+        for pattern in patterns:
+            match = re.search(
+                pattern,
+                sentence,
+                re.IGNORECASE
+            )
+
+            if match:
+                return match.group(1)
+
+        return None
+
     match = re.search(
         r"\b\d+(?:,\d{3})*(?:\.\d+)?\b",
         sentence
@@ -295,16 +359,18 @@ def extract_number(sentence):
 def extract_place(sentence, relation):
     if relation == "ORIGIN":
         patterns = [
-            r"\boriginated\s+in\s+([A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z]*)*)",
-
-            r"\bnative\s+to\s+([A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z]*)*)",
-
-            r"\borigin\s+(?:is|was|lies)\s+in\s+"
-            r"([A-Z][A-Za-z]*(?:\s+[A-Z][A-Za-z]*)*)",
+            r"\boriginated\s+in\s+([A-Z][A-Za-z]*)",
+            r"\bnative\s+to\s+([A-Z][A-Za-z]*)",
+            r"\borigins\s+in\s+([A-Z][A-Za-z]*)",
+            r"\bcame\s+from\s+([A-Z][A-Za-z]*)",
+            r"\btraces\s+back\s+to\s+([A-Z][A-Za-z]*)",
+            r"\borigin\s+of\b.*?\bis\s+([A-Z][A-Za-z]*)",
+            r"\borigin\s+of\b.*?\bwas\s+([A-Z][A-Za-z]*)",
         ]
 
         for pattern in patterns:
             match = re.search(pattern, sentence)
+
             if match:
                 return match.group(1).strip()
 

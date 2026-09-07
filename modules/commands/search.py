@@ -323,3 +323,37 @@ def valid_person(candidate):
         for word in words
         if word.lower() not in {"and"}
     )
+
+def normalize_answer(answer):
+    answer = answer.lower().strip()
+
+    answer = answer.replace("&", "and")
+
+    answer = re.sub(r"\s+", " ", answer)
+
+    return answer
+
+def rank_answers(candidates):
+    if not candidates:
+        return None
+
+    counts = {}
+
+    for candidate in candidates:
+        normalized = normalize_answer(candidate)
+
+        if normalized not in counts:
+            counts[normalized] = {
+                "answer": candidate,
+                "count": 0
+            }
+
+        counts[normalized]["count"] += 1
+
+    ranked = sorted(
+        counts.values(),
+        key=lambda item: item["count"],
+        reverse=True
+    )
+
+    return ranked[0]["answer"]

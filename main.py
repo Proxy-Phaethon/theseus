@@ -4,6 +4,7 @@ from modules.commands.search import (
     search,
     classify_query,
     recognize_answer,
+    rank_answers
 )
 from modules.responder import respond, start_thinking
 
@@ -53,12 +54,16 @@ def main():
 
             try:
                 results = search(query)
-                answer = recognize_answer(
+
+                candidates = recognize_answer(
                     query,
                     results,
                     answer_type,
                     relation
                 )
+
+                answer = rank_answers(candidates)
+
             finally:
                 stop_thinking.set()
                 thinking_thread.join()

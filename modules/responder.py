@@ -29,8 +29,8 @@ def start_thinking():
     return stop_event, thread
 
 def respond(answer):
-    if answer is None:
-        print("I couldn't find an answer.")
+    if not answer:
+        print("I couldn't find a reliable answer.")
         return
 
     print(answer)

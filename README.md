@@ -180,3 +180,5 @@ Explain findings
   ↓
 Version 1 of Theseus
 ```
+
+for tmrw - how do we infer the relationship being asked for without maintaining a growing list like FOUNDED, CEO, INVENTED, PAINTED, etc.?

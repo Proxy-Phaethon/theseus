@@ -47,13 +47,18 @@ def main():
         elif parsed["operation"] == "SEARCH":
             query = parsed["query"]
 
-            answer_type = classify_query(query)
+            answer_type, relation = classify_query(query)
 
             stop_thinking, thinking_thread = start_thinking()
 
             try:
                 results = search(query)
-                answer = recognize_answer(query, results, answer_type)
+                answer = recognize_answer(
+                    query,
+                    results,
+                    answer_type,
+                    relation
+                )
             finally:
                 stop_thinking.set()
                 thinking_thread.join()

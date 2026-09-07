@@ -1,7 +1,7 @@
 from modules.tokenizer import tokenize
 from modules.parser import parse
 from modules.commands.search import search
-from modules.responder import respond
+from modules.responder import respond, start_thinking
 
 import random
 
@@ -26,6 +26,7 @@ GREETINGS = [
 
 def main():
     print("Hey.")
+
     while True:
         command = input("> ")
 
@@ -33,14 +34,21 @@ def main():
         parsed = parse(tokens)
 
         if parsed["operation"] == "GREETING":
-            print(f"{random.choice(GREETINGS)}")
+            print(random.choice(GREETINGS))
 
         elif parsed["operation"] == "FAREWELL":
-            print(f"{random.choice(FAREWELLS)}")
+            print(random.choice(FAREWELLS))
             break
 
         elif parsed["operation"] == "SEARCH":
-            results = search(parsed["query"])
+            stop_thinking, thinking_thread = start_thinking()
+
+            try:
+                results = search(parsed["query"])
+            finally:
+                stop_thinking.set()
+                thinking_thread.join()
+
             respond(results)
 
         else:

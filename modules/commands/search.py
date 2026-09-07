@@ -76,6 +76,9 @@ def recognize_answer(query, results, answer_type, relation):
                 answer = extract_answer(sentence, answer_type, relation)
 
                 if answer:
+                    if answer_type == "PERSON" and not valid_person(answer):
+                        continue
+
                     candidates.append(answer)
 
     return candidates
@@ -306,3 +309,17 @@ def extract_place(sentence, relation):
                 return match.group(1).strip()
 
     return None
+
+def valid_person(candidate):
+    candidate = candidate.strip()
+
+    words = candidate.split()
+
+    if len(words) < 2:
+        return False
+
+    return all(
+        word[0].isupper()
+        for word in words
+        if word.lower() not in {"and"}
+    )

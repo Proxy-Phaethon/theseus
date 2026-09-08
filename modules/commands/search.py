@@ -5,53 +5,60 @@ from urllib.request import Request, urlopen
 
 SEARXNG_URL = "http://localhost:8080/search"
 
-def classify_query(query):
+def understand_query(query):
     query = query.lower().strip()
 
-    if re.search(r"\b(ceo|chief executive)\b", query):
-        return "PERSON", "CEO"
-
-    if re.search(r"\b(founder|founded)\b", query):
-        if re.match(r"^(who|whom)\b", query) or "founder" in query:
-            return "PERSON", "FOUNDED"
-
-    if re.search(r"\b(inventor|invented)\b", query):
-        return "PERSON", "INVENTED"
+    answer_type = None
 
     if re.match(r"^(who|whom)\b", query):
-        return "PERSON", "UNKNOWN"
+        answer_type = "PERSON"
 
-    if re.search(r"\bpopulation\b", query):
-        return "NUMBER", "POPULATION"
+    elif re.match(r"^when\b", query):
+        answer_type = "DATE"
 
-    if re.match(r"^where\b", query):
-        if re.search(
-            r"\borigin\b|\boriginate\b|\boriginated\b|\borigins\b",
-            query
-        ):
-            return "PLACE", "ORIGIN"
+    elif re.match(r"^where\b", query):
+        answer_type = "PLACE"
 
-        return "PLACE", "UNKNOWN"
+    elif re.match(r"^(how many|how much)\b", query):
+        answer_type = "NUMBER"
 
-    if re.match(r"^when\b", query):
-        if re.search(r"\bfounded\b|\bestablished\b", query):
-            return "DATE", "FOUNDED"
+    elif re.match(r"^(what is|what are|define|definition of)\b", query):
+        if "population" in query:
+            answer_type = "NUMBER"
+        else:
+            answer_type = "DEFINITION"
 
-        return "DATE", "UNKNOWN"
+    words = query.split()
 
-    if re.match(r"^(how many|how much)\b", query):
-        if re.search(
-            r"\bpeople\b|\bpopulation\b|\binhabitants\b",
-            query
-        ):
-            return "NUMBER", "POPULATION"
+    if answer_type == "PERSON":
+        words = words[1:]
 
-        return "NUMBER", "UNKNOWN"
+    elif answer_type == "DATE":
+        words = words[1:]
 
-    if re.match(r"^(what is|what are|define|definition of)\b", query):
-        return "DEFINITION", "UNKNOWN"
+    elif answer_type == "PLACE":
+        words = words[1:]
 
-    return "FACT", "UNKNOWN"
+    elif answer_type == "NUMBER":
+        if words[:2] == ["how", "many"]:
+            words = words[2:]
+        elif words[:2] == ["how", "much"]:
+            words = words[2:]
+
+    predicate = None
+    entity = None
+
+    if words:
+        predicate = words[0]
+
+        if len(words) > 1:
+            entity = " ".join(words[1:])
+
+    return {
+        "answer_type": answer_type,
+        "predicate": predicate,
+        "entity": entity
+    }
 
 def search(query):
     url = f"{SEARXNG_URL}?{urlencode({

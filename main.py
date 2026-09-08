@@ -2,7 +2,7 @@ from modules.tokenizer import tokenize
 from modules.parser import parse
 from modules.commands.search import (
     search,
-    classify_query,
+    understand_query,
     recognize_answer,
     rank_answers
 )
@@ -48,27 +48,9 @@ def main():
         elif parsed["operation"] == "SEARCH":
             query = parsed["query"]
 
-            answer_type, relation = classify_query(query)
+            query_structure = understand_query(query)
 
-            stop_thinking, thinking_thread = start_thinking()
-
-            try:
-                results = search(query)
-
-                candidates = recognize_answer(
-                    query,
-                    results,
-                    answer_type,
-                    relation
-                )
-
-                answer = rank_answers(candidates)
-
-            finally:
-                stop_thinking.set()
-                thinking_thread.join()
-
-            respond(answer)
+            print(query_structure)
 
         else:
             print("sorry?")

@@ -136,7 +136,8 @@ def recognize_answer(results, query_structure):
 
             answer = extract_answer(
                 sentence,
-                answer_type
+                answer_type,
+                predicate
             )
 
             if answer:
@@ -153,34 +154,88 @@ def matches_predicate(sentence, predicate):
 
     return False
 
-def extract_answer(sentence, answer_type):
+def extract_answer(sentence, answer_type, predicate):
     doc = nlp(sentence)
 
-    if answer_type == "PERSON":
-        return extract_entity(
-            doc,
-            {"PERSON"}
-        )
+    predicate_token = None
 
-    if answer_type == "PLACE":
-        return extract_entity(
-            doc,
-            {"GPE", "LOC", "FAC"}
-        )
+    for token in doc:
+        if token.lemma_.lower() == predicate:
+            predicate_token = token
+            break
 
-    if answer_type == "DATE":
-        return extract_entity(
-            doc,
-            {"DATE"}
-        )
+    if predicate_token is None:
+        return None
 
-    if answer_type == "NUMBER":
-        return extract_entity(
-            doc,
-            {"CARDINAL", "QUANTITY", "PERCENT"}
-        )
+    labels = answer_labels(answer_type)
+
+    for child in predicate_token.children:
+        if child.dep_ == "nsubj":
+            answer = entity_for_token(doc, child, labels)
+
+            if answer:
+                return answer
+
+    for child in predicate_token.children:
+        if child.dep_ == "agent":
+            for descendant in child.subtree:
+                answer = entity_for_token(
+                    doc,
+                    descendant,
+                    labels
+                )
+
+                if answer:
+                    return answer
+
+    for child in predicate_token.children:
+        if child.dep_ != "prep":
+            continue
+
+        for descendant in child.subtree:
+            answer = entity_for_token(
+                doc,
+                descendant,
+                labels
+            )
+
+            if answer:
+                return answer
 
     return None
+
+def entity_for_token(doc, token, labels):
+    for entity in doc.ents:
+        if entity.label_ not in labels:
+            continue
+
+        if entity.start <= token.i < entity.end:
+            return entity.text.strip()
+
+    return None
+
+def answer_labels(answer_type):
+    if answer_type == "PERSON":
+        return {"PERSON"}
+
+    if answer_type == "PLACE":
+        return {
+            "GPE",
+            "LOC",
+            "FAC"
+        }
+
+    if answer_type == "DATE":
+        return {"DATE"}
+
+    if answer_type == "NUMBER":
+        return {
+            "CARDINAL",
+            "QUANTITY",
+            "PERCENT"
+        }
+
+    return set()
 
 def extract_entity(doc, labels):
     for entity in doc.ents:

@@ -6,7 +6,7 @@ from modules.commands.search import (
     recognize_answer,
     rank_answers
 )
-from modules.responder import respond, start_thinking
+from modules.responder import respond
 
 import random
 
@@ -18,8 +18,8 @@ FAREWELLS = [
     "Ciao",
     "Farewell",
     "Until next time",
-    "See you later",
     "Until we meet again",
+    "See you later",
     "See ya",
 ]
 
@@ -50,7 +50,38 @@ def main():
 
             query_structure = understand_query(query)
 
-            print(query_structure)
+            answer_type = query_structure["answer_type"]
+            predicate = query_structure["predicate"]
+
+            relation_map = {
+                "found": "FOUNDED",
+                "founded": "FOUNDED",
+                "invent": "INVENTED",
+                "invented": "INVENTED",
+                "originate": "ORIGIN",
+                "originated": "ORIGIN",
+                "live": "POPULATION",
+                "population": "POPULATION",
+                "be": "CEO",
+            }
+
+            relation = relation_map.get(
+                predicate.lower() if predicate else "",
+                "UNKNOWN"
+            )
+
+            results = search(query)
+
+            candidates = recognize_answer(
+                query,
+                results,
+                answer_type,
+                relation
+            )
+
+            answer = rank_answers(candidates)
+
+            respond(answer)
 
         else:
             print("sorry?")

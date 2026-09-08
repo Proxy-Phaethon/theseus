@@ -1,63 +1,56 @@
 import json
 import re
-from urllib.parse import urlencode
+import spacy
 from urllib.request import Request, urlopen
+from urllib.parse import urlencode
 
 SEARXNG_URL = "http://localhost:8080/search"
 
+nlp = spacy.load("en_core_web_sm")
+
 def understand_query(query):
-    query = query.lower().strip()
+    doc = nlp(query)
 
     answer_type = None
-
-    if re.match(r"^(who|whom)\b", query):
-        answer_type = "PERSON"
-
-    elif re.match(r"^when\b", query):
-        answer_type = "DATE"
-
-    elif re.match(r"^where\b", query):
-        answer_type = "PLACE"
-
-    elif re.match(r"^(how many|how much)\b", query):
-        answer_type = "NUMBER"
-
-    elif re.match(r"^(what is|what are|define|definition of)\b", query):
-        if "population" in query:
-            answer_type = "NUMBER"
-        else:
-            answer_type = "DEFINITION"
-
-    words = query.split()
-
-    if answer_type == "PERSON":
-        words = words[1:]
-
-    elif answer_type == "DATE":
-        words = words[1:]
-
-    elif answer_type == "PLACE":
-        words = words[1:]
-
-    elif answer_type == "NUMBER":
-        if words[:2] == ["how", "many"]:
-            words = words[2:]
-        elif words[:2] == ["how", "much"]:
-            words = words[2:]
-
+    subject = None
     predicate = None
-    entity = None
+    object_ = None
 
-    if words:
-        predicate = words[0]
+    for token in doc:
+        word = token.text.lower()
 
-        if len(words) > 1:
-            entity = " ".join(words[1:])
+        if word in {"who", "whom"}:
+            answer_type = "PERSON"
+        elif word == "when":
+            answer_type = "DATE"
+        elif word == "where":
+            answer_type = "PLACE"
+        elif word == "what":
+            answer_type = "UNKNOWN"
+        elif word == "how":
+            answer_type = "NUMBER"
+
+    for token in doc:
+        if token.dep_ != "ROOT":
+            continue
+
+        predicate = token.lemma_
+
+        for child in token.children:
+            if child.dep_ in {"nsubj", "nsubjpass"}:
+                if child.text.lower() not in {"who", "whom", "what"}:
+                    subject = child.text
+
+            elif child.dep_ in {"dobj", "obj"}:
+                object_ = child.text
+
+        break
 
     return {
         "answer_type": answer_type,
+        "subject": subject,
         "predicate": predicate,
-        "entity": entity
+        "object": object_
     }
 
 def search(query):

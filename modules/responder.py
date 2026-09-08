@@ -8,8 +8,12 @@ def thinking_animation(stop_event):
 
     while not stop_event.is_set():
         frame = next(frames)
-        sys.stdout.write(f"\rTheseus is thinking{frame}   ")
+
+        sys.stdout.write(
+            f"\rTheseus is thinking{frame}   "
+        )
         sys.stdout.flush()
+
         time.sleep(0.4)
 
     sys.stdout.write("\r" + " " * 30 + "\r")

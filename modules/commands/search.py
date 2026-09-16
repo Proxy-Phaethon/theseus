@@ -8,6 +8,25 @@ SEARXNG_URL = "http://localhost:8080/search"
 
 nlp = spacy.load("en_core_web_sm")
 
+## temporary
+def debug_query(query):
+    doc = nlp(query)
+
+    print(f"\nQUERY: {query}")
+
+    for token in doc:
+        print(
+            f"{token.text:15}"
+            f"pos={token.pos_:8}"
+            f"dep={token.dep_:12}"
+            f"ent={token.ent_type_}"
+        )
+
+    print("ENTITIES:", [
+        (entity.text, entity.label_)
+        for entity in doc.ents
+    ])
+
 def understand_query(query):
     doc = nlp(query)
 
@@ -102,3 +121,11 @@ def answer_query(query):
         return None
 
     return f"Found {len(results)} results."
+
+if __name__ == "__main__":
+    debug_query("grape")
+    debug_query("Aurora")
+    debug_query("John Pork")
+    debug_query("John Pork September 2026 location")
+    debug_query("hello")
+    debug_query("shouldn't you be working?")

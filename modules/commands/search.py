@@ -8,25 +8,6 @@ SEARXNG_URL = "http://localhost:8080/search"
 
 nlp = spacy.load("en_core_web_sm")
 
-## temporary
-def debug_query(query):
-    doc = nlp(query)
-
-    print(f"\nQUERY: {query}")
-
-    for token in doc:
-        print(
-            f"{token.text:15}"
-            f"pos={token.pos_:8}"
-            f"dep={token.dep_:12}"
-            f"ent={token.ent_type_}"
-        )
-
-    print("ENTITIES:", [
-        (entity.text, entity.label_)
-        for entity in doc.ents
-    ])
-
 def understand_query(query):
     doc = nlp(query)
 
@@ -55,6 +36,15 @@ def understand_query(query):
         "entities": entities,
         "keywords": keywords
     }
+
+def is_investigable(query_structure):
+    entities = query_structure["entities"]
+    keywords = query_structure["keywords"]
+
+    if not entities and not keywords:
+        return False
+
+    return True
 
 def formulate_queries(query_structure):
     original_query = query_structure["query"]
@@ -113,6 +103,9 @@ def search_all(queries):
 def answer_query(query):
     query_structure = understand_query(query)
 
+    if not is_investigable(query_structure):
+        return None
+
     queries = formulate_queries(query_structure)
 
     results = search_all(queries)
@@ -121,11 +114,3 @@ def answer_query(query):
         return None
 
     return f"Found {len(results)} results."
-
-if __name__ == "__main__":
-    debug_query("grape")
-    debug_query("Aurora")
-    debug_query("John Pork")
-    debug_query("John Pork September 2026 location")
-    debug_query("hello")
-    debug_query("shouldn't you be working?")

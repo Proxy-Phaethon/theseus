@@ -41,12 +41,10 @@ def main():
             break
 
         elif parsed["operation"] == "SEARCH":
-            query = parsed["query"]
-
             stop_event, thread = start_thinking()
 
             try:
-                answer = answer_query(query)
+                answer = answer_query(parsed)
             finally:
                 stop_event.set()
                 thread.join()

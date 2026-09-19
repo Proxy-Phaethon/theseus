@@ -3,7 +3,7 @@ import spacy
 
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
-from scraper import scrape
+from modules.commands.scraper import scrape
 
 SEARXNG_URL = "http://localhost:8080/search"
 

@@ -106,19 +106,22 @@ def search_all(queries):
         query_results = search(query)
 
         for result in query_results:
-            result["search_query"] = query
-
             url = result.get("url")
 
             if not url:
                 continue
 
             try:
-                result["content"] = scrape(url)
+                content = scrape(url)
             except Exception:
-                result["content"] = None
+                continue
 
-            results.append(result)
+            results.append({
+                "title": result.get("title"),
+                "url": url,
+                "content": content,
+                "search_query": query,
+            })
 
     return results
 

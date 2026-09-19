@@ -3,6 +3,7 @@ import spacy
 
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from scraper import scrape
 
 SEARXNG_URL = "http://localhost:8080/search"
 
@@ -53,18 +54,28 @@ def formulate_queries(query_structure):
 
     queries = []
 
-    queries.append(original_query)
+    def add_query(query):
+        query = query.strip()
+
+        if query and query not in queries:
+            queries.append(query)
+
+    add_query(original_query)
 
     for entity in entities:
-        entity_query = entity["text"]
+        add_query(entity["text"])
 
-        if entity_query not in queries:
-            queries.append(entity_query)
+    entity_texts = [entity["text"] for entity in entities]
 
-    keyword_query = " ".join(keywords)
+    if entity_texts:
+        add_query(" ".join(entity_texts))
 
-    if keyword_query and keyword_query not in queries:
-        queries.append(keyword_query)
+    for entity in entity_texts:
+        for keyword in keywords:
+            if keyword.lower() != entity.lower():
+                add_query(f"{entity} {keyword}")
+
+    add_query(" ".join(keywords))
 
     return queries
 
@@ -96,6 +107,17 @@ def search_all(queries):
 
         for result in query_results:
             result["search_query"] = query
+
+            url = result.get("url")
+
+            if not url:
+                continue
+
+            try:
+                result["content"] = scrape(url)
+            except Exception:
+                result["content"] = None
+
             results.append(result)
 
     return results
@@ -113,4 +135,4 @@ def answer_query(query):
     if not results:
         return None
 
-    return f"Found {len(results)} results."
+    return results

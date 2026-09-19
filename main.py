@@ -24,6 +24,24 @@ GREETINGS = [
     "What can I do for you?",
 ]
 
+SEARCH_ERRORS = {
+    "MISSING_TYPE":
+        "Be more specific. What exactly is that thing?",
+
+    "INVALID_TYPE":
+        "I need to know what kind of thing I'm looking for.",
+
+    "MISSING_TARGET":
+        "You forgot to tell me what I'm actually looking for.",
+
+    "MISSING_RETURN":
+        "And what would you like me to find about it?",
+
+    "MISSING_REQUEST":
+        "Find what, exactly?",
+
+}
+
 def main():
     print("Hey.")
 
@@ -39,6 +57,14 @@ def main():
         elif parsed["operation"] == "FAREWELL":
             print(random.choice(FAREWELLS))
             break
+
+        elif parsed["operation"] == "SEARCH_INVALID":
+            print(
+                SEARCH_ERRORS.get(
+                    parsed["error"],
+                    "You're going to have to give me a little more to work with."
+                )
+            )
 
         elif parsed["operation"] == "SEARCH":
             stop_event, thread = start_thinking()

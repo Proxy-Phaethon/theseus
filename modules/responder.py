@@ -10,7 +10,7 @@ def thinking_animation(stop_event):
         frame = next(frames)
 
         sys.stdout.write(
-            f"\rTheseus is thinking{frame}   "
+            f"\rSleuthing{frame}   "
         )
         sys.stdout.flush()
 

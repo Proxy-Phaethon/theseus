@@ -2,7 +2,8 @@ import json
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from modules.commands.scraper import scrape
+from modules.commands.helpers.scraper import scrape
+from modules.commands.helpers.reader import read
 
 SEARXNG_URL = "http://localhost:8080/search"
 
@@ -113,8 +114,13 @@ def answer_query(investigation):
     if not results:
         return None
 
+    answers = read(
+        investigation,
+        results
+    )
+
     return {
         "investigation": investigation,
         "queries": queries,
-        "results": results,
+        "answers": answers,
     }

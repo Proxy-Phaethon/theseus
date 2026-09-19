@@ -112,14 +112,19 @@ def search_all(queries):
                 continue
 
             try:
-                content = scrape(url)
-            except Exception:
+                source = scrape(url)
+            except Exception as error:
+                print(f"Failed to scrape {url}: {error}")
+                continue
+
+            if not source:
                 continue
 
             results.append({
                 "title": result.get("title"),
                 "url": url,
-                "content": content,
+                "content_type": source["content_type"],
+                "content": source["content"],
                 "search_query": query,
             })
 

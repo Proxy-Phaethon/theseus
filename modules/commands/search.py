@@ -1,83 +1,10 @@
 import json
-import spacy
-
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
 from modules.commands.scraper import scrape
 
 SEARXNG_URL = "http://localhost:8080/search"
-
-nlp = spacy.load("en_core_web_sm")
-
-def understand_query(query):
-    doc = nlp(query)
-
-    entities = [
-        {
-            "text": entity.text,
-            "label": entity.label_
-        }
-        for entity in doc.ents
-    ]
-
-    keywords = []
-
-    for token in doc:
-        if token.is_stop:
-            continue
-
-        if token.is_punct:
-            continue
-
-        if token.pos_ in {"NOUN", "PROPN", "ADJ", "VERB"}:
-            keywords.append(token.text)
-
-    return {
-        "query": query,
-        "entities": entities,
-        "keywords": keywords
-    }
-
-def is_investigable(query_structure):
-    entities = query_structure["entities"]
-    keywords = query_structure["keywords"]
-
-    if not entities and not keywords:
-        return False
-
-    return True
-
-def formulate_queries(query_structure):
-    original_query = query_structure["query"]
-    entities = query_structure["entities"]
-    keywords = query_structure["keywords"]
-
-    queries = []
-
-    def add_query(query):
-        query = query.strip()
-
-        if query and query not in queries:
-            queries.append(query)
-
-    add_query(original_query)
-
-    for entity in entities:
-        add_query(entity["text"])
-
-    entity_texts = [entity["text"] for entity in entities]
-
-    if entity_texts:
-        add_query(" ".join(entity_texts))
-
-    for entity in entity_texts:
-        for keyword in keywords:
-            if keyword.lower() != entity.lower():
-                add_query(f"{entity} {keyword}")
-
-    add_query(" ".join(keywords))
-
-    return queries
 
 def search(query):
     parameters = urlencode({
@@ -98,6 +25,31 @@ def search(query):
         data = json.loads(response.read())
 
     return data.get("results", [])
+
+def formulate_queries(investigation):
+    target = investigation["target"]
+    requests = investigation["requests"]
+
+    target_type = target["type"]
+    target_name = target["name"]
+
+    queries = []
+
+    def add_query(query):
+        query = query.strip()
+
+        if query and query not in queries:
+            queries.append(query)
+
+    add_query(target_name)
+
+    add_query(f"{target_type} {target_name}")
+
+    for request in requests:
+        add_query(f"{target_name} {request}")
+        add_query(f"{target_type} {target_name} {request}")
+
+    return queries
 
 def search_all(queries):
     results = []
@@ -123,36 +75,46 @@ def search_all(queries):
                 if not source:
                     continue
 
+                content = source.get("content", "")
+
+                if not content.strip():
+                    continue
+
                 print(
                     f"Scraped: {url} "
-                    f"({len(source['content'])} characters)"
+                    f"({len(content)} characters)"
                 )
 
             except Exception as error:
-                print(f"Failed to scrape {url}: {error}")
+                print(
+                    f"Failed to scrape {url}: {error}"
+                )
                 continue
 
             results.append({
                 "title": result.get("title"),
                 "url": url,
                 "content_type": source["content_type"],
-                "content": source["content"],
+                "content": content,
                 "search_query": query,
             })
 
     return results
 
-def answer_query(query):
-    query_structure = understand_query(query)
+def answer_query(investigation):
+    queries = formulate_queries(investigation)
 
-    if not is_investigable(query_structure):
-        return None
-
-    queries = formulate_queries(query_structure)
+    print("\nQueries:")
+    for query in queries:
+        print(f"  {query}")
 
     results = search_all(queries)
 
     if not results:
         return None
 
-    return f"Collected {len(results)} sources."
+    return {
+        "investigation": investigation,
+        "queries": queries,
+        "results": results,
+    }

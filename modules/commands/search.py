@@ -81,15 +81,7 @@ def search_all(queries):
                 if not content.strip():
                     continue
 
-                print(
-                    f"Scraped: {url} "
-                    f"({len(content)} characters)"
-                )
-
             except Exception as error:
-                print(
-                    f"Failed to scrape {url}: {error}"
-                )
                 continue
 
             results.append({

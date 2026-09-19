@@ -46,14 +46,16 @@ def scrape_html(content):
 
     return clean_text(soup.get_text("\n"))
 
-
 def scrape_pdf(content):
     reader = PdfReader(io.BytesIO(content))
 
     pages = []
 
     for page in reader.pages:
-        text = page.extract_text()
+        try:
+            text = page.extract_text()
+        except Exception:
+            continue
 
         if text:
             pages.append(text)
@@ -80,7 +82,12 @@ def scrape(url):
     ).lower()
 
     if "text/html" in content_type:
-        content = scrape_html(response.content)
+        content = scrape_html(
+            response.content.decode(
+                response.encoding or "utf-8",
+                errors="replace"
+            )
+        )
 
     elif "application/pdf" in content_type:
         content = scrape_pdf(response.content)

@@ -1,67 +1,42 @@
-import re
-
 def read(investigation, sources):
-    answers = {}
+    answers = []
 
-    for request in investigation["requests"]:
-        answers[request] = find_answer(
+    for source in sources:
+        source["content"] = clean_text(source["content"])
+
+        answer = find_answer(
             investigation,
-            request,
-            sources
+            source["content"]
         )
+
+        if answer:
+            answers.append({
+                "answer": answer,
+                "source": source["url"]
+            })
 
     return answers
 
-def find_answer(investigation, request, sources):
-    target_name = investigation["target"]["name"]
+def find_answer(investigation, text):
+    requests = investigation["requests"]
 
-    target_words = target_name.lower().split()
-    request_words = request.lower().split()
+    for request in requests:
+        lines = text.splitlines()
 
-    matches = []
+        for i, line in enumerate(lines):
+            if request.lower() in line.lower():
+                if i + 1 < len(lines):
+                    return lines[i + 1]
 
-    for source in sources:
-        content = source["content"]
+    return None
 
-        sentences = split_sentences(content)
+def clean_text(text):
+    lines = []
 
-        for sentence in sentences:
-            text = sentence.lower()
+    for line in text.splitlines():
+        line = " ".join(line.split())
 
-            target_matches = sum(
-                1
-                for word in target_words
-                if word in text
-            )
+        if line:
+            lines.append(line)
 
-            request_matches = sum(
-                1
-                for word in request_words
-                if word in text
-            )
-
-            score = target_matches + request_matches
-
-            if score > 0:
-                matches.append({
-                    "score": score,
-                    "evidence": sentence.strip(),
-                    "source": source["url"],
-                    "title": source["title"],
-                })
-
-    if not matches:
-        return None
-
-    matches.sort(
-        key=lambda match: match["score"],
-        reverse=True
-    )
-
-    return matches[0]
-
-def split_sentences(text):
-    return re.split(
-        r"(?<=[.!?])\s+",
-        text
-    )
+    return "\n".join(lines)

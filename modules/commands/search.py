@@ -101,6 +101,7 @@ def search(query):
 
 def search_all(queries):
     results = []
+    scraped_urls = set()
 
     for query in queries:
         query_results = search(query)
@@ -111,13 +112,24 @@ def search_all(queries):
             if not url:
                 continue
 
-            try:
-                source = scrape(url)
-            except Exception as error:
-                print(f"Failed to scrape {url}: {error}")
+            if url in scraped_urls:
                 continue
 
-            if not source:
+            scraped_urls.add(url)
+
+            try:
+                source = scrape(url)
+
+                if not source:
+                    continue
+
+                print(
+                    f"Scraped: {url} "
+                    f"({len(source['content'])} characters)"
+                )
+
+            except Exception as error:
+                print(f"Failed to scrape {url}: {error}")
                 continue
 
             results.append({
@@ -143,4 +155,4 @@ def answer_query(query):
     if not results:
         return None
 
-    return results
+    return f"Collected {len(results)} sources."

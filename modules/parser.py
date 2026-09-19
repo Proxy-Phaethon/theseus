@@ -95,9 +95,7 @@ def parse(tokens):
         return {"operation": "FAREWELL"}
 
     if command == "search":
-        query_tokens = tokens[1:]
-
-        query = " ".join(query_tokens)
+        query = " ".join(tokens[1:])
 
         search = parse_search(query)
 

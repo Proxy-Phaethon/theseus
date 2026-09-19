@@ -40,33 +40,45 @@ def parse_search(query):
         query = query[4:].strip()
 
     if "," not in query:
-        return None
+        return {
+            "error": "MISSING_REQUEST"
+        }
 
     target_part, request_part = query.split(",", 1)
 
     target_tokens = target_part.split(maxsplit=1)
 
-    if len(target_tokens) != 2:
-        return None
+    if len(target_tokens) == 1:
+        return {
+            "error": "MISSING_TYPE"
+        }
 
     target_type = target_tokens[0].lower()
     target_name = target_tokens[1].strip()
 
     if target_type not in SEARCH_TYPES:
-        return None
+        return {
+            "error": "INVALID_TYPE"
+        }
 
     if not target_name:
-        return None
+        return {
+            "error": "MISSING_TARGET"
+        }
 
     request_part = request_part.strip()
 
     if not request_part.lower().startswith("return "):
-        return None
+        return {
+            "error": "MISSING_RETURN"
+        }
 
     request_text = request_part[7:].strip()
 
     if not request_text:
-        return None
+        return {
+            "error": "MISSING_REQUEST"
+        }
 
     requests = [
         request.strip()
@@ -99,9 +111,10 @@ def parse(tokens):
 
         search = parse_search(query)
 
-        if search is None:
+        if "error" in search:
             return {
-                "operation": "SEARCH_INVALID"
+                "operation": "SEARCH_INVALID",
+                "error": search["error"]
             }
 
         return {

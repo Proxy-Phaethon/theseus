@@ -32,9 +32,17 @@ def start_thinking():
 
     return stop_event, thread
 
-def respond(answer):
-    if not answer:
+def respond(result):
+    if not result:
         print("I couldn't find a reliable answer.")
         return
 
-    print(answer)
+    answers = result.get("answers", [])
+
+    if not answers:
+        print("I couldn't find a reliable answer.")
+        return
+
+    for answer in answers:
+        print(answer["answer"])
+        print(f"Source: {answer['source']}")

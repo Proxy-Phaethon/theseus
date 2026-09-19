@@ -4,29 +4,28 @@ def read(investigation, sources):
     for source in sources:
         source["content"] = clean_text(source["content"])
 
-        answer = find_answer(
-            investigation,
-            source["content"]
-        )
+        for request in investigation["requests"]:
+            answer = find_answer(
+                request,
+                source["content"]
+            )
 
-        if answer:
-            answers.append({
-                "answer": answer,
-                "source": source["url"]
-            })
+            if answer:
+                answers.append({
+                    "request": request,
+                    "answer": answer,
+                    "source": source["url"]
+                })
 
     return answers
 
-def find_answer(investigation, text):
-    requests = investigation["requests"]
+def find_answer(request, text):
+    lines = text.splitlines()
 
-    for request in requests:
-        lines = text.splitlines()
-
-        for i, line in enumerate(lines):
-            if request.lower() in line.lower():
-                if i + 1 < len(lines):
-                    return lines[i + 1]
+    for i, line in enumerate(lines):
+        if request.lower() in line.lower():
+            if i + 1 < len(lines):
+                return lines[i + 1]
 
     return None
 

@@ -30,21 +30,33 @@ SEARCH_ERRORS = {
         "What kind of thing are we looking for?",
         "I need a target type before we begin.",
         "Person? Company? Place? Give me something to work with.",
+        "You've given me a name, but not what it belongs to.",
+        "I need to know what I'm looking at first.",
     ],
 
-    "INVALID_TYPE": [
-        "I don't recognize that as a target type.",
-        "I'm not sure what kind of thing that is.",
-        "That doesn't look like a target type I know.",
-        "Try giving me something like person, company, place, or event.",
+    "INVALID_TARGET_TYPE": [
+        "'{target_type}'? Seriously?",
+        "I don't recognize '{target_type}' as a target type.",
+        "We're conducting an investigation, not whatever '{target_type}' is.",
+        "Please give me an actual target type, not '{target_type}'.",
+        "I have no idea what '{target_type}' is supposed to mean.",
+        "Since when is '{target_type}' a target type?",
+        "I'm going to need a better category than '{target_type}'.",
+        "'{target_type}' is certainly a choice.",
+    ],
+
+    "MISSING_TARGET": [
+        "You've given me the type. Where's the target?",
+        "I know what we're looking for. Now tell me who or what it is.",
+        "Target type noted. Target missing.",
+        "You forgot the actual target.",
+        "Person, company, place... excellent. Which one?",
     ],
 
     "MISSING_REQUEST": [
-        "You found the target. Now tell me what you want to know.",
-        "Target acquired. What information are you after?",
-        "I know who we're looking for. What should I find out?",
-        "You've given me the target. Now give me the question.",
-        "Fine. I have the target. What do you want from it?",
+        "You've given me {target_type} '{target_name}'. Now what do you want to know?",
+        "I have {target_type} '{target_name}'. What's the objective?",
+        "Target acquired: {target_name}. What information are you after?",
     ],
 
     "MISSING_RETURN": [
@@ -52,6 +64,8 @@ SEARCH_ERRORS = {
         "You've identified the target. Now tell me what information you want.",
         "What should I find out about it?",
         "Target noted. What information are we after?",
+        "You've given me someone to investigate. Give me something to investigate.",
+        "What exactly am I supposed to extract from this?",
     ],
 }
 
@@ -88,6 +102,13 @@ def main():
             response = random_response(
                 SEARCH_ERRORS[error],
                 last_search_response
+            )
+
+            target = parsed.get("target", {})
+
+            response = response.format(
+                target_type=parsed.get("target_type", ""),
+                target_name=parsed.get("target_name", "")
             )
 
             print(response)

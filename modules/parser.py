@@ -39,45 +39,61 @@ def parse_search(query):
     if query.lower().startswith("for "):
         query = query[4:].strip()
 
-    if "," not in query:
-        return {
-            "error": "MISSING_REQUEST"
-        }
-
-    target_part, request_part = query.split(",", 1)
-
-    target_tokens = target_part.split(maxsplit=1)
-
-    if len(target_tokens) == 1:
+    if not query:
         return {
             "error": "MISSING_TYPE"
         }
 
+    target_tokens = query.split(maxsplit=1)
+
     target_type = target_tokens[0].lower()
-    target_name = target_tokens[1].strip()
 
     if target_type not in SEARCH_TYPES:
         return {
-            "error": "INVALID_TYPE"
+            "error": "INVALID_TARGET_TYPE",
+            "target_type": target_type,
         }
+
+    if len(target_tokens) == 1:
+        return {
+            "error": "MISSING_TARGET",
+            "target_type": target_type,
+        }
+
+    remainder = target_tokens[1].strip()
+
+    if "," not in remainder:
+        return {
+            "error": "MISSING_RETURN",
+            "target_type": target_type,
+            "target_name": remainder,
+        }
+
+    target_name, request_part = remainder.split(",", 1)
+
+    target_name = target_name.strip()
+    request_part = request_part.strip()
 
     if not target_name:
         return {
-            "error": "MISSING_TARGET"
+            "error": "MISSING_TARGET",
+            "target_type": target_type,
         }
 
-    request_part = request_part.strip()
-
-    if not request_part.lower().startswith("return "):
+    if not request_part.lower().startswith("return"):
         return {
-            "error": "MISSING_RETURN"
+            "error": "MISSING_RETURN",
+            "target_type": target_type,
+            "target_name": target_name,
         }
 
-    request_text = request_part[7:].strip()
+    request_text = request_part[6:].strip()
 
     if not request_text:
         return {
-            "error": "MISSING_REQUEST"
+            "error": "MISSING_REQUEST",
+            "target_type": target_type,
+            "target_name": target_name,
         }
 
     requests = [
@@ -114,7 +130,7 @@ def parse(tokens):
         if "error" in search:
             return {
                 "operation": "SEARCH_INVALID",
-                "error": search["error"]
+                **search
             }
 
         return {

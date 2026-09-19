@@ -25,25 +25,49 @@ GREETINGS = [
 ]
 
 SEARCH_ERRORS = {
-    "MISSING_TYPE":
-        "Be more specific. What exactly is that thing?",
+    "MISSING_TYPE": [
+        "Be more specific. What exactly is that?",
+        "What kind of thing are we looking for?",
+        "I need a target type before we begin.",
+        "Person? Company? Place? Give me something to work with.",
+    ],
 
-    "INVALID_TYPE":
-        "I need to know what kind of thing I'm looking for.",
+    "INVALID_TYPE": [
+        "I don't recognize that as a target type.",
+        "I'm not sure what kind of thing that is.",
+        "That doesn't look like a target type I know.",
+        "Try giving me something like person, company, place, or event.",
+    ],
 
-    "MISSING_TARGET":
-        "You forgot to tell me what I'm actually looking for.",
+    "MISSING_REQUEST": [
+        "You found the target. Now tell me what you want to know.",
+        "Target acquired. What information are you after?",
+        "I know who we're looking for. What should I find out?",
+        "You've given me the target. Now give me the question.",
+        "Fine. I have the target. What do you want from it?",
+    ],
 
-    "MISSING_RETURN":
+    "MISSING_RETURN": [
         "And what would you like me to find about it?",
-
-    "MISSING_REQUEST":
-        "Find what, exactly?",
-
+        "You've identified the target. Now tell me what information you want.",
+        "What should I find out about it?",
+        "Target noted. What information are we after?",
+    ],
 }
+
+def random_response(responses, last_response=None):
+    choices = [
+        response
+        for response in responses
+        if response != last_response
+    ]
+
+    return random.choice(choices)
 
 def main():
     print("Hey.")
+
+    last_search_response = None
 
     while True:
         command = input("> ")
@@ -59,12 +83,15 @@ def main():
             break
 
         elif parsed["operation"] == "SEARCH_INVALID":
-            print(
-                SEARCH_ERRORS.get(
-                    parsed["error"],
-                    "You're going to have to give me a little more to work with."
-                )
+            error = parsed["error"]
+
+            response = random_response(
+                SEARCH_ERRORS[error],
+                last_search_response
             )
+
+            print(response)
+            last_search_response = response
 
         elif parsed["operation"] == "SEARCH":
             stop_event, thread = start_thinking()

@@ -1,6 +1,22 @@
 from collections import Counter
 from datetime import datetime
 
+import spacy
+
+nlp = spacy.load("en_core_web_sm")
+
+def analyze_request(request):
+    doc = nlp(request)
+
+    return [
+        {
+            "text": token.text,
+            "lemma": token.lemma_,
+            "pos": token.pos_,
+        }
+        for token in doc
+    ]
+
 def normalize_answer(answer):
     answer = answer.strip()
 

@@ -10,7 +10,7 @@ def thinking_animation(stop_event):
         frame = next(frames)
 
         sys.stdout.write(
-            f"\rSleuthing{frame}   "
+            f"\rSearching{frame}   "
         )
         sys.stdout.flush()
 
@@ -40,9 +40,8 @@ def respond(result):
     answers = result.get("answers", [])
 
     if not answers:
-        print("I couldn't find a reliable answer.")
+        print("Error.")
         return
 
     for answer in answers:
         print(answer["answer"])
-        print(f"Source: {answer['source']}")

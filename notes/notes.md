@@ -142,3 +142,70 @@ COMPANY PROFILE
     ├── Evidence
     ├── Finding
     └── Confidence
+
+## profile for an event
+
+EVENT PROFILE
+│
+├── TARGET
+│   ├── Official name
+│   ├── Alternative names
+│   ├── Event type
+│   └── Identification confidence
+│
+├── DETAILS
+│   ├── Date
+│   ├── Time
+│   ├── Duration
+│   ├── Status
+│   └── Description
+│
+├── LOCATION
+│   ├── Venue
+│   ├── City
+│   ├── Region
+│   ├── Country
+│   └── Coordinates
+│
+├── ORGANIZATION
+│   ├── Organizer
+│   ├── Host
+│   ├── Sponsors
+│   ├── Partners
+│   └── Affiliates
+│
+├── PARTICIPANTS
+│   ├── People
+│   ├── Organizations
+│   ├── Companies
+│   ├── Speakers
+│   ├── Performers
+│   └── Other participants
+│
+├── ACTIVITY
+│   ├── Schedule
+│   ├── Announcements
+│   ├── Incidents
+│   ├── Notable occurrences
+│   └── Related events
+│
+├── DIGITAL PRESENCE
+│   ├── Official website
+│   ├── Social accounts
+│   ├── Hashtags
+│   ├── Livestreams
+│   ├── Videos
+│   └── Other online references
+│
+├── IMPACT / CONTEXT
+│   ├── Purpose
+│   ├── Significance
+│   ├── Related organizations
+│   ├── Related people
+│   └── Consequences / aftermath
+│
+└── SOURCES
+    ├── Sources
+    ├── Evidence
+    ├── Findings
+    └── Confidence

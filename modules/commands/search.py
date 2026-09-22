@@ -3,7 +3,6 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from modules.commands.helpers.scraper import scrape
-from modules.commands.helpers.reader import read
 
 SEARXNG_URL = "http://localhost:8080/search"
 
@@ -29,7 +28,6 @@ def search(query):
 
 def formulate_queries(investigation):
     target = investigation["target"]
-    requests = investigation["requests"]
 
     target_type = target["type"]
     target_name = target["name"]
@@ -43,76 +41,60 @@ def formulate_queries(investigation):
             queries.append(query)
 
     add_query(target_name)
-
     add_query(f"{target_type} {target_name}")
-
-    for request in requests:
-        add_query(f"{target_name} {request}")
-        add_query(f"{target_type} {target_name} {request}")
 
     return queries
 
-def search_all(queries):
-    results = []
-    scraped_urls = set()
+def collect_sources(queries):
+    sources = []
+    seen_urls = set()
 
     for query in queries:
-        query_results = search(query)
+        results = search(query)
 
-        for result in query_results:
+        for result in results:
             url = result.get("url")
 
-            if not url:
+            if not url or url in seen_urls:
                 continue
 
-            if url in scraped_urls:
-                continue
-
-            scraped_urls.add(url)
+            seen_urls.add(url)
 
             try:
                 source = scrape(url)
-
-                if not source:
-                    continue
-
-                content = source.get("content", "")
-
-                if not content.strip():
-                    continue
-
-            except Exception as error:
+            except Exception:
                 continue
 
-            results.append({
+            if not source:
+                continue
+
+            content = source.get("content", "")
+
+            if not content.strip():
+                continue
+
+            sources.append({
                 "title": result.get("title"),
                 "url": url,
-                "content_type": source["content_type"],
+                "content_type": source.get("content_type"),
                 "content": content,
                 "search_query": query,
             })
 
-    return results
+    return sources
 
-def answer_query(investigation):
+def search_all(investigation):
     queries = formulate_queries(investigation)
 
     print("\nQueries:")
+
     for query in queries:
         print(f"  {query}")
 
-    results = search_all(queries)
-
-    if not results:
-        return None
-
-    answers = read(
-        investigation,
-        results
-    )
+    sources = collect_sources(queries)
 
     return {
         "investigation": investigation,
         "queries": queries,
-        "answers": answers,
+        "sources": sources,
     }

@@ -1,3 +1,4 @@
+import re
 from collections import Counter
 from datetime import datetime
 
@@ -5,120 +6,209 @@ import spacy
 
 nlp = spacy.load("en_core_web_sm")
 
+def read(investigation, sources):
+    evidence = build_evidence(sources)
+
+    answers = []
+
+    for request in investigation["requests"]:
+        request_data = analyze_request(request)
+
+        candidates = find_candidates(
+            request_data,
+            evidence
+        )
+
+        extracted = extract_answers(candidates)
+
+        weighted = weigh_answers(extracted)
+
+        if weighted:
+            answers.append({
+                "request": request,
+                "answer": weighted["answer"],
+                "sources": weighted["sources"]
+            })
+
+    return answers
+
+def build_evidence(sources):
+    evidence = []
+
+    for source in sources:
+        content = clean_text(source["content"])
+        lines = content.splitlines()
+
+        for index, line in enumerate(lines):
+            evidence.append({
+                "text": line,
+                "source": source["url"],
+                "lines": lines,
+                "index": index
+            })
+
+    return evidence
+
 def analyze_request(request):
     doc = nlp(request)
 
-    return [
-        {
-            "text": token.text,
-            "lemma": token.lemma_,
-            "pos": token.pos_,
+    tokens = []
+
+    for token in doc:
+        if token.is_stop or token.is_punct:
+            continue
+
+        tokens.append({
+            "text": token.text.lower(),
+            "lemma": token.lemma_.lower(),
+            "pos": token.pos_
+        })
+
+    return {
+        "text": request,
+        "tokens": tokens
+    }
+
+def find_candidates(request, evidence):
+    candidates = []
+
+    request_terms = {
+        token["lemma"]
+        for token in request["tokens"]
+    }
+
+    for item in evidence:
+        text = item["text"].lower()
+
+        document = nlp(text)
+
+        evidence_terms = {
+            token.lemma_.lower()
+            for token in document
+            if not token.is_stop and not token.is_punct
         }
-        for token in doc
-    ]
 
-def normalize_answer(answer):
-    answer = answer.strip()
+        overlap = request_terms & evidence_terms
 
-    formats = [
-        "%d %B %Y",
-        "%B %d, %Y",
-        "%d %B %Y",
-        "%A, %B %d, %Y",
-    ]
+        if not overlap:
+            continue
 
-    for date_format in formats:
-        try:
-            date = datetime.strptime(answer, date_format)
-            return date.strftime("%d %B %Y")
-        except ValueError:
-            pass
+        score = len(overlap)
 
-    return " ".join(answer.split())
+        candidates.append({
+            **item,
+            "score": score
+        })
+
+    candidates.sort(
+        key=lambda item: item["score"],
+        reverse=True
+    )
+
+    return candidates
+
+def extract_answers(candidates):
+    answers = []
+
+    for candidate in candidates:
+        lines = candidate["lines"]
+        index = candidate["index"]
+        text = candidate["text"]
+
+        value = extract_inline_value(text)
+
+        if value:
+            answers.append({
+                "answer": value,
+                "source": candidate["source"]
+            })
+            continue
+
+        if index + 1 < len(lines):
+            next_line = lines[index + 1].strip()
+
+            if next_line:
+                answers.append({
+                    "answer": next_line,
+                    "source": candidate["source"]
+                })
+
+    return answers
+
+def extract_inline_value(text):
+    match = re.search(
+        r":\s*(.+)$",
+        text
+    )
+
+    if match:
+        return match.group(1).strip()
+
+    return None
 
 def weigh_answers(answers):
+    if not answers:
+        return None
+
     normalized = []
 
     for answer in answers:
         normalized.append({
             **answer,
-            "normalized": normalize_answer(answer["answer"])
+            "normalized": normalize_answer(
+                answer["answer"]
+            )
         })
 
     counts = Counter(
         answer["normalized"]
         for answer in normalized
+        if answer["normalized"]
     )
 
     if not counts:
         return None
 
-    winner = counts.most_common(1)[0][0]
+    selected = counts.most_common(1)[0][0]
 
     supporting = [
         answer
         for answer in normalized
-        if answer["normalized"] == winner
+        if answer["normalized"] == selected
     ]
 
     return {
-        "answer": winner,
-        "sources": [
+        "answer": selected,
+        "sources": list(dict.fromkeys(
             answer["source"]
             for answer in supporting
-        ]
+        ))
     }
 
-def read(investigation, sources):
-    evidence = []
+def normalize_answer(answer):
+    answer = " ".join(answer.split())
 
-    for source in sources:
-        source["content"] = clean_text(source["content"])
+    date_formats = [
+        "%d %B %Y",
+        "%B %d, %Y",
+        "%A, %B %d, %Y",
+        "%d %b %Y",
+        "%B %d %Y",
+    ]
 
-        for line in source["content"].splitlines():
-            evidence.append({
-                "text": line,
-                "source": source["url"]
-            })
+    for date_format in date_formats:
+        try:
+            date = datetime.strptime(
+                answer,
+                date_format
+            )
 
-    answers = []
+            return date.strftime("%d %B %Y")
 
-    for request in investigation["requests"]:
-        matches = find_answer(request, evidence)
-
-        if matches:
-            answer = weigh_answers(matches)
-
-            if answer:
-                answer["request"] = request
-                answers.append(answer)
-
-    return answers
-
-def find_answer(request, evidence):
-    matches = []
-
-    for i, item in enumerate(evidence):
-        text = item["text"].strip()
-
-        if request.lower() not in text.lower():
+        except ValueError:
             continue
 
-        if i + 1 >= len(evidence):
-            continue
-
-        next_item = evidence[i + 1]
-
-        if next_item["source"] != item["source"]:
-            continue
-
-        matches.append({
-            "request": request,
-            "answer": next_item["text"],
-            "source": next_item["source"]
-        })
-
-    return matches
+    return answer.lower()
 
 def clean_text(text):
     lines = []

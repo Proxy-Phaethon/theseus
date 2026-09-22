@@ -1,6 +1,6 @@
 from modules.tokenizer import tokenize
 from modules.parser import parse
-from modules.commands.search import answer_query
+from modules.commands.search import search_all
 from modules.responder import respond, start_thinking
 
 import random
@@ -118,12 +118,12 @@ def main():
             stop_event, thread = start_thinking()
 
             try:
-                answer = answer_query(parsed)
+                result = search_all(parsed)
             finally:
                 stop_event.set()
                 thread.join()
 
-            respond(answer)
+            respond(result)
 
         else:
             print("sorry?")

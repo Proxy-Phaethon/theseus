@@ -201,6 +201,7 @@ def scrape_media(url):
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
+        "noprogress": True,
     }
 
     with yt_dlp.YoutubeDL(options) as ydl:
@@ -299,7 +300,7 @@ def scrape(url):
         try:
             return scrape_media(url)
         except Exception:
-            pass
+            return None
 
     response = fetch(url)
 

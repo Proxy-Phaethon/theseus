@@ -73,7 +73,7 @@ def find_candidates(request, evidence):
     candidates = []
 
     request_terms = {
-        token["lemma"]
+        token.lemma_.lower()
         for token in nlp(request["text"])
         if not token.is_stop and not token.is_punct
     }

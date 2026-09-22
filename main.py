@@ -104,8 +104,6 @@ def main():
                 last_search_response
             )
 
-            target = parsed.get("target", {})
-
             response = response.format(
                 target_type=parsed.get("target_type", ""),
                 target_name=parsed.get("target_name", "")

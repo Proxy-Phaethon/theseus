@@ -74,13 +74,12 @@ def find_candidates(request, evidence):
 
     request_terms = {
         token["lemma"]
-        for token in request["tokens"]
+        for token in nlp(request["text"])
+        if not token.is_stop and not token.is_punct
     }
 
     for item in evidence:
-        text = item["text"].lower()
-
-        document = nlp(text)
+        document = nlp(item["text"])
 
         evidence_terms = {
             token.lemma_.lower()
@@ -93,7 +92,10 @@ def find_candidates(request, evidence):
         if not overlap:
             continue
 
-        score = len(overlap)
+        score = len(overlap) / len(request_terms)
+
+        if score < 0.5:
+            continue
 
         candidates.append({
             **item,

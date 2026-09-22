@@ -4,6 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
 from docx import Document
+import yt_dlp
 
 USER_AGENT = "Theseus/0.1"
 
@@ -52,10 +53,7 @@ def scrape_pdf(content):
     pages = []
 
     for page in reader.pages:
-        try:
-            text = page.extract_text()
-        except Exception:
-            continue
+        text = page.extract_text()
 
         if text:
             pages.append(text)
@@ -73,6 +71,37 @@ def scrape_docx(content):
 
     return clean_text("\n".join(paragraphs))
 
+def scrape_video(url):
+    options = {
+        "quiet": True,
+        "skip_download": True,
+        "writesubtitles": True,
+        "writeautomaticsub": True,
+        "subtitleslangs": ["en"],
+    }
+
+    with yt_dlp.YoutubeDL(options) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    return {
+        "url": url,
+        "content_type": "video",
+        "content": clean_text(
+            "\n".join(filter(None, [
+                info.get("title"),
+                info.get("description"),
+            ]))
+        ),
+        "metadata": {
+            "title": info.get("title"),
+            "channel": info.get("channel"),
+            "uploader": info.get("uploader"),
+            "upload_date": info.get("upload_date"),
+            "duration": info.get("duration"),
+            "description": info.get("description"),
+        }
+    }
+
 def scrape(url):
     response = fetch(url)
 
@@ -88,6 +117,12 @@ def scrape(url):
                 errors="replace"
             )
         )
+
+        return {
+            "url": url,
+            "content_type": content_type,
+            "content": content
+        }
 
     elif "application/pdf" in content_type:
         content = scrape_pdf(response.content)

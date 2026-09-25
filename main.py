@@ -1,4 +1,4 @@
-from identifier import Identifier
+from core.identifier import Identifier
 
 def main() -> None:
     print("THESEUS")

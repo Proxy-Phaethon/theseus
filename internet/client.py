@@ -51,11 +51,8 @@ class Client:
         data: Any = None,
         json: Any = None,
         headers: dict[str, str] | None = None,
+        raise_for_status: bool = True,
     ) -> httpx.Response:
-        """
-        Send an HTTP request.
-        """
-
         try:
             response = self._client.request(
                 method,
@@ -66,7 +63,9 @@ class Client:
                 headers=headers,
             )
 
-            response.raise_for_status()
+            if raise_for_status:
+                response.raise_for_status()
+
             return response
 
         except httpx.HTTPError as exc:

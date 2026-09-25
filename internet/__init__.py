@@ -18,9 +18,7 @@ class Internet:
     ) -> None:
         self.client = Client(
             timeout=timeout,
-            headers={
-                "User-Agent": user_agent,
-            },
+            headers={"User-Agent": user_agent},
         )
 
         self.browser = BrowserSession(
@@ -57,7 +55,7 @@ class Internet:
         self.browser.close()
 
     def __enter__(self) -> Internet:
-        self.close()
+        return self
 
     def __exit__(self, *args: object) -> None:
         self.close()

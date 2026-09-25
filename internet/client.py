@@ -79,12 +79,14 @@ class Client:
         *,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        raise_for_status: bool = True,
     ) -> httpx.Response:
         return self.request(
             "GET",
             url,
             params=params,
             headers=headers,
+            raise_for_status=raise_for_status,
         )
 
     def post(

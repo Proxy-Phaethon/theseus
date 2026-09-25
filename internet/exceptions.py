@@ -5,3 +5,6 @@ class InternetError(Exception):
 
 class RequestError(InternetError):
     """Raised when an HTTP request fails."""
+
+class BrowserError(InternetError):
+    """Raised when browser operations fail."""

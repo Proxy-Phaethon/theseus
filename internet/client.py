@@ -68,9 +68,16 @@ class Client:
 
             return response
 
-        except httpx.HTTPError as exc:
+        except httpx.HTTPStatusError as exc:
             raise RequestError(
-                f"{method.upper()} request failed: {url}"
+                f"{method.upper()} request failed: "
+                f"{exc.response.status_code} {url} "
+                f"{exc.response.text}"
+            ) from exc
+
+        except httpx.RequestError as exc:
+            raise RequestError(
+                f"{method.upper()} request failed: {url} ({exc})"
             ) from exc
 
     def get(

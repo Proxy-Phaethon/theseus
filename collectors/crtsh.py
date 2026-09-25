@@ -1,3 +1,5 @@
+## currently doesnt work, fixing the bug
+
 from __future__ import annotations
 
 from core.identifier import Entity, EntityType
@@ -5,29 +7,27 @@ from internet import Internet
 
 from .base import Collector
 
-class SearXNGCollector(Collector):
-    name = "searxng"
+class CRTShCollector(Collector):
+    name = "crtsh"
 
     supported_types = {
-        EntityType.USERNAME,
-        EntityType.PERSON,
-        EntityType.ORGANIZATION,
+        EntityType.DOMAIN,
     }
 
-    def __init__(
-        self,
-        internet: Internet,
-        base_url: str = "http://localhost:8080",
-    ) -> None:
+    def __init__(self, internet: Internet) -> None:
         self.internet = internet
-        self.base_url = base_url.rstrip("/")
 
     def collect(self, entity: Entity):
+        if not self.supports(entity):
+            raise ValueError(
+                f"{self.name} does not support {entity.type.value}"
+            )
+
         response = self.internet.client.get(
-            f"{self.base_url}/search",
+            "https://crt.sh/",
             params={
                 "q": entity.value,
-                "format": "json",
+                "output": "json",
             },
         )
 

@@ -151,3 +151,5 @@ The architecture is currently being redesigned around the investigation/collecto
 ## License
 
 TBD
+
+note for tmrw - normalize the responses

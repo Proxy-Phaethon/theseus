@@ -4,6 +4,9 @@ from core.identifier import Identifier
 from collectors.registry import CollectorRegistry
 from collectors.hibp import HIBPCollector
 from collectors.searxng import SearXNGCollector
+from collectors.crtsh import CRTShCollector
+from collectors.urlscan import URLScanCollector
+from collectors.shodan import ShodanCollector
 from internet import Internet
 
 def main() -> None:
@@ -33,6 +36,9 @@ def main() -> None:
         try:
             registry.register(HIBPCollector(internet))
             registry.register(SearXNGCollector(internet))
+            registry.register(CRTShCollector(internet))
+            registry.register(URLScanCollector(internet))
+            registry.register(ShodanCollector(internet))
         except ValueError as exc:
             print(f"\nCollector unavailable: {exc}")
             return

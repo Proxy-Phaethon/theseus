@@ -7,11 +7,6 @@ from .page import Page
 class Internet:
     """
     Public interface to Theseus' internet layer.
-
-    Provides:
-    - HTTP access
-    - browser access
-    - unified Page objects
     """
 
     def __init__(
@@ -34,9 +29,7 @@ class Internet:
         )
 
     def open(self, url: str) -> Page:
-        """
-        Open a URL using the HTTP client.
-        """
+        """Open a URL using HTTP."""
 
         response = self.client.get(url)
 
@@ -44,21 +37,15 @@ class Internet:
             url=str(response.url),
             status=response.status_code,
             html=response.text,
-            _backend=None,
         )
 
     def browse(self, url: str) -> Page:
-        """
-        Open a URL using a real browser.
-        """
+        """Open a URL using a real browser."""
 
         browser_page = self.browser.open(url)
 
         return Page(
             url=browser_page.url,
-            status=browser_page.evaluate(
-                "() => document.readyState"
-            ),
             html=browser_page.content(),
             _backend=browser_page,
         )
@@ -70,7 +57,7 @@ class Internet:
         self.browser.close()
 
     def __enter__(self) -> Internet:
-        return self
+        self.close()
 
     def __exit__(self, *args: object) -> None:
         self.close()

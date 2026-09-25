@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from core.identifier import Identifier
 from collectors.registry import CollectorRegistry
 from collectors.hibp import HIBPCollector
+from collectors.searxng import SearXNGCollector
 from internet import Internet
 
 def main() -> None:
@@ -26,12 +27,12 @@ def main() -> None:
     print(f"Type:   {entity.type.value}")
 
     with Internet() as internet:
+
         registry = CollectorRegistry()
 
         try:
-            registry.register(
-                HIBPCollector(internet)
-            )
+            registry.register(HIBPCollector(internet))
+            registry.register(SearXNGCollector(internet))
         except ValueError as exc:
             print(f"\nCollector unavailable: {exc}")
             return
@@ -54,7 +55,6 @@ def main() -> None:
             try:
                 results = collector.collect(entity)
                 print(results)
-
             except Exception as exc:
                 print(f"Collector failed: {exc}")
 

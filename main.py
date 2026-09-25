@@ -1,5 +1,4 @@
-from internet.client import Client
-from internet.page import Page
+from internet import Internet
 
 def main() -> None:
     print("THESEUS")
@@ -12,29 +11,19 @@ def main() -> None:
         print("No target provided.")
         return
 
-    client = Client()
+    with Internet() as internet:
+        try:
+            page = internet.open(target)
 
-    try:
-        response = client.get(target)
+            print()
+            print(f"URL:    {page.url}")
+            print(f"STATUS: {page.status}")
+            print(f"TITLE:  {page.title}")
+            print()
+            print(page.text)
 
-        page = Page(
-            url=str(response.url),
-            status=response.status_code,
-            html=response.text,
-        )
-
-        print()
-        print(f"URL:    {page.url}")
-        print(f"STATUS: {page.status}")
-        print(f"TITLE:  {page.title}")
-        print()
-        print(page.text)
-
-    except Exception as exc:
-        print(f"Error: {exc}")
-
-    finally:
-        client.close()
+        except Exception as exc:
+            print(f"Error: {exc}")
 
 if __name__ == "__main__":
     main()

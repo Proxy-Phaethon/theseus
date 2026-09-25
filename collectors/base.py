@@ -12,11 +12,11 @@ class Collector(ABC):
     name: str
     supported_types: set[EntityType]
 
-    @abstractmethod
     def supports(self, entity: Entity) -> bool:
         """
         Return True if this collector can investigate the entity.
         """
+
         return entity.type in self.supported_types
 
     @abstractmethod

@@ -8,13 +8,6 @@ class Responder:
     def respond(self, entity: Entity, result: Any) -> str:
         formatters = {
             EntityType.IP_ADDRESS: self._format_ip,
-            EntityType.DOMAIN: self._format_domain,
-            EntityType.EMAIL: self._format_email,
-            EntityType.USERNAME: self._format_username,
-            EntityType.URL: self._format_url,
-            EntityType.PHONE: self._format_phone,
-            EntityType.PERSON: self._format_person,
-            EntityType.ORGANIZATION: self._format_organization,
         }
 
         formatter = formatters.get(
@@ -27,62 +20,63 @@ class Responder:
     def _format_ip(
         self,
         entity: Entity,
-        result: Any,
+        result: dict[str, Any],
     ) -> str:
-        ...
+        lines = []
 
-    def _format_domain(
-        self,
-        entity: Entity,
-        result: Any,
-    ) -> str:
-        ...
+        lines.append(f"IP Address: {result.get('ip_str', entity.value)}")
 
-    def _format_email(
-        self,
-        entity: Entity,
-        result: Any,
-    ) -> str:
-        ...
+        organization = result.get("org")
+        if organization:
+            lines.append(f"Organization: {organization}")
 
-    def _format_username(
-        self,
-        entity: Entity,
-        result: Any,
-    ) -> str:
-        ...
+        isp = result.get("isp")
+        if isp:
+            lines.append(f"ISP: {isp}")
 
-    def _format_url(
-        self,
-        entity: Entity,
-        result: Any,
-    ) -> str:
-        ...
+        asn = result.get("asn")
+        if asn:
+            lines.append(f"ASN: {asn}")
 
-    def _format_phone(
-        self,
-        entity: Entity,
-        result: Any,
-    ) -> str:
-        ...
+        country = result.get("country_name")
+        region = result.get("region_code")
+        city = result.get("city")
 
-    def _format_person(
-        self,
-        entity: Entity,
-        result: Any,
-    ) -> str:
-        ...
+        if country or region or city:
+            lines.append("\nLocation:")
 
-    def _format_organization(
-        self,
-        entity: Entity,
-        result: Any,
-    ) -> str:
-        ...
+            if country:
+                lines.append(f"  Country: {country}")
+
+            if region:
+                lines.append(f"  Region: {region}")
+
+            if city:
+                lines.append(f"  City: {city}")
+
+        hostnames = result.get("hostnames", [])
+        if hostnames:
+            lines.append("\nHostnames:")
+            for hostname in hostnames:
+                lines.append(f"  - {hostname}")
+
+        domains = result.get("domains", [])
+        if domains:
+            lines.append("\nDomains:")
+            for domain in domains:
+                lines.append(f"  - {domain}")
+
+        ports = result.get("ports", [])
+        if ports:
+            lines.append("\nOpen Ports:")
+            for port in sorted(ports):
+                lines.append(f"  - {port}")
+
+        return "\n".join(lines)
 
     def _format_unknown(
         self,
         entity: Entity,
         result: Any,
     ) -> str:
-        ...
+        return "No formatter available for this entity type."

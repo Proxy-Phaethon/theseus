@@ -152,4 +152,4 @@ The architecture is currently being redesigned around the investigation/collecto
 
 TBD
 
-note for tmrw - normalize the responses
+note for tmrw - make IP response more...robust. add next entity type.

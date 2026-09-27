@@ -1,3 +1,4 @@
+import ipaddress
 import os
 from urllib.parse import quote
 
@@ -11,6 +12,12 @@ class ShodanTool:
 
         if not self.api_key:
             raise ValueError("SHODAN_API_KEY is required")
+
+    def run(self, value):
+        if self._is_ip(value):
+            return self.search_ip(value)
+
+        return self.search_domain(value)
 
     def search_ip(self, ip):
         url = f"{self.BASE_URL}/shodan/host/{quote(ip, safe='')}"
@@ -37,3 +44,11 @@ class ShodanTool:
         response.raise_for_status()
 
         return response.json()
+
+    @staticmethod
+    def _is_ip(value):
+        try:
+            ipaddress.ip_address(value)
+            return True
+        except ValueError:
+            return False

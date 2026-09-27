@@ -1,12 +1,21 @@
 from dotenv import load_dotenv
 
-from core.identifier import Identifier
+from core.identifier import Identifier, EntityType
 from core.responder import Responder
+from tools.shodan import ShodanTool
 
 load_dotenv()
 
 def main() -> None:
-    identifier = Identifier()
+    shodan = ShodanTool()
+
+    identifier = Identifier(
+        tools={
+            EntityType.IP_ADDRESS: shodan,
+            EntityType.DOMAIN: shodan,
+        }
+    )
+
     responder = Responder()
 
     while True:

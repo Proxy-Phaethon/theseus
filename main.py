@@ -14,11 +14,12 @@ def main() -> None:
     while True:
         target = input("\nTarget: ").strip()
 
+        if target.lower() == "q":
+            print("Exiting.")
+            break
+
         if not target:
             continue
-
-        if target.lower() in {"exit", "quit"}:
-            break
 
         entity = identifier.identify(target)
 

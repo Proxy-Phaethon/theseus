@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+
 from core.identifier import Identifier
 from core.normalizer import NormalizerRegistry
 
@@ -11,6 +13,8 @@ from collectors.shodan import ShodanCollector
 from collectors.normalizers.shodan import ShodanNormalizer
 
 from internet import Internet
+
+load_dotenv()
 
 def main() -> None:
     target = input("Target: ").strip()

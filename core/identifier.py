@@ -4,6 +4,7 @@ import ipaddress
 import re
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 from urllib.parse import urlparse
 
 class EntityType(Enum):
@@ -23,73 +24,70 @@ class Entity:
     type: EntityType
 
 class Identifier:
+    def __init__(self, tools: dict[EntityType, Any] | None = None) -> None:
+        self.tools = tools or {}
+
     def identify(self, target: str) -> Entity:
         target = target.strip()
 
         if not target:
-            return Entity(
-                value=target,
-                type=EntityType.UNKNOWN,
-            )
+            return Entity(target, EntityType.UNKNOWN)
 
         if self._is_email(target):
-            return Entity(
-                value=target,
-                type=EntityType.EMAIL,
-            )
+            return Entity(target, EntityType.EMAIL)
 
         if self._is_url(target):
-            return Entity(
-                value=target,
-                type=EntityType.URL,
-            )
+            return Entity(target, EntityType.URL)
 
         if self._is_ip(target):
-            return Entity(
-                value=target,
-                type=EntityType.IP_ADDRESS,
-            )
+            return Entity(target, EntityType.IP_ADDRESS)
 
         if self._is_phone(target):
-            return Entity(
-                value=target,
-                type=EntityType.PHONE,
-            )
+            return Entity(target, EntityType.PHONE)
 
         if self._is_domain(target):
-            return Entity(
-                value=target,
-                type=EntityType.DOMAIN,
-            )
+            return Entity(target, EntityType.DOMAIN)
 
         if self._is_username(target):
-            return Entity(
-                value=target,
-                type=EntityType.USERNAME,
-            )
+            return Entity(target, EntityType.USERNAME)
 
         if self._looks_like_person(target):
-            return Entity(
-                value=target,
-                type=EntityType.PERSON,
+            return Entity(target, EntityType.PERSON)
+
+        return Entity(target, EntityType.UNKNOWN)
+
+    def run(self, entity: Entity) -> Any:
+        tool = self.tools.get(entity.type)
+
+        if tool is None:
+            raise ValueError(
+                f"No tool available for {entity.type.value}"
             )
 
-        return Entity(
-            value=target,
-            type=EntityType.UNKNOWN,
-        )
+        return tool.run(entity.value)
+
+    def process(self, target: str) -> tuple[Entity, Any]:
+        entity = self.identify(target)
+        result = self.run(entity)
+
+        return entity, result
 
     @staticmethod
     def _is_email(value: str) -> bool:
-        pattern = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
-        return bool(re.match(pattern, value))
+        return bool(
+            re.fullmatch(
+                r"[^@\s]+@[^@\s]+\.[^@\s]+",
+                value,
+            )
+        )
 
     @staticmethod
     def _is_url(value: str) -> bool:
         parsed = urlparse(value)
 
-        return parsed.scheme in {"http", "https"} and bool(
-            parsed.netloc
+        return (
+            parsed.scheme in {"http", "https"}
+            and bool(parsed.netloc)
         )
 
     @staticmethod
@@ -102,22 +100,13 @@ class Identifier:
 
     @staticmethod
     def _is_phone(value: str) -> bool:
-        digits = re.sub(r"[^\d]", "", value)
-
-        if not digits:
-            return False
+        digits = re.sub(r"\D", "", value)
 
         return 7 <= len(digits) <= 15
 
     @staticmethod
     def _is_domain(value: str) -> bool:
-        if len(value) > 253:
-            return False
-
-        if " " in value:
-            return False
-
-        if value.startswith(".") or value.endswith("."):
+        if len(value) > 253 or " " in value:
             return False
 
         labels = value.rstrip(".").split(".")
@@ -125,24 +114,18 @@ class Identifier:
         if len(labels) < 2:
             return False
 
-        label_pattern = re.compile(
-            r"^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}"
-            r"[a-zA-Z0-9])?$"
+        pattern = re.compile(
+            r"^[A-Za-z0-9]"
+            r"(?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$"
         )
 
-        return all(
-            label_pattern.match(label)
-            for label in labels
-        )
+        return all(pattern.fullmatch(label) for label in labels)
 
     @staticmethod
     def _is_username(value: str) -> bool:
-        if not 1 <= len(value) <= 30:
-            return False
-
         return bool(
             re.fullmatch(
-                r"[A-Za-z0-9._-]+",
+                r"[A-Za-z0-9._-]{1,30}",
                 value,
             )
         )

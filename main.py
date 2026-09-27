@@ -35,7 +35,7 @@ def main() -> None:
             print("No tool available for this target type.")
             continue
 
-        response = responder.respond(result)
+        response = responder.respond(entity, result)
 
         print(f"\n{response}")
 

@@ -22,55 +22,48 @@ class Responder:
         entity: Entity,
         result: dict[str, Any],
     ) -> str:
-        lines = []
+        sections = []
 
-        lines.append(f"IP Address: {result.get('ip_str', entity.value)}")
+        identity = self._format_ip_identity(entity, result)
+
+        if identity:
+            sections.append(identity)
+
+        return "\n\n".join(sections)
+
+    def _format_ip_identity(
+        self,
+        entity: Entity,
+        result: dict[str, Any],
+    ) -> str:
+        lines = ["Identity"]
+
+        ip_address = result.get("ip_str", entity.value)
+        lines.append(f"  IP Address: {ip_address}")
 
         organization = result.get("org")
         if organization:
-            lines.append(f"Organization: {organization}")
+            lines.append(f"  Organization: {organization}")
 
         isp = result.get("isp")
         if isp:
-            lines.append(f"ISP: {isp}")
+            lines.append(f"  ISP: {isp}")
 
         asn = result.get("asn")
         if asn:
-            lines.append(f"ASN: {asn}")
-
-        country = result.get("country_name")
-        region = result.get("region_code")
-        city = result.get("city")
-
-        if country or region or city:
-            lines.append("\nLocation:")
-
-            if country:
-                lines.append(f"  Country: {country}")
-
-            if region:
-                lines.append(f"  Region: {region}")
-
-            if city:
-                lines.append(f"  City: {city}")
+            lines.append(f"  ASN: {asn}")
 
         hostnames = result.get("hostnames", [])
         if hostnames:
-            lines.append("\nHostnames:")
+            lines.append("  Hostnames:")
             for hostname in hostnames:
-                lines.append(f"  - {hostname}")
+                lines.append(f"    - {hostname}")
 
         domains = result.get("domains", [])
         if domains:
-            lines.append("\nDomains:")
+            lines.append("  Domains:")
             for domain in domains:
-                lines.append(f"  - {domain}")
-
-        ports = result.get("ports", [])
-        if ports:
-            lines.append("\nOpen Ports:")
-            for port in sorted(ports):
-                lines.append(f"  - {port}")
+                lines.append(f"    - {domain}")
 
         return "\n".join(lines)
 

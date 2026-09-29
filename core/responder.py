@@ -48,6 +48,10 @@ class Responder:
         if web:
             sections.append(web)
 
+        tls = self._format_ip_tls(result)
+        if tls:
+            sections.append(tls)
+
         return "\n\n".join(sections)
 
     def _format_ip_identity(
@@ -223,6 +227,97 @@ class Responder:
             host = http.get("host")
             if host:
                 lines.append(f"    Host: {host}")
+
+            found = True
+
+        if not found:
+            return ""
+
+        return "\n".join(lines)
+
+    def _format_ip_tls(
+        self,
+        result: dict[str, Any],
+    ) -> str:
+        lines = ["TLS"]
+        found = False
+
+        for service in result.get("data", []):
+            ssl = service.get("ssl")
+
+            if not ssl:
+                continue
+
+            port = service.get("port")
+            transport = service.get("transport")
+
+            if port is None:
+                continue
+
+            label = str(port)
+
+            if transport:
+                label += f"/{transport}"
+
+            lines.append(f"  {label}")
+
+            tls_version = ssl.get("version")
+            if tls_version:
+                lines.append(f"    Version: {tls_version}")
+
+            cipher = ssl.get("cipher")
+            if isinstance(cipher, dict):
+                cipher_name = cipher.get("name")
+                if cipher_name:
+                    lines.append(f"    Cipher: {cipher_name}")
+            elif cipher:
+                lines.append(f"    Cipher: {cipher}")
+
+            cert = ssl.get("cert")
+
+            if isinstance(cert, dict):
+                subject = cert.get("subject", {})
+                issuer = cert.get("issuer", {})
+
+                if isinstance(subject, dict):
+                    common_name = subject.get("CN")
+                    if common_name:
+                        lines.append(
+                            f"    Certificate Subject: {common_name}"
+                        )
+
+                if isinstance(issuer, dict):
+                    common_name = issuer.get("CN")
+                    if common_name:
+                        lines.append(
+                            f"    Certificate Issuer: {common_name}"
+                        )
+
+                valid_from = cert.get("not_before")
+                if valid_from:
+                    lines.append(
+                        f"    Valid From: {valid_from}"
+                    )
+
+                valid_to = cert.get("not_after")
+                if valid_to:
+                    lines.append(
+                        f"    Valid To: {valid_to}"
+                    )
+
+                extensions = cert.get("extensions", {})
+
+                if isinstance(extensions, dict):
+                    names = extensions.get("subjectAltName")
+
+                    if names:
+                        lines.append("    SANs:")
+
+                        if isinstance(names, list):
+                            for name in names:
+                                lines.append(f"      - {name}")
+                        else:
+                            lines.append(f"      - {names}")
 
             found = True
 

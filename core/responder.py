@@ -33,9 +33,12 @@ class Responder:
             sections.append(network)
 
         location = self._format_ip_location(result)
-
         if location:
             sections.append(location)
+
+            exposure = self._format_ip_exposure(result)
+        if exposure:
+            sections.append(exposure)
 
         return "\n\n".join(sections)
 
@@ -112,6 +115,23 @@ class Responder:
             lines.append(
                 f"  Coordinates: {latitude}, {longitude}"
             )
+
+        return "\n".join(lines)
+
+    def _format_ip_exposure(
+    self,
+    result: dict[str, Any],
+) -> str:
+        ports = result.get("ports", [])
+
+        if not ports:
+            return ""
+
+        lines = ["Exposure"]
+
+        lines.append("  Open Ports:")
+        for port in sorted(ports):
+            lines.append(f"    - {port}")
 
         return "\n".join(lines)
 

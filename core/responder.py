@@ -25,9 +25,12 @@ class Responder:
         sections = []
 
         identity = self._format_ip_identity(entity, result)
-
         if identity:
             sections.append(identity)
+
+        network = self._format_ip_network(result)
+        if network:
+            sections.append(network)
 
         return "\n\n".join(sections)
 
@@ -64,6 +67,22 @@ class Responder:
             lines.append("  Domains:")
             for domain in domains:
                 lines.append(f"    - {domain}")
+
+        return "\n".join(lines)
+
+    def _format_ip_network(
+        self,
+        result: dict[str, Any],
+    ) -> str:
+        lines = ["Network"]
+
+        network = result.get("net")
+        if network:
+            lines.append(f"  Network: {network}")
+
+        asn = result.get("asn")
+        if asn:
+            lines.append(f"  ASN: {asn}")
 
         return "\n".join(lines)
 

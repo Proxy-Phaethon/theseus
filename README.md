@@ -150,6 +150,6 @@ The architecture is currently being redesigned around the investigation/collecto
 
 ## License
 
-TBD
+MIT License
 
 note for tmrw - add next entity type.

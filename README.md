@@ -87,53 +87,6 @@ Potential integrations include:
 
 As the project develops, tools can be added as independent collectors.
 
-## Architecture
-
-The project is built around a collector-based architecture.
-
-```text
-                         Theseus
-                            │
-                         Target
-                            │
-                     Identification
-                            │
-                    Collector Registry
-                            │
-              ┌─────────────┼─────────────┐
-              │             │             │
-           Search          APIs        OSINT Tools
-              │             │             │
-              └─────────────┼─────────────┘
-                            │
-                         Evidence
-                            │
-                       Processing
-                            │
-                       Correlation
-                            │
-                       Investigation
-```
-
-Each collector is responsible for interacting with a particular source or tool. Theseus handles the common parts of the investigation so that new integrations can be added without changing the rest of the system.
-
-## Current Development
-
-Theseus is currently being rebuilt around this architecture.
-
-The initial version is focused on:
-
-* [ ] Entity identification
-* [ ] Collector interface
-* [ ] Collector registry
-* [ ] SearXNG integration
-* [ ] First OSINT tool integrations
-* [ ] Common evidence format
-* [ ] Entity extraction
-* [ ] Investigation pivots
-* [ ] Result correlation
-* [ ] Terminal interface
-
 ## Why I Built It
 
 There are a lot of excellent OSINT tools available, but they often live in completely different places and have completely different interfaces.

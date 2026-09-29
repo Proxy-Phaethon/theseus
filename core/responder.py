@@ -44,6 +44,10 @@ class Responder:
         if services:
             sections.append(services)
 
+        web = self._format_ip_web(result)
+        if web:
+            sections.append(web)
+
         return "\n\n".join(sections)
 
     def _format_ip_identity(
@@ -178,9 +182,52 @@ class Responder:
 
         return "\n".join(lines)
 
-    def _format_unknown(
-        self,
-        entity: Entity,
-        result: Any,
-    ) -> str:
+    def _format_ip_web(
+    self,
+    result: dict[str, Any],
+) -> str:
+        lines = ["Web"]
+        found = False
+
+        for service in result.get("data", []):
+            http = service.get("http")
+
+            if not http:
+                continue
+
+            port = service.get("port")
+            transport = service.get("transport")
+
+            if port is None:
+                continue
+
+            label = str(port)
+
+            if transport:
+                label += f"/{transport}"
+
+            lines.append(f"  {label}")
+
+            status = http.get("status")
+            if status is not None:
+                lines.append(f"    Status: {status}")
+
+            title = http.get("title")
+            if title:
+                lines.append(f"    Title: {title}")
+
+            server = http.get("server")
+            if server:
+                lines.append(f"    Server: {server}")
+
+            host = http.get("host")
+            if host:
+                lines.append(f"    Host: {host}")
+
+            found = True
+
+        if not found:
+            return ""
+
+        return "\n".join(lines)
         return "No formatter available for this entity type."

@@ -52,10 +52,6 @@ class Responder:
         if isp:
             lines.append(f"  ISP: {isp}")
 
-        asn = result.get("asn")
-        if asn:
-            lines.append(f"  ASN: {asn}")
-
         hostnames = result.get("hostnames", [])
         if hostnames:
             lines.append("  Hostnames:")

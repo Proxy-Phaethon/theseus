@@ -36,9 +36,13 @@ class Responder:
         if location:
             sections.append(location)
 
-            exposure = self._format_ip_exposure(result)
+        exposure = self._format_ip_exposure(result)
         if exposure:
             sections.append(exposure)
+
+        services = self._format_ip_services(result)
+        if services:
+            sections.append(services)
 
         return "\n\n".join(sections)
 
@@ -119,9 +123,9 @@ class Responder:
         return "\n".join(lines)
 
     def _format_ip_exposure(
-    self,
-    result: dict[str, Any],
-) -> str:
+        self,
+        result: dict[str, Any],
+    ) -> str:
         ports = result.get("ports", [])
 
         if not ports:
@@ -132,6 +136,41 @@ class Responder:
         lines.append("  Open Ports:")
         for port in sorted(ports):
             lines.append(f"    - {port}")
+
+        return "\n".join(lines)
+
+    def _format_ip_services(
+        self,
+        result: dict[str, Any],
+    ) -> str:
+        services = result.get("data", [])
+
+        if not services:
+            return ""
+
+        lines = ["Services"]
+
+        for service in services:
+            port = service.get("port")
+            transport = service.get("transport")
+
+            if port is None:
+                continue
+
+            label = str(port)
+
+            if transport:
+                label += f"/{transport}"
+
+            lines.append(f"  {label}")
+
+            product = service.get("product")
+            if product:
+                lines.append(f"    Product: {product}")
+
+            version = service.get("version")
+            if version:
+                lines.append(f"    Version: {version}")
 
         return "\n".join(lines)
 

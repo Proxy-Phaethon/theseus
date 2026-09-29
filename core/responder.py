@@ -52,6 +52,10 @@ class Responder:
         if tls:
             sections.append(tls)
 
+        temporal = self._format_ip_temporal(result)
+        if temporal:
+            sections.append(temporal)
+
         return "\n\n".join(sections)
 
     def _format_ip_identity(
@@ -318,6 +322,40 @@ class Responder:
                                 lines.append(f"      - {name}")
                         else:
                             lines.append(f"      - {names}")
+
+            found = True
+
+        if not found:
+            return ""
+
+        return "\n".join(lines)
+
+    def _format_ip_temporal(
+        self,
+        result: dict[str, Any],
+    ) -> str:
+        lines = ["Temporal Metadata"]
+        found = False
+
+        for service in result.get("data", []):
+            timestamp = service.get("timestamp")
+
+            if not timestamp:
+                continue
+
+            port = service.get("port")
+            transport = service.get("transport")
+
+            if port is None:
+                continue
+
+            label = str(port)
+
+            if transport:
+                label += f"/{transport}"
+
+            lines.append(f"  {label}")
+            lines.append(f"    Observed: {timestamp}")
 
             found = True
 

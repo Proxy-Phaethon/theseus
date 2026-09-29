@@ -32,6 +32,11 @@ class Responder:
         if network:
             sections.append(network)
 
+        location = self._format_ip_location(result)
+
+        if location:
+            sections.append(location)
+
         return "\n\n".join(sections)
 
     def _format_ip_identity(
@@ -79,6 +84,34 @@ class Responder:
         asn = result.get("asn")
         if asn:
             lines.append(f"  ASN: {asn}")
+
+        return "\n".join(lines)
+
+    def _format_ip_location(
+        self,
+        result: dict[str, Any],
+    ) -> str:
+        lines = ["Location"]
+
+        country = result.get("country_name")
+        if country:
+            lines.append(f"  Country: {country}")
+
+        region = result.get("region_code")
+        if region:
+            lines.append(f"  Region: {region}")
+
+        city = result.get("city")
+        if city:
+            lines.append(f"  City: {city}")
+
+        latitude = result.get("latitude")
+        longitude = result.get("longitude")
+
+        if latitude is not None and longitude is not None:
+            lines.append(
+                f"  Coordinates: {latitude}, {longitude}"
+            )
 
         return "\n".join(lines)
 

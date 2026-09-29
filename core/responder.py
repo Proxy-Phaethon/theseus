@@ -183,9 +183,9 @@ class Responder:
         return "\n".join(lines)
 
     def _format_ip_web(
-    self,
-    result: dict[str, Any],
-) -> str:
+        self,
+        result: dict[str, Any],
+    ) -> str:
         lines = ["Web"]
         found = False
 
@@ -230,4 +230,10 @@ class Responder:
             return ""
 
         return "\n".join(lines)
+
+    def _format_unknown(
+        self,
+        entity: Entity,
+        result: Any,
+    ) -> str:
         return "No formatter available for this entity type."

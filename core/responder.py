@@ -172,6 +172,10 @@ class Responder:
             if version:
                 lines.append(f"    Version: {version}")
 
+            cpe = service.get("cpe")
+            if cpe:
+                lines.append(f"    CPE: {cpe}")
+
         return "\n".join(lines)
 
     def _format_unknown(

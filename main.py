@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 
 from core.identifier import Identifier, EntityType
-from core.responder import Responder
+from core.ip_responder import Responder
 from tools.shodan import ShodanTool
 
 load_dotenv()

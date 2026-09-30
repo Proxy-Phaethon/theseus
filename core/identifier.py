@@ -24,7 +24,10 @@ class Entity:
     type: EntityType
 
 class Identifier:
-    def __init__(self, tools: dict[EntityType, Any] | None = None) -> None:
+    def __init__(
+        self,
+        tools: dict[EntityType, list[Any]] | None = None,
+    ) -> None:
         self.tools = tools or {}
 
     def identify(self, target: str) -> Entity:
@@ -56,21 +59,33 @@ class Identifier:
 
         return Entity(target, EntityType.UNKNOWN)
 
-    def run(self, entity: Entity) -> Any:
-        tool = self.tools.get(entity.type)
+    def run(self, entity: Entity) -> list[tuple[str, Any]]:
+        tools = self.tools.get(entity.type, [])
 
-        if tool is None:
+        if not tools:
             raise ValueError(
-                f"No tool available for {entity.type.value}"
+                f"No tools available for {entity.type.value}"
             )
 
-        return tool.run(entity.value)
+        results = []
 
-    def process(self, target: str) -> tuple[Entity, Any]:
+        for tool in tools:
+            result = tool.run(entity.value)
+
+            results.append(
+                (tool.__class__.__name__, result)
+            )
+
+        return results
+
+    def process(
+        self,
+        target: str,
+    ) -> tuple[Entity, list[tuple[str, Any]]]:
         entity = self.identify(target)
-        result = self.run(entity)
+        results = self.run(entity)
 
-        return entity, result
+        return entity, results
 
     @staticmethod
     def _is_email(value: str) -> bool:

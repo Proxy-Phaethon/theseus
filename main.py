@@ -38,6 +38,13 @@ def main() -> None:
 
         print(f"\nType: {entity.type.value}")
 
+        if entity.type == EntityType.DOMAIN:
+            for tool_name, result in results:
+                print(f"\n--- {tool_name} ---")
+                print(result)
+
+            continue
+
         response = responder.respond(entity, results)
 
         print(f"\n{response}")

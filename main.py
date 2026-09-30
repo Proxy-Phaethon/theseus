@@ -11,8 +11,12 @@ def main() -> None:
 
     identifier = Identifier(
         tools={
-            EntityType.IP_ADDRESS: shodan,
-            EntityType.DOMAIN: shodan,
+            EntityType.IP_ADDRESS: [
+                shodan,
+            ],
+            EntityType.DOMAIN: [
+                shodan,
+            ],
         }
     )
 
@@ -28,11 +32,11 @@ def main() -> None:
         if not target:
             continue
 
-        entity, result = identifier.process(target)
+        entity, results = identifier.process(target)
 
         print(f"\nType: {entity.type.value}")
 
-        response = responder.respond(entity, result)
+        response = responder.respond(entity, results)
 
         print(f"\n{response}")
 

@@ -3,11 +3,13 @@ from dotenv import load_dotenv
 from core.identifier import Identifier, EntityType
 from core.ip_responder import Responder
 from tools.shodan import ShodanTool
+from tools.ldns import LDNSTool
 
 load_dotenv()
 
 def main() -> None:
     shodan = ShodanTool()
+    ldns = LDNSTool()
 
     identifier = Identifier(
         tools={
@@ -15,7 +17,7 @@ def main() -> None:
                 shodan,
             ],
             EntityType.DOMAIN: [
-                shodan,
+                ldns,
             ],
         }
     )

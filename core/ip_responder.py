@@ -5,17 +5,20 @@ from typing import Any
 from core.identifier import Entity, EntityType
 
 class Responder:
-    def respond(self, entity: Entity, result: Any) -> str:
-        formatters = {
-            EntityType.IP_ADDRESS: self._format_ip,
-        }
+    def respond(self, entity: Entity, results: list[tuple[str, Any]]) -> str:
+        if entity.type != EntityType.IP_ADDRESS:
+            return "No formatter available for this entity type."
 
-        formatter = formatters.get(
-            entity.type,
-            self._format_unknown,
+        sections = []
+
+        for tool_name, result in results:
+            sections.append(self._format_ip(entity, result))
+
+        return "\n\n".join(
+            section
+            for section in sections
+            if section
         )
-
-        return formatter(entity, result)
 
     def _format_ip(
         self,

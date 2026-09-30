@@ -4,10 +4,9 @@ class LDNSTool:
     BASE_URL = "https://ldns.com"
 
     def run(self, domain):
-        url = f"{self.BASE_URL}/{domain}"
-
         response = requests.get(
-            url,
+            f"{self.BASE_URL}/api/server",
+            params={"domain": domain},
             timeout=10,
         )
 

@@ -142,3 +142,5 @@ Many excellent OSINT tools exist, but they live in different places with differe
 ## License
 
 MIT License
+
+note for tmrw - add next entity (email)

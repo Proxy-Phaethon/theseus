@@ -4,12 +4,14 @@ from core.identifier import Identifier, EntityType
 from core.ip_responder import Responder
 from tools.shodan import ShodanTool
 from tools.ldns import LDNSTool
+from tools.rdap import RDAPTool
 
 load_dotenv()
 
 def main() -> None:
     shodan = ShodanTool()
     ldns = LDNSTool()
+    rdap = RDAPTool()
 
     identifier = Identifier(
         tools={
@@ -18,6 +20,7 @@ def main() -> None:
             ],
             EntityType.DOMAIN: [
                 ldns,
+                rdap,
             ],
         }
     )

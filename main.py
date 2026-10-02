@@ -9,6 +9,7 @@ from tools.shodan import ShodanTool
 from tools.ldns import LDNSTool
 from tools.rdap import RDAPTool
 from tools.xposedornot import XposedOrNotTool
+from tools.disify import DisifyTool
 
 load_dotenv()
 
@@ -17,6 +18,7 @@ def main() -> None:
     ldns = LDNSTool()
     rdap = RDAPTool()
     xposedornot = XposedOrNotTool()
+    disify = DisifyTool()
 
     identifier = Identifier(
         tools={
@@ -29,6 +31,7 @@ def main() -> None:
             ],
             EntityType.EMAIL: [
                 xposedornot,
+                disify,
             ],
         }
     )

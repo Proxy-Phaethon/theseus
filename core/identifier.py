@@ -51,8 +51,10 @@ class Identifier:
         if self._is_domain(target):
             return Entity(target, EntityType.DOMAIN)
 
-        if self._is_username(target):
-            return Entity(target, EntityType.USERNAME)
+        username = target.lstrip("@")
+
+        if self._is_username(username):
+            return Entity(username, EntityType.USERNAME)
 
         if self._looks_like_person(target):
             return Entity(target, EntityType.PERSON)

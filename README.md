@@ -130,3 +130,5 @@ Many excellent OSINT tools exist, but they live in different places with differe
 ## License
 
 MIT License
+
+note for tmrw: figure out solution to username entity

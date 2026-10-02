@@ -3,6 +3,8 @@ from dotenv import load_dotenv
 from core.identifier import Identifier, EntityType
 from core.ip_responder import Responder
 from core.domain_responder import DomainResponder
+from core.email_responder import EmailResponder
+
 from tools.shodan import ShodanTool
 from tools.ldns import LDNSTool
 from tools.rdap import RDAPTool
@@ -33,6 +35,7 @@ def main() -> None:
 
     responder = Responder()
     domain_responder = DomainResponder()
+    email_responder = EmailResponder()
 
     while True:
         target = input("\nTarget: ").strip()
@@ -54,11 +57,8 @@ def main() -> None:
             continue
 
         if entity.type == EntityType.EMAIL:
-            print("\nRaw Results:")
-            for tool_name, result in results:
-                print(f"\n{tool_name}:")
-                print(result)
-
+            response = email_responder.respond(results)
+            print(f"\n{response}")
             continue
 
         response = responder.respond(entity, results)

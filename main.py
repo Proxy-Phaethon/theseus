@@ -4,12 +4,15 @@ from core.identifier import Identifier, EntityType
 from core.ip_responder import Responder
 from core.domain_responder import DomainResponder
 from core.email_responder import EmailResponder
+from core.url_responder import URLResponder
 
 from tools.shodan import ShodanTool
 from tools.ldns import LDNSTool
 from tools.rdap import RDAPTool
 from tools.xposedornot import XposedOrNotTool
 from tools.disify import DisifyTool
+from tools.http import HTTPTool
+from tools.dns import DNSTool
 
 load_dotenv()
 
@@ -19,6 +22,8 @@ def main() -> None:
     rdap = RDAPTool()
     xposedornot = XposedOrNotTool()
     disify = DisifyTool()
+    http = HTTPTool()
+    dns = DNSTool()
 
     identifier = Identifier(
         tools={
@@ -33,12 +38,17 @@ def main() -> None:
                 xposedornot,
                 disify,
             ],
+            EntityType.URL: [
+                http,
+                dns,
+            ],
         }
     )
 
     responder = Responder()
     domain_responder = DomainResponder()
     email_responder = EmailResponder()
+    url_responder = URLResponder()
 
     while True:
         target = input("\nTarget: ").strip()
@@ -61,6 +71,11 @@ def main() -> None:
 
         if entity.type == EntityType.EMAIL:
             response = email_responder.respond(results)
+            print(f"\n{response}")
+            continue
+
+        if entity.type == EntityType.URL:
+            response = url_responder.respond(results)
             print(f"\n{response}")
             continue
 

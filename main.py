@@ -60,12 +60,8 @@ def main() -> None:
             continue
 
         if entity.type == EntityType.EMAIL:
-            print("\nRaw Results:")
-
-            for tool_name, result in results:
-                print(f"\n{tool_name}:")
-                print(result)
-
+            response = email_responder.respond(results)
+            print(f"\n{response}")
             continue
 
         response = responder.respond(entity, results)

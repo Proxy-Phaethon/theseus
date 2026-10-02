@@ -6,6 +6,7 @@ from core.domain_responder import DomainResponder
 from tools.shodan import ShodanTool
 from tools.ldns import LDNSTool
 from tools.rdap import RDAPTool
+from tools.xposedornot import XposedOrNotTool
 
 load_dotenv()
 
@@ -13,6 +14,7 @@ def main() -> None:
     shodan = ShodanTool()
     ldns = LDNSTool()
     rdap = RDAPTool()
+    xposedornot = XposedOrNotTool()
 
     identifier = Identifier(
         tools={
@@ -22,6 +24,9 @@ def main() -> None:
             EntityType.DOMAIN: [
                 ldns,
                 rdap,
+            ],
+            EntityType.EMAIL: [
+                xposedornot,
             ],
         }
     )

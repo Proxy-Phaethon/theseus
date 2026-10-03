@@ -1,5 +1,13 @@
+from typing import Any
+
+from core.identifier import Entity
+
 class DomainResponder:
-    def respond(self, results):
+    def respond(
+        self,
+        entity: Entity,
+        results: list[tuple[str, Any]],
+    ) -> str:
         data = {
             tool_name: result
             for tool_name, result in results
@@ -61,7 +69,9 @@ class DomainResponder:
             final = redirects.get("finalUrl")
 
             if original and final and original != final:
-                lines.append(f"Redirect: {original} → {final}")
+                lines.append(
+                    f"Redirect: {original} → {final}"
+                )
 
         return lines
 
@@ -90,7 +100,9 @@ class DomainResponder:
 
         response_time = info.get("responseTime")
         if response_time is not None:
-            lines.append(f"Response Time: {response_time} ms")
+            lines.append(
+                f"Response Time: {response_time} ms"
+            )
 
         content_type = info.get("contentType")
         if content_type:
@@ -98,13 +110,17 @@ class DomainResponder:
 
         content_length = info.get("contentLength")
         if content_length is not None:
-            lines.append(f"Content Length: {content_length} bytes")
+            lines.append(
+                f"Content Length: {content_length} bytes"
+            )
 
         redirects = ldns.get("redirects", {})
 
         total_time = redirects.get("totalTime")
         if total_time is not None:
-            lines.append(f"Total Request Time: {total_time} ms")
+            lines.append(
+                f"Total Request Time: {total_time} ms"
+            )
 
         return lines
 
@@ -115,7 +131,8 @@ class DomainResponder:
 
         if "http3" in alt_svc:
             lines.append(
-                f"HTTP/3: {'Supported' if alt_svc['http3'] else 'Not detected'}"
+                "HTTP/3: "
+                f"{'Supported' if alt_svc['http3'] else 'Not detected'}"
             )
 
         headers = ldns.get("securityHeaders", [])
@@ -215,7 +232,8 @@ class DomainResponder:
             return []
 
         return [
-            f"DNSSEC: {'Enabled' if delegation_signed else 'Not enabled'}"
+            "DNSSEC: "
+            f"{'Enabled' if delegation_signed else 'Not enabled'}"
         ]
 
     @staticmethod

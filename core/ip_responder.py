@@ -2,23 +2,23 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.identifier import Entity, EntityType
+from core.identifier import Entity
 
 class Responder:
-    def respond(self, entity: Entity, results: list[tuple[str, Any]]) -> str:
-        if entity.type != EntityType.IP_ADDRESS:
-            return "No formatter available for this entity type."
-
+    def respond(
+        self,
+        entity: Entity,
+        results: list[tuple[str, Any]],
+    ) -> str:
         sections = []
 
-        for tool_name, result in results:
-            sections.append(self._format_ip(entity, result))
+        for _, result in results:
+            section = self._format_ip(entity, result)
 
-        return "\n\n".join(
-            section
-            for section in sections
-            if section
-        )
+            if section:
+                sections.append(section)
+
+        return "\n\n".join(sections)
 
     def _format_ip(
         self,
@@ -366,10 +366,3 @@ class Responder:
             return ""
 
         return "\n".join(lines)
-
-    def _format_unknown(
-        self,
-        entity: Entity,
-        result: Any,
-    ) -> str:
-        return "No formatter available for this entity type."

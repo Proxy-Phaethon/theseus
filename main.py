@@ -58,7 +58,7 @@ def main() -> None:
     responders = build_responders()
 
     while True:
-        target = input("\nTarget: ").strip()
+        target = input("\n> ").strip()
 
         if target.lower() == "q":
             print("Exiting.")

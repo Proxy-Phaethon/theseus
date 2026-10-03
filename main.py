@@ -18,33 +18,44 @@ from tools.whatsmyname import WhatsMyNameTool
 
 load_dotenv()
 
-def main() -> None:
-    shodan = ShodanTool()
-    ldns = LDNSTool()
-    rdap = RDAPTool()
-    xposedornot = XposedOrNotTool()
-    disify = DisifyTool()
-    http = HTTPTool()
-    dns = DNSTool()
-    whatsmyname = WhatsMyNameTool()
-
-    identifier = Identifier(
+def build_identifier() -> Identifier:
+    return Identifier(
         tools={
-            EntityType.IP_ADDRESS: [shodan],
-            EntityType.DOMAIN: [ldns, rdap],
-            EntityType.EMAIL: [xposedornot, disify],
-            EntityType.URL: [http, dns],
-            EntityType.USERNAME: [whatsmyname],
+            EntityType.IP_ADDRESS: [
+                ShodanTool(),
+            ],
+            EntityType.DOMAIN: [
+                LDNSTool(),
+                RDAPTool(),
+            ],
+            EntityType.EMAIL: [
+                XposedOrNotTool(),
+                DisifyTool(),
+            ],
+            EntityType.URL: [
+                HTTPTool(),
+                DNSTool(),
+            ],
+            EntityType.USERNAME: [
+                WhatsMyNameTool(),
+            ],
         }
     )
 
-    responders = {
+
+def build_responders():
+    return {
         EntityType.IP_ADDRESS: Responder(),
         EntityType.DOMAIN: DomainResponder(),
         EntityType.EMAIL: EmailResponder(),
         EntityType.URL: URLResponder(),
         EntityType.USERNAME: UsernameResponder(),
     }
+
+
+def main() -> None:
+    identifier = build_identifier()
+    responders = build_responders()
 
     while True:
         target = input("\nTarget: ").strip()
@@ -58,10 +69,15 @@ def main() -> None:
 
         entity, results = identifier.process(target)
 
+        print(f"\nType: {entity.type.value}")
+
         responder = responders.get(entity.type)
 
         if responder is None:
-            print(f"\nNo responder available for {entity.type.value}.")
+            print(
+                f"\nNo responder available for "
+                f"{entity.type.value}."
+            )
             continue
 
         response = responder.respond(entity, results)

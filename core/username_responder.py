@@ -1,5 +1,15 @@
+from __future__ import annotations
+
+from typing import Any
+
+from core.identifier import Entity
+
 class UsernameResponder:
-    def respond(self, results):
+    def respond(
+        self,
+        entity: Entity,
+        results: list[tuple[str, Any]],
+    ) -> str:
         data = {
             tool_name: result
             for tool_name, result in results

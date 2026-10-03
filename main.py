@@ -5,6 +5,7 @@ from core.ip_responder import Responder
 from core.domain_responder import DomainResponder
 from core.email_responder import EmailResponder
 from core.url_responder import URLResponder
+from core.username_responder import UsernameResponder
 
 from tools.shodan import ShodanTool
 from tools.ldns import LDNSTool
@@ -13,6 +14,7 @@ from tools.xposedornot import XposedOrNotTool
 from tools.disify import DisifyTool
 from tools.http import HTTPTool
 from tools.dns import DNSTool
+from tools.whatsmyname import WhatsMyNameTool
 
 load_dotenv()
 
@@ -24,6 +26,7 @@ def main() -> None:
     disify = DisifyTool()
     http = HTTPTool()
     dns = DNSTool()
+    whatsmyname = WhatsMyNameTool()
 
     identifier = Identifier(
         tools={
@@ -42,6 +45,9 @@ def main() -> None:
                 http,
                 dns,
             ],
+            EntityType.USERNAME: [
+                whatsmyname,
+            ],
         }
     )
 
@@ -49,6 +55,7 @@ def main() -> None:
     domain_responder = DomainResponder()
     email_responder = EmailResponder()
     url_responder = URLResponder()
+    username_responder = UsernameResponder()
 
     while True:
         target = input("\nTarget: ").strip()
@@ -76,6 +83,11 @@ def main() -> None:
 
         if entity.type == EntityType.URL:
             response = url_responder.respond(results)
+            print(f"\n{response}")
+            continue
+
+        if entity.type == EntityType.USERNAME:
+            response = username_responder.respond(results)
             print(f"\n{response}")
             continue
 

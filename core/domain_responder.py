@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any
 
 from core.identifier import Entity
@@ -62,16 +64,15 @@ class DomainResponder:
         if url:
             lines.append(f"Canonical URL: {url}")
 
-        redirects = ldns.get("redirects", {})
+        redirects = ldns.get("redirects") or {}
 
-        if redirects:
-            original = redirects.get("originalUrl")
-            final = redirects.get("finalUrl")
+        original = redirects.get("originalUrl")
+        final = redirects.get("finalUrl")
 
-            if original and final and original != final:
-                lines.append(
-                    f"Redirect: {original} → {final}"
-                )
+        if original and final and original != final:
+            lines.append(
+                f"Redirect: {original} → {final}"
+            )
 
         return lines
 
@@ -114,7 +115,7 @@ class DomainResponder:
                 f"Content Length: {content_length} bytes"
             )
 
-        redirects = ldns.get("redirects", {})
+        redirects = ldns.get("redirects") or {}
 
         total_time = redirects.get("totalTime")
         if total_time is not None:
@@ -157,13 +158,13 @@ class DomainResponder:
 
         entities = rdap.get("entities", [])
 
-        for entity in entities:
-            roles = entity.get("roles", [])
+        for rdap_entity in entities:
+            roles = rdap_entity.get("roles", [])
 
             if "registrar" not in roles:
                 continue
 
-            vcard = entity.get("vcardArray", [])
+            vcard = rdap_entity.get("vcardArray", [])
 
             name = self._vcard_name(vcard)
 

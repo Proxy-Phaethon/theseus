@@ -1,5 +1,15 @@
+from __future__ import annotations
+
+from typing import Any
+
+from core.identifier import Entity
+
 class URLResponder:
-    def respond(self, results):
+    def respond(
+        self,
+        entity: Entity,
+        results: list[tuple[str, Any]],
+    ) -> str:
         data = {
             tool_name: result
             for tool_name, result in results
@@ -50,11 +60,15 @@ class URLResponder:
 
         content_length = http.get("content_length")
         if content_length is not None:
-            lines.append(f"Response Size: {content_length} bytes")
+            lines.append(
+                f"Response Size: {content_length} bytes"
+            )
 
         response_time = http.get("response_time_ms")
         if response_time is not None:
-            lines.append(f"Response Time: {response_time} ms")
+            lines.append(
+                f"Response Time: {response_time} ms"
+            )
 
         return lines
 

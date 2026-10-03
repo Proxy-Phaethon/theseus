@@ -60,7 +60,7 @@ Give it a target and it identifies the type (IP, domain, URL, username, or email
 | IP address | Implemented | Identity, Network, Location, Exposure, Services, Web, TLS, Temporal metadata |
 | Domain | Implemented | Identity, DNS, Subdomains, Certificates, Hosting/IPs, Web presence, Registration, Email infrastructure |
 | URL | Implemented | Final URL, Redirects, Domain/IP, Page title, Technologies, Certificates, Reputation, Historical observations |
-| Username | Planned | Platform accounts, Profile URLs, Display names, Associated emails/domains, Activity indicators |
+| Username | Implemented | Platform accounts, Profile URLs, Display names, Associated emails/domains, Activity indicators |
 | Email | Implemented | Breach exposure, Associated usernames, Associated domains, Provider, Aliases, Public appearances |
 
 ## Example output
@@ -130,5 +130,3 @@ Many excellent OSINT tools exist, but they live in different places with differe
 ## License
 
 MIT License
-
-note for tmrw: figure out solution to username entity

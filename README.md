@@ -24,108 +24,237 @@ It collects and organizes. It does not score, rank, or draw conclusions. The ana
 
 ---
 
-## What it does
+## Current Status
 
-Investigators often move between many sites and tools, each with its own interface and output format. Theseus reduces that overhead:
+Theseus is currently at **v0.1.0**.
 
-```
-Target
-  ↓
-Identify what kind of target it is
-  ↓
-Run the relevant collectors
-  ↓
-Normalize their output
-  ↓
-Present the results, with sources and timestamps
+This is an early project and the collector set is still growing. The goal for v1 is to have a simple foundation that can collect useful information from different sources and present it in one place.
+
+## Installation
+
+You can install Theseus directly from GitHub:
+
+```bash
+pip install git+https://github.com/Proxy-Phaethon/theseus.git
 ```
 
-Give it a target and it identifies the type (IP, domain, URL, username, or email), queries the sources that apply to that type, and prints the results in a fixed structure so output looks the same regardless of which tool produced it.
+After installation, the `theseus` command should be available in your terminal:
 
-## Design principles
-
-- **Present, don't interpret.** Theseus reports what sources returned. It does not assign risk scores, guess intent, or attribute activity to a person or actor.
-- **Keep provenance.** Every result should be traceable to the source that produced it and, where the source provides it, the time it was observed.
-- **Don't reinvent tools.** Existing OSINT tools and services do the collecting. Theseus wraps them behind a common interface.
-- **Stay modular.** Each source is an independent collector, so adding or replacing one does not require changing the rest.
-
-## Status
-
-**Early development.** Interfaces and output formats may change.
-
-### Target types
-
-| Target | Status | Report sections |
-|---|---|---|
-| IP address | Implemented | Identity, Network, Location, Exposure, Services, Web, TLS, Temporal metadata |
-| Domain | Implemented | Identity, DNS, Subdomains, Certificates, Hosting/IPs, Web presence, Registration, Email infrastructure |
-| URL | Implemented | Final URL, Redirects, Domain/IP, Page title, Technologies, Certificates, Reputation, Historical observations |
-| Username | Implemented | Platform accounts, Profile URLs, Display names, Associated emails/domains, Activity indicators |
-| Email | Implemented | Breach exposure, Associated usernames, Associated domains, Provider, Aliases, Public appearances |
-
-## Example output
-
-Trimmed output for `1.1.1.1` (a well-known public address, used here for testing):
-
-```
-Target: 1.1.1.1
-Type: ip_address
-
-Identity
-  IP Address: 1.1.1.1
-  Organization: APNIC Research and Development
-  ISP: Cloudflare, Inc.
-  Hostnames:
-    - one.one.one.one
-    ...
-
-Network
-  ASN: 13335
-
-Location
-  Country: Australia
-  Region: QLD
-  City: Brisbane
-
-Exposure
-  Open Ports:
-    - 53
-    - 80
-    - 443
-    ...
-
-TLS
-  443/tcp
-    Cipher: TLS_AES_256_GCM_SHA384
-    Certificate Subject: cloudflare-dns.com
-    Certificate Issuer: SSL.com SSL Intermediate CA ECC R2
-
-Temporal Metadata
-  443/tcp
-    Observed: 2026-09-29T06:47:02.566293
+```bash
+theseus
 ```
 
-**Reading this output correctly:** results reflect what the source reported, not verified facts. `1.1.1.1` is an anycast address served from many locations, so the geolocation above is not meaningful for it, and the hostnames listed can come from shared infrastructure rather than ownership. Theseus does not currently flag these cases, so the analyst needs to judge them.
+## API Keys
 
-## Scope and ethics
+Some collectors require API keys.
 
-- Theseus is intended for lawful research and investigation using publicly available information.
-- It relies on third-party sources and APIs. Users are responsible for following each service's terms of use and for holding any required API keys.
-- Some collectors query data that a service has already indexed. Any collector that sends requests directly to a target (for example, following URL redirects) is documented as such.
-- Reports about people (email, username lookups) can contain personal data. Handle it responsibly, collect only what an investigation needs, and follow the law and any ethical guidelines that apply to you.
-- Do not use Theseus for stalking, harassment, or unauthorized access.
+For example, Shodan requires:
 
-## Roadmap
+```bash
+export SHODAN_API_KEY="your-api-key"
+```
 
-- Complete the domain, URL, username, and email target types
-- Surface related entities found in results (hostnames, domains, usernames) as **leads** the analyst can choose to investigate next, rather than following them automatically
-- Flag known data-quality limits, such as anycast or CDN addresses
-- Export reports (JSON, Markdown)
-- Replace or supplement external integrations with purpose-built collectors over time
+On macOS, you can add this to your `~/.zshrc` so it only needs to be configured once:
 
-## Why I built it
+```bash
+echo 'export SHODAN_API_KEY="your-api-key"' >> ~/.zshrc
+source ~/.zshrc
+```
 
-Many excellent OSINT tools exist, but they live in different places with different interfaces. Theseus is an attempt to bring them into one workflow while keeping each tool independent. It is also a learning project: as I build individual OSINT capabilities myself, external integrations can be supplemented or replaced.
+Other collectors may be added with their own API keys as the project grows.
+
+Never commit API keys or `.env` files to the repository.
+
+## Usage
+
+Start Theseus:
+
+```bash
+theseus
+```
+
+Then provide a target:
+
+```text
+> 8.8.8.8
+```
+
+```text
+> wikipedia.com
+```
+
+```text
+> someone@example.com
+```
+
+```text
+> @username
+```
+
+```text
+> https://example.com
+```
+
+Enter `q` to exit.
+
+Theseus determines the entity type automatically and selects the collectors associated with it.
+
+## What Theseus Can Investigate
+
+### IP addresses
+
+Current collector:
+
+* **Shodan**
+
+Theseus can collect information such as:
+
+* Organization
+* ISP
+* Hostnames
+* Domains
+* Open ports
+* Services
+* Location
+* TLS information
+* Web information
+* Network information
+
+### Domains
+
+Current collectors:
+
+* **LDNS**
+* **RDAP**
+
+These provide information including:
+
+* Domain identity
+* Web presence
+* Redirects
+* HTTP security headers
+* Registrar
+* Registration dates
+* Expiration dates
+* Domain status
+* Nameservers
+* DNSSEC
+
+### Email addresses
+
+Current collectors:
+
+* **XposedOrNot**
+* **Disify**
+
+These provide information such as:
+
+* Email/domain information
+* Domain characteristics
+* Disposable email detection
+* Role account detection
+* Free provider detection
+* DNS/MX information
+* Known breach exposure
+
+### Usernames
+
+Current collector:
+
+* **WhatsMyName**
+
+Theseus uses the WhatsMyName dataset to check usernames across supported websites.
+
+Results can include:
+
+* Site
+* Category
+* Detected URL
+* HTTP status
+
+### URLs
+
+Current collectors:
+
+* **HTTP**
+* **DNS**
+
+These collect information about the specific URL being investigated, including:
+
+* Requested URL
+* Final URL
+* Redirect chain
+* HTTP status
+* Content type
+* Response size
+* Response time
+* DNS records
+* A / AAAA records
+* CNAME
+* MX
+* NS
+* TXT
+
+## Collectors
+
+| Target   | Collector   | API Key |
+| -------- | ----------- | ------- |
+| IP       | Shodan      | Yes     |
+| Domain   | LDNS        | No      |
+| Domain   | RDAP        | No      |
+| Email    | XposedOrNot | No      |
+| Email    | Disify      | No      |
+| Username | WhatsMyName | No      |
+| URL      | HTTP        | No      |
+| URL      | DNS         | No      |
+
+## Why Theseus?
+
+There are a lot of OSINT tools scattered across the internet.
+
+Some are APIs. Some are datasets. Some are command-line tools. Some are specialized for one kind of target.
+
+Theseus is an attempt to put some of them behind one simple interface.
+
+Instead of remembering which tool handles which kind of target:
+
+```text
+IP       → Shodan
+Domain   → LDNS + RDAP
+Email    → XposedOrNot + Disify
+Username → WhatsMyName
+URL      → HTTP + DNS
+```
+
+you give Theseus the target and let it figure out where to look.
+
+## Development
+
+Clone the repository:
+
+```bash
+git clone https://github.com/Proxy-Phaethon/theseus.git
+cd theseus
+```
+
+Create a virtual environment:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+Install the dependencies:
+
+```bash
+pip install -e .
+```
+
+Run the development version:
+
+```bash
+python main.py
+```
 
 ## License
 

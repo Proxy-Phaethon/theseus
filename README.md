@@ -228,34 +228,6 @@ URL      → HTTP + DNS
 
 you give Theseus the target and let it figure out where to look.
 
-## Development
-
-Clone the repository:
-
-```bash
-git clone https://github.com/Proxy-Phaethon/theseus.git
-cd theseus
-```
-
-Create a virtual environment:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-Install the dependencies:
-
-```bash
-pip install -e .
-```
-
-Run the development version:
-
-```bash
-python main.py
-```
-
 ## License
 
 MIT License

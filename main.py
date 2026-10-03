@@ -30,32 +30,21 @@ def main() -> None:
 
     identifier = Identifier(
         tools={
-            EntityType.IP_ADDRESS: [
-                shodan,
-            ],
-            EntityType.DOMAIN: [
-                ldns,
-                rdap,
-            ],
-            EntityType.EMAIL: [
-                xposedornot,
-                disify,
-            ],
-            EntityType.URL: [
-                http,
-                dns,
-            ],
-            EntityType.USERNAME: [
-                whatsmyname,
-            ],
+            EntityType.IP_ADDRESS: [shodan],
+            EntityType.DOMAIN: [ldns, rdap],
+            EntityType.EMAIL: [xposedornot, disify],
+            EntityType.URL: [http, dns],
+            EntityType.USERNAME: [whatsmyname],
         }
     )
 
-    responder = Responder()
-    domain_responder = DomainResponder()
-    email_responder = EmailResponder()
-    url_responder = URLResponder()
-    username_responder = UsernameResponder()
+    responders = {
+        EntityType.IP_ADDRESS: Responder(),
+        EntityType.DOMAIN: DomainResponder(),
+        EntityType.EMAIL: EmailResponder(),
+        EntityType.URL: URLResponder(),
+        EntityType.USERNAME: UsernameResponder(),
+    }
 
     while True:
         target = input("\nTarget: ").strip()
@@ -69,26 +58,10 @@ def main() -> None:
 
         entity, results = identifier.process(target)
 
-        print(f"\nType: {entity.type.value}")
+        responder = responders.get(entity.type)
 
-        if entity.type == EntityType.DOMAIN:
-            response = domain_responder.respond(results)
-            print(f"\n{response}")
-            continue
-
-        if entity.type == EntityType.EMAIL:
-            response = email_responder.respond(results)
-            print(f"\n{response}")
-            continue
-
-        if entity.type == EntityType.URL:
-            response = url_responder.respond(results)
-            print(f"\n{response}")
-            continue
-
-        if entity.type == EntityType.USERNAME:
-            response = username_responder.respond(results)
-            print(f"\n{response}")
+        if responder is None:
+            print(f"\nNo responder available for {entity.type.value}.")
             continue
 
         response = responder.respond(entity, results)

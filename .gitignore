@@ -3,4 +3,5 @@ __pycache__/
 *.py[cod]
 
 .env
-data/
+data/*
+!data/wmn-data.json

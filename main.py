@@ -7,14 +7,14 @@ from core.email_responder import EmailResponder
 from core.url_responder import URLResponder
 from core.username_responder import UsernameResponder
 
-from tools.shodan import ShodanTool
-from tools.ldns import LDNSTool
-from tools.rdap import RDAPTool
-from tools.xposedornot import XposedOrNotTool
-from tools.disify import DisifyTool
-from tools.http import HTTPTool
-from tools.dns import DNSTool
-from tools.whatsmyname import WhatsMyNameTool
+from tools.ip.shodan import ShodanTool
+from tools.domain.ldns import LDNSTool
+from tools.domain.rdap import RDAPTool
+from tools.email.xposedornot import XposedOrNotTool
+from tools.email.disify import DisifyTool
+from tools.url.http import HTTPTool
+from tools.url.dns import DNSTool
+from tools.username.whatsmyname import WhatsMyNameTool
 
 load_dotenv()
 

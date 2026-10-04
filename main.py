@@ -7,41 +7,14 @@ from core.email_responder import EmailResponder
 from core.url_responder import URLResponder
 from core.username_responder import UsernameResponder
 
-from tools.ip.shodan import ShodanTool
-from tools.domain.ldns import LDNSTool
-from tools.domain.rdap import RDAPTool
-from tools.email.xposedornot import XposedOrNotTool
-from tools.email.disify import DisifyTool
-from tools.url.http import HTTPTool
-from tools.url.dns import DNSTool
-from tools.username.whatsmyname import WhatsMyNameTool
+from registry.collectors import build_collectors
 
 load_dotenv()
 
 def build_identifier() -> Identifier:
     return Identifier(
-        tools={
-            EntityType.IP_ADDRESS: [
-                ShodanTool(),
-            ],
-            EntityType.DOMAIN: [
-                LDNSTool(),
-                RDAPTool(),
-            ],
-            EntityType.EMAIL: [
-                XposedOrNotTool(),
-                DisifyTool(),
-            ],
-            EntityType.URL: [
-                HTTPTool(),
-                DNSTool(),
-            ],
-            EntityType.USERNAME: [
-                WhatsMyNameTool(),
-            ],
-        }
+        tools=build_collectors()
     )
-
 
 def build_responders():
     return {
@@ -51,7 +24,6 @@ def build_responders():
         EntityType.URL: URLResponder(),
         EntityType.USERNAME: UsernameResponder(),
     }
-
 
 def main() -> None:
     identifier = build_identifier()

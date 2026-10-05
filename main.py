@@ -1,7 +1,6 @@
 from dotenv import load_dotenv
+from alive_progress import alive_bar
 
-import itertools
-import sys
 import threading
 import time
 
@@ -30,96 +29,63 @@ def build_responders():
         EntityType.USERNAME: UsernameResponder(),
     }
 
-class InvestigationLoader:
-    FRAMES = ["◒", "◓", "◑", "◐"]
+STAGES = [
+    "Identifying target",
+    "Mapping infrastructure",
+    "Querying network intelligence",
+    "Checking exposure",
+    "Inspecting certificates",
+    "Checking reputation",
+    "Checking threat intelligence",
+    "Checking anonymization",
+    "Correlating observations",
+    "Compiling intelligence",
+]
 
-    STAGES = [
-        "Identifying target",
-        "Mapping infrastructure",
-        "Querying network intelligence",
-        "Checking exposure",
-        "Inspecting certificates",
-        "Checking reputation",
-        "Checking threat intelligence",
-        "Checking anonymization",
-        "Correlating observations",
-        "Compiling intelligence",
-    ]
+def investigate(identifier, target):
+    result = []
 
-    def __init__(self):
-        self.spinner = itertools.cycle(self.FRAMES)
-        self.running = False
-        self.thread = None
-        self.process_result = None
-
-    def run(self, identifier, target):
-        self.running = True
-
-        self.thread = threading.Thread(
-            target=self._investigate,
-            args=(identifier, target),
-            daemon=True,
+    def worker():
+        result.append(
+            identifier.process(target)
         )
 
-        self.thread.start()
+    thread = threading.Thread(
+        target=worker
+    )
 
-        self._animate()
+    thread.start()
 
-        self.thread.join()
+    with alive_bar(
+        spinner="waves2",
+        title="Investigating",
+        bar=None,
+        stats=False,
+        elapsed=False,
+        monitor=False,
+    ) as bar:
 
-        return self.process_result
-
-    def _investigate(self, identifier, target):
-        self.process_result = identifier.process(target)
-
-    def _animate(self):
-        first_frame = True
-
-        for stage in self.STAGES:
-            if not self.running:
+        for stage in STAGES:
+            if not thread.is_alive():
                 break
 
-            duration = 0.45
+            bar.text = stage
 
-            end = time.time() + duration
+            end = time.time() + 0.45
 
             while time.time() < end:
-                self._render(stage, first_frame)
-                first_frame = False
-                time.sleep(0.08)
+                if not thread.is_alive():
+                    break
 
-        while self.thread.is_alive():
-            self._render(
-                "Compiling intelligence",
-                first_frame,
-            )
+                time.sleep(0.05)
 
-            first_frame = False
-            time.sleep(0.08)
+        while thread.is_alive():
+            bar.text = "Compiling intelligence"
+            time.sleep(0.05)
 
-        self.running = False
-        self._clear()
+    thread.join()
 
-    def _render(self, stage, first_frame):
-        frame = next(self.spinner)
-
-        output = (
-            "╭─ THESEUS ───────────────────────────────╮\n"
-            f"│  {frame} {stage:<36} │\n"
-            "│                                           │\n"
-            "╰───────────────────────────────────────────╯"
-        )
-
-        if not first_frame:
-            sys.stdout.write("\033[3A")
-
-        sys.stdout.write(output)
-        sys.stdout.flush()
-
-    def _clear(self):
-        sys.stdout.write("\033[3A")
-        sys.stdout.write("\033[J")
-        sys.stdout.flush()
+    return result[0]
 
 def main() -> None:
     identifier = build_identifier()
@@ -135,7 +101,7 @@ def main() -> None:
         if not target:
             continue
 
-        entity, results = InvestigationLoader().run(
+        entity, results = investigate(
             identifier,
             target,
         )
@@ -151,7 +117,10 @@ def main() -> None:
             )
             continue
 
-        response = responder.respond(entity, results)
+        response = responder.respond(
+            entity,
+            results,
+        )
 
         print(f"\n{response}")
 

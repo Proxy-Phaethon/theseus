@@ -1,6 +1,21 @@
 from core.identifier import EntityType
 
 from tools.ip.shodan import ShodanTool
+from tools.ip.censys import CensysTool
+from tools.ip.netlas import NetlasTool
+from tools.ip.ipinfo import IPInfoTool
+from tools.ip.ip_api import IPAPITool
+from tools.ip.ipapi_is import IPAPIIsTool
+from tools.ip.ripestat import RIPEstatTool
+from tools.ip.peeringdb import PeeringDBTool
+from tools.ip.team_cymru import TeamCymruTool
+from tools.ip.abuseipdb import AbuseIPDBTool
+from tools.ip.alienvault_otx import AlienVaultOTXTool
+from tools.ip.virustotal import VirusTotalTool
+from tools.ip.tor import TorExitListTool
+from tools.ip.x4bnet import X4BNetTool
+from tools.ip.robtex import RobtexTool
+from tools.ip.tlsx import TLSXTool
 
 from tools.domain.ldns import LDNSTool
 from tools.domain.rdap import RDAPTool
@@ -15,27 +30,41 @@ from tools.username.whatsmyname import WhatsMyNameTool
 
 def build_collectors():
     return {
-    EntityType.IP_ADDRESS: [
-    ShodanTool(),
-    ],
+        EntityType.IP_ADDRESS: [
+            ShodanTool(),
+            CensysTool(),
+            NetlasTool(),
+            IPInfoTool(),
+            IPAPITool(),
+            IPAPIIsTool(),
+            RIPEstatTool(),
+            PeeringDBTool(),
+            TeamCymruTool(),
+            AbuseIPDBTool(),
+            AlienVaultOTXTool(),
+            VirusTotalTool(),
+            TorExitListTool(),
+            X4BNetTool(),
+            RobtexTool(),
+            TLSXTool(),
+        ],
 
-    EntityType.DOMAIN: [
-    LDNSTool(),
-    RDAPTool(),
-    ],
+        EntityType.DOMAIN: [
+            LDNSTool(),
+            RDAPTool(),
+        ],
 
-    EntityType.EMAIL: [
-    XposedOrNotTool(),
-    DisifyTool(),
-    ],
+        EntityType.EMAIL: [
+            XposedOrNotTool(),
+            DisifyTool(),
+        ],
 
-    EntityType.URL: [
-    HTTPTool(),
-    DNSTool(),
-    ],
+        EntityType.URL: [
+            HTTPTool(),
+            DNSTool(),
+        ],
 
-    EntityType.USERNAME: [
-    WhatsMyNameTool(),
-    ],
-    
+        EntityType.USERNAME: [
+            WhatsMyNameTool(),
+        ],
     }

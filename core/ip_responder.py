@@ -329,62 +329,49 @@ class IPResponder:
                 continue
 
             port = tls.get("port")
-            tls_version = tls.get("tls_version")
-            cipher = tls.get("cipher")
-            key_exchange = tls.get("key_exchange")
-            subject = tls.get("subject_cn")
-            issuer = tls.get("issuer_cn")
-            issuer_org = tls.get("issuer_org")
-            sans = tls.get("subject_an")
-            not_before = tls.get("not_before")
-            not_after = tls.get("not_after")
-            sha256 = (
-                tls.get("fingerprint_hash", {})
-                .get("sha256")
-            )
-            wildcard = tls.get("wildcard_certificate")
-            mismatched = tls.get("mismatched")
+
+            certificate = tls.get("cert")
+
+            if not isinstance(certificate, dict):
+                continue
+
+            parsed = certificate.get("parsed", {})
+
+            if not isinstance(parsed, dict):
+                continue
 
             if port:
                 lines.append(f"Port: {port}")
 
-            if tls_version:
-                lines.append(f"Version: {tls_version}")
+            subject_dn = parsed.get("subject_dn")
 
-            if cipher:
-                lines.append(f"Cipher: {cipher}")
+            if subject_dn:
+                lines.append(f"Subject: {subject_dn}")
 
-            if key_exchange:
-                lines.append(f"Key exchange: {key_exchange}")
+            issuer_dn = parsed.get("issuer_dn")
 
-            if subject:
-                lines.append(f"Subject: {subject}")
+            if issuer_dn:
+                lines.append(f"Issuer: {issuer_dn}")
 
-            if issuer:
-                issuer_text = issuer
+            fingerprint = certificate.get(
+                "fingerprint_sha256"
+            )
 
-                if isinstance(issuer_org, list) and issuer_org:
-                    issuer_text += f" ({', '.join(issuer_org)})"
+            if fingerprint:
+                lines.append(f"SHA256: {fingerprint}")
 
-                lines.append(f"Issuer: {issuer_text}")
+            subject = parsed.get("subject", {})
 
-            if sans:
-                lines.append(f"SANs: {', '.join(sans)}")
+            if isinstance(subject, dict):
+                sans = subject.get("common_name", [])
 
-            if not_before:
-                lines.append(f"Valid from: {not_before}")
+                if sans:
+                    if isinstance(sans, str):
+                        sans = [sans]
 
-            if not_after:
-                lines.append(f"Valid until: {not_after}")
-
-            if sha256:
-                lines.append(f"SHA256: {sha256}")
-
-            if wildcard is not None:
-                lines.append(f"Wildcard: {wildcard}")
-
-            if mismatched is not None:
-                lines.append(f"Certificate mismatch: {mismatched}")
+                    lines.append(
+                        f"SANs: {', '.join(sans)}"
+                    )
 
         return lines
 

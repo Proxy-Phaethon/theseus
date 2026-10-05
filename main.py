@@ -30,15 +30,15 @@ def build_responders():
     }
 
 STAGES = [
-    "Identifying target",
-    "Mapping infrastructure",
-    "Querying network intelligence",
-    "Checking exposure",
-    "Inspecting certificates",
-    "Checking reputation",
-    "Checking threat intelligence",
-    "Checking anonymization",
-    "Correlating observations",
+    "Identifying target...",
+    "Mapping infrastructure...",
+    "Querying network intelligence...",
+    "Checking exposure...",
+    "Inspecting certificates...",
+    "Checking reputation...",
+    "Checking threat intelligence...",
+    "Checking anonymization...",
+    "Correlating observations...",
 ]
 
 def investigate(identifier, target):
@@ -56,7 +56,9 @@ def investigate(identifier, target):
     thread.start()
 
     with alive_bar(
+        1,
         spinner="waves2",
+        bar=None,
         stats=False,
         elapsed=False,
         monitor=False,

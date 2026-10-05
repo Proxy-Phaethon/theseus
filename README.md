@@ -272,46 +272,6 @@ These collectors gather information about the specific URL being investigated, i
 
 ---
 
-# Collectors
-
-| Entity   | Collector        | API Key |
-| -------- | ---------------- | ------- |
-| IP       | Shodan           | Yes     |
-| IP       | Censys           | Yes     |
-| IP       | Netlas           | Yes     |
-| IP       | FOFA             | Yes     |
-| IP       | ZoomEye          | Yes     |
-| IP       | LeakIX           | No      |
-| IP       | BinaryEdge       | Yes     |
-| IP       | Criminal IP      | Yes     |
-| IP       | naabu            | No      |
-| IP       | nmap             | No      |
-| IP       | IPinfo           | Yes     |
-| IP       | MaxMind GeoLite2 | No      |
-| IP       | ip-api           | No      |
-| IP       | ipapi.is         | No      |
-| IP       | RIPEstat         | No      |
-| IP       | bgp.he.net       | No      |
-| IP       | BGPView          | No      |
-| IP       | PeeringDB        | No      |
-| IP       | Team Cymru       | No      |
-| IP       | AbuseIPDB        | Yes     |
-| IP       | GreyNoise        | Yes     |
-| IP       | AlienVault OTX   | Yes     |
-| IP       | IPQualityScore   | Yes     |
-| IP       | VirusTotal       | Yes     |
-| IP       | tlsx             | No      |
-| IP       | httpx            | No      |
-| Domain   | LDNS             | No      |
-| Domain   | RDAP             | No      |
-| Email    | XposedOrNot      | No      |
-| Email    | Disify           | No      |
-| Username | WhatsMyName      | No      |
-| URL      | HTTP             | No      |
-| URL      | DNS              | No      |
-
----
-
 # Why Theseus?
 
 The internet already has an enormous number of OSINT tools.
@@ -328,11 +288,9 @@ Without Theseus, an investigation might look like:
 IP
  ├── Shodan
  ├── Censys
- ├── GreyNoise
  ├── AbuseIPDB
  ├── VirusTotal
  ├── RIPEstat
- ├── BGPView
  ├── ...
 ```
 

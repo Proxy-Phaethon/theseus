@@ -351,46 +351,46 @@ class IPResponder:
                 sha256 = fingerprint_hash.get("sha256")
 
             if port:
-                lines.append(f"Port: {port}")
+                lines.append(f"  Port: {port}")
 
             if tls_version:
-                lines.append(f"Version: {tls_version}")
+                lines.append(f"  Version: {tls_version}")
 
             if cipher:
-                lines.append(f"Cipher: {cipher}")
+                lines.append(f"  Cipher: {cipher}")
 
             if key_exchange:
-                lines.append(f"Key exchange: {key_exchange}")
+                lines.append(f"  Key exchange: {key_exchange}")
 
             if subject:
-                lines.append(f"Subject: {subject}")
+                lines.append(f"  Subject: {subject}")
 
             if issuer:
-                lines.append(f"Issuer: {issuer}")
+                lines.append(f"  Issuer: {issuer}")
 
             if sans:
                 if isinstance(sans, list):
                     lines.append(
-                        f"SANs: {', '.join(sans)}"
+                        f"  SANs: {', '.join(sans)}"
                     )
                 else:
-                    lines.append(f"SANs: {sans}")
+                    lines.append(f"  SANs: {sans}")
 
             if not_before:
-                lines.append(f"Valid from: {not_before}")
+                lines.append(f"  Valid from: {not_before}")
 
             if not_after:
-                lines.append(f"Valid until: {not_after}")
+                lines.append(f"  Valid until: {not_after}")
 
             if sha256:
-                lines.append(f"SHA256: {sha256}")
+                lines.append(f"  SHA256: {sha256}")
 
             if wildcard is not None:
-                lines.append(f"Wildcard: {wildcard}")
+                lines.append(f"  Wildcard: {wildcard}")
 
             if mismatched is not None:
                 lines.append(
-                    f"Certificate mismatch: {mismatched}"
+                    f"  Certificate mismatch: {mismatched}"
                 )
 
         return lines

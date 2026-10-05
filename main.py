@@ -30,15 +30,15 @@ def build_responders():
     }
 
 STAGES = [
-    "Identifying target...",
-    "Mapping infrastructure...",
-    "Querying network intelligence...",
-    "Checking exposure...",
-    "Inspecting certificates...",
-    "Checking reputation...",
-    "Checking threat intelligence...",
-    "Checking anonymization...",
-    "Correlating observations...",
+    "Identifying Target...",
+    "Doing Somersaults...",
+    "Zoning Out...",
+    "Locking In...",
+    "Drinking Tea...",
+    "Checking Data...",
+    "Petting Cats...",
+    "Verifying Results...",
+    "Concluding...",
 ]
 
 def investigate(identifier, target):

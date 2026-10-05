@@ -88,12 +88,6 @@ class IPResponder:
             self._observations(data),
         )
 
-        self._add_section(
-            sections,
-            "Sources",
-            self._sources(results),
-        )
-
         return "\n\n".join(sections)
 
     def _identity(self, data):

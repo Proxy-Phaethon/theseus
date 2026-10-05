@@ -39,7 +39,6 @@ STAGES = [
     "Checking threat intelligence",
     "Checking anonymization",
     "Correlating observations",
-    "Compiling intelligence",
 ]
 
 def investigate(identifier, target):
@@ -58,30 +57,35 @@ def investigate(identifier, target):
 
     with alive_bar(
         spinner="waves2",
-        title="Investigating",
-        bar=None,
         stats=False,
         elapsed=False,
         monitor=False,
     ) as bar:
 
-        for stage in STAGES:
-            if not thread.is_alive():
-                break
-
-            bar.text = stage
-
-            end = time.time() + 0.45
-
-            while time.time() < end:
+        while thread.is_alive():
+            for stage in STAGES:
                 if not thread.is_alive():
                     break
 
-                time.sleep(0.05)
+                for i in range(1, len(stage) + 1):
+                    if not thread.is_alive():
+                        break
 
-        while thread.is_alive():
-            bar.text = "Compiling intelligence"
-            time.sleep(0.05)
+                    bar.text = stage[:i]
+                    time.sleep(0.035)
+
+                if thread.is_alive():
+                    time.sleep(0.15)
+
+                for i in range(len(stage) - 1, 0, -1):
+                    if not thread.is_alive():
+                        break
+
+                    bar.text = stage[:i]
+                    time.sleep(0.025)
+
+        bar.text = "Compiling intelligence"
+        time.sleep(1)
 
     thread.join()
 

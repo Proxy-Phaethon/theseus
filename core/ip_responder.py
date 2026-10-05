@@ -1,890 +1,136 @@
-from __future__ import annotations
-
-from collections import Counter, defaultdict
-from typing import Any
+from collections import Counter
 
 class IPResponder:
-    def respond(
-        self,
-        entity,
-        results: list[tuple[str, Any]],
-        failures: list[dict[str, str]] | None = None,
-    ) -> str:
-        observations = self._collect_observations(results)
-
-        sections = [
-            self._identity(observations),
-            self._network(observations),
-            self._location(observations),
-            self._cloud_hosting(observations),
-            self._exposure(observations),
-            self._services(observations),
-            self._web(observations),
-            self._tls(observations),
-            self._passive_dns(observations),
-            self._reverse_dns(observations),
-            self._reputation(observations),
-            self._threats(observations),
-            self._anonymizer(observations),
-            self._temporal(observations),
-            self._observations(observations),
-            self._sources(results, failures or []),
-        ]
-
-        return "\n\n".join(
-            section
-            for section in sections
-            if section
-        )
-
-    def _collect_observations(
-        self,
-        results: list[tuple[str, Any]],
-    ) -> dict[str, Any]:
-        data: dict[str, Any] = {
-            "identity": [],
-            "organization": [],
-            "hostname": [],
-            "asn": [],
-            "prefix": [],
-            "location": [],
-            "cloud": [],
-            "hosting": [],
-            "services": [],
-            "web": [],
-            "tls": [],
-            "passive_dns": [],
-            "reverse_dns": [],
-            "reputation": [],
-            "threats": [],
-            "anonymizer": [],
-            "temporal": [],
+    def respond(self, entity, results):
+        data = {
+            name: result
+            for name, result in results
+            if isinstance(result, dict)
         }
 
-        for source, result in results:
-            if not isinstance(result, dict):
-                continue
+        lines = []
 
-            self._extract_source(
-                source,
-                result,
-                data,
-            )
+        lines.append("Identity")
+        self._identity(lines, data)
 
-        return data
+        lines.append("\nNetwork / ASN")
+        self._network(lines, data)
 
-    def _extract_source(
-        self,
-        source: str,
-        result: dict[str, Any],
-        data: dict[str, Any],
-    ) -> None:
-        if source == "CensysTool":
-            self._extract_censys(source, result, data)
+        lines.append("\nLocation")
+        self._location(lines, data)
 
-        elif source == "IPInfoTool":
-            self._extract_ipinfo(source, result, data)
+        lines.append("\nCloud / Hosting")
+        self._hosting(lines, data)
 
-        elif source == "IPAPITool":
-            self._extract_ip_api(source, result, data)
+        lines.append("\nExposure")
+        self._exposure(lines, data)
 
-        elif source == "IPAPIIsTool":
-            self._extract_ipapi_is(source, result, data)
+        lines.append("\nServices")
+        self._services(lines, data)
 
-        elif source == "RIPEstatTool":
-            self._extract_ripestat(source, result, data)
+        lines.append("\nTLS")
+        self._tls(lines, data)
 
-        elif source == "PeeringDBTool":
-            self._extract_peeringdb(source, result, data)
+        lines.append("\nPassive DNS")
+        self._passive_dns(lines, data)
 
-        elif source == "TeamCymruTool":
-            self._extract_team_cymru(source, result, data)
+        lines.append("\nReverse DNS")
+        self._reverse_dns(lines, data)
 
-        elif source == "AbuseIPDBTool":
-            self._extract_abuseipdb(source, result, data)
+        lines.append("\nReputation")
+        self._reputation(lines, data)
 
-        elif source == "AlienVaultOTXTool":
-            self._extract_otx(source, result, data)
+        lines.append("\nThreat Intelligence")
+        self._threat_intelligence(lines, data)
 
-        elif source == "VirusTotalTool":
-            self._extract_virustotal(source, result, data)
+        lines.append("\nAnonymizer")
+        self._anonymizer(lines, data)
 
-        elif source == "TorExitListTool":
-            self._extract_tor(source, result, data)
+        lines.append("\nObservations")
+        self._observations(lines, data)
 
-        elif source == "X4BNetTool":
-            self._extract_x4bnet(source, result, data)
-
-        elif source == "RobtexTool":
-            self._extract_robtex(source, result, data)
-
-        elif source == "TLSXTool":
-            self._extract_tlsx(source, result, data)
-
-        elif source == "ShodanTool":
-            self._extract_shodan(source, result, data)
-
-        elif source == "NetlasTool":
-            self._extract_netlas(source, result, data)
-
-    def _extract_censys(self, source, result, data):
-        resource = result.get("result", {}).get("resource", {})
-
-        location = resource.get("location", {})
-        self._add_location(
-            data,
-            source,
-            country=location.get("country"),
-            country_code=location.get("country_code"),
-            region=location.get("province"),
-            city=location.get("city"),
-            latitude=self._nested(
-                location,
-                "coordinates",
-                "latitude",
-            ),
-            longitude=self._nested(
-                location,
-                "coordinates",
-                "longitude",
-            ),
-            timezone=location.get("timezone"),
-        )
-
-        asn = resource.get("autonomous_system", {})
-        self._add(
-            data,
-            "asn",
-            asn.get("asn"),
-            source,
-        )
-
-        self._add(
-            data,
-            "organization",
-            asn.get("description") or asn.get("name"),
-            source,
-        )
-
-        self._add(
-            data,
-            "prefix",
-            asn.get("bgp_prefix"),
-            source,
-        )
-
-        whois = resource.get("whois", {})
-        network = whois.get("network", {})
-
-        self._add(
-            data,
-            "organization",
-            network.get("name"),
-            source,
-        )
-
-        for service in resource.get("services", []):
-            data["services"].append({
-                "source": source,
-                "port": service.get("port"),
-                "protocol": service.get("protocol"),
-                "transport": service.get("transport_protocol"),
-                "scan_time": service.get("scan_time"),
-            })
-
-        for endpoint in resource.get("endpoints", []):
-            http = endpoint.get("http", {})
-
-            if http:
-                data["web"].append({
-                    "source": source,
-                    "host": endpoint.get("hostname"),
-                    "port": endpoint.get("port"),
-                    "status": http.get("status_code"),
-                    "title": http.get("html_title"),
-                    "url": http.get("uri"),
-                    "redirects": http.get("redirect_chain", []),
-                    "scan_time": endpoint.get("scan_time"),
-                })
-
-        dns = resource.get("dns", {})
-
-        reverse = dns.get("reverse_dns", {})
-        for name in reverse.get("names", []):
-            self._add(
-                data,
-                "reverse_dns",
-                name,
-                source,
-            )
-
-        for name in dns.get("names", []):
-            self._add(
-                data,
-                "passive_dns",
-                name,
-                source,
-            )
-
-        for service in resource.get("services", []):
-            cert = service.get("cert")
-
-            if cert:
-                parsed = cert.get("parsed", {})
-
-                data["tls"].append({
-                    "source": source,
-                    "port": service.get("port"),
-                    "subject": parsed.get("subject_dn"),
-                    "issuer": parsed.get("issuer_dn"),
-                    "not_before": self._nested(
-                        parsed,
-                        "validity_period",
-                        "not_before",
-                    ),
-                    "not_after": self._nested(
-                        parsed,
-                        "validity_period",
-                        "not_after",
-                    ),
-                    "sha256": cert.get(
-                        "fingerprint_sha256"
-                    ),
-                    "names": cert.get("names", []),
-                })
-
-        for event in resource.get("whois", {}).get("events", []):
-            data["temporal"].append({
-                "source": source,
-                "type": event.get("event_action"),
-                "date": event.get("event_date"),
-            })
-
-    def _extract_ipinfo(self, source, result, data):
-        self._add(
-            data,
-            "hostname",
-            result.get("hostname"),
-            source,
-        )
-
-        self._add(
-            data,
-            "organization",
-            result.get("org"),
-            source,
-        )
-
-        self._add_location(
-            data,
-            source,
-            country=result.get("country"),
-            region=result.get("region"),
-            city=result.get("city"),
-            postal=result.get("postal"),
-            timezone=result.get("timezone"),
-            coordinates=result.get("loc"),
-        )
-
-        self._add(
-            data,
-            "cloud",
-            result.get("anycast"),
-            source,
-            label="anycast",
-        )
-
-    def _extract_ip_api(self, source, result, data):
-        self._add(
-            data,
-            "organization",
-            result.get("org") or result.get("isp"),
-            source,
-        )
-
-        self._add(
-            data,
-            "hostname",
-            result.get("reverse"),
-            source,
-        )
-
-        self._add(
-            data,
-            "asn",
-            result.get("as"),
-            source,
-        )
-
-        self._add_location(
-            data,
-            source,
-            country=result.get("country"),
-            country_code=result.get("countryCode"),
-            region=result.get("regionName"),
-            city=result.get("city"),
-            postal=result.get("zip"),
-            timezone=result.get("timezone"),
-            latitude=result.get("lat"),
-            longitude=result.get("lon"),
-        )
-
-        self._add(
-            data,
-            "hosting",
-            result.get("hosting"),
-            source,
-        )
-
-    def _extract_ipapi_is(self, source, result, data):
-        self._add(
-            data,
-            "organization",
-            result.get("company"),
-            source,
-        )
-
-        self._add(
-            data,
-            "asn",
-            result.get("asn"),
-            source,
-        )
-
-        self._add_location(
-            data,
-            source,
-            country=result.get("country"),
-            region=result.get("region"),
-            city=result.get("city"),
-            timezone=result.get("timezone"),
-            latitude=result.get("lat"),
-            longitude=result.get("lon"),
-        )
-
-    def _extract_ripestat(self, source, result, data):
-        info = result.get("data", {})
-
-        for asn in info.get("asns", []):
-            self._add(
-                data,
-                "asn",
-                asn,
-                source,
-            )
-
-        self._add(
-            data,
-            "prefix",
-            info.get("prefix"),
-            source,
-        )
-
-    def _extract_peeringdb(self, source, result, data):
-        for network in result.get("data", []):
-            self._add(
-                data,
-                "asn",
-                network.get("asn"),
-                source,
-            )
-
-            self._add(
-                data,
-                "organization",
-                network.get("name"),
-                source,
-            )
-
-    def _extract_team_cymru(self, source, result, data):
-        for item in result.get("results", []):
-            self._add(
-                data,
-                "asn",
-                item.get("asn"),
-                source,
-            )
-
-            self._add(
-                data,
-                "prefix",
-                item.get("prefix"),
-                source,
-            )
-
-            self._add_location(
-                data,
-                source,
-                country_code=item.get("country"),
-            )
-
-    def _extract_abuseipdb(self, source, result, data):
-        item = result.get("data", {})
-
-        data["reputation"].append({
-            "source": source,
-            "abuse_confidence": item.get(
-                "abuseConfidenceScore"
-            ),
-            "is_whitelisted": item.get(
-                "isWhitelisted"
-            ),
-            "total_reports": item.get(
-                "totalReports"
-            ),
-            "distinct_reporters": item.get(
-                "numDistinctUsers"
-            ),
-            "is_tor": item.get("isTor"),
-            "usage_type": item.get("usageType"),
-        })
-
-        self._add(
-            data,
-            "organization",
-            item.get("isp"),
-            source,
-        )
-
-        self._add(
-            data,
-            "hostname",
-            (item.get("hostnames") or [None])[0],
-            source,
-        )
-
-    def _extract_otx(self, source, result, data):
-        self._add(
-            data,
-            "organization",
-            result.get("asn"),
-            source,
-        )
-
-        self._add(
-            data,
-            "asn",
-            result.get("asn"),
-            source,
-        )
-
-        geo = result.get("geo", {})
-
-        self._add_location(
-            data,
-            source,
-            country=geo.get("country_name"),
-            country_code=geo.get("country_code2"),
-            continent=geo.get("continent_code"),
-            latitude=geo.get("latitude"),
-            longitude=geo.get("longitude"),
-        )
-
-        data["reputation"].append({
-            "source": source,
-            "reputation": result.get("reputation"),
-            "validation": result.get("validation"),
-            "false_positive": result.get(
-                "false_positive"
-            ),
-        })
-
-    def _extract_virustotal(self, source, result, data):
-        attributes = (
-            result.get("data", {})
-            .get("attributes", {})
-        )
-
-        self._add(
-            data,
-            "asn",
-            attributes.get("asn"),
-            source,
-        )
-
-        self._add(
-            data,
-            "organization",
-            attributes.get("as_owner"),
-            source,
-        )
-
-        self._add_location(
-            data,
-            source,
-            country=attributes.get("country"),
-            continent=attributes.get("continent"),
-        )
-
-        self._add(
-            data,
-            "prefix",
-            attributes.get("network"),
-            source,
-        )
-
-        analysis = attributes.get(
-            "last_analysis_stats",
-            {},
-        )
-
-        if analysis:
-            data["reputation"].append({
-                "source": source,
-                "analysis": analysis,
-                "reputation": attributes.get(
-                    "reputation"
-                ),
-                "votes": attributes.get(
-                    "total_votes"
-                ),
-            })
-
-        for context in attributes.get(
-            "crowdsourced_context",
-            [],
-        ):
-            data["threats"].append({
-                "source": source,
-                "title": context.get("title"),
-                "severity": context.get("severity"),
-                "details": context.get("details"),
-                "timestamp": context.get("timestamp"),
-            })
-
-        certificate = attributes.get(
-            "last_https_certificate",
-            {},
-        )
-
-        if certificate:
-            data["tls"].append({
-                "source": source,
-                "subject": self._nested(
-                    certificate,
-                    "subject",
-                    "CN",
-                ),
-                "issuer": self._nested(
-                    certificate,
-                    "issuer",
-                    "CN",
-                ),
-                "not_before": self._nested(
-                    certificate,
-                    "validity",
-                    "not_before",
-                ),
-                "not_after": self._nested(
-                    certificate,
-                    "validity",
-                    "not_after",
-                ),
-                "sha256": certificate.get(
-                    "thumbprint_sha256"
-                ),
-                "names": self._nested(
-                    certificate,
-                    "extensions",
-                    "subject_alternative_name",
-                ) or [],
-            })
-
-    def _extract_tor(self, source, result, data):
-        data["anonymizer"].append({
-            "source": source,
-            "type": "Tor",
-            "active": result.get("is_tor_exit"),
-        })
-
-    def _extract_x4bnet(self, source, result, data):
-        data["anonymizer"].append({
-            "source": source,
-            "type": "VPN",
-            "active": result.get("is_vpn"),
-            "networks": result.get(
-                "matching_networks",
-                [],
-            ),
-        })
-
-    def _extract_robtex(self, source, result, data):
-        self._add(
-            data,
-            "asn",
-            result.get("asn"),
-            source,
-        )
-
-        self._add(
-            data,
-            "organization",
-            result.get("asn_name"),
-            source,
-        )
-
-        self._add(
-            data,
-            "prefix",
-            result.get("bgp_route"),
-            source,
-        )
-
-        for item in result.get("pas", []):
-            if isinstance(item, dict):
-                name = (
-                    item.get("hostname")
-                    or item.get("domain")
-                )
-                self._add(
-                    data,
-                    "passive_dns",
-                    name,
-                    source,
-                )
-
-    def _extract_tlsx(self, source, result, data):
-        for item in result.get("results", []):
-            data["tls"].append({
-                "source": source,
-                "host": item.get("host"),
-                "port": item.get("port"),
-                "tls_version": item.get("tls_version"),
-                "cipher": item.get("cipher"),
-                "subject": item.get("subject_dn"),
-                "issuer": item.get("issuer_dn"),
-                "names": item.get("subject_an"),
-                "sha256": item.get(
-                    "certificate_sha256"
-                ),
-                "timestamp": item.get("timestamp"),
-            })
-
-    def _extract_shodan(self, source, result, data):
-        self._add(
-            data,
-            "hostname",
-            result.get("hostnames", [None])[0]
-            if result.get("hostnames")
-            else None,
-            source,
-        )
-
-        self._add(
-            data,
-            "organization",
-            result.get("org"),
-            source,
-        )
-
-        self._add(
-            data,
-            "asn",
-            result.get("asn"),
-            source,
-        )
-
-        self._add(
-            data,
-            "prefix",
-            result.get("data", {}).get("asn")
-            if isinstance(result.get("data"), dict)
-            else None,
-            source,
-        )
-
-        for item in result.get("data", []):
-            if isinstance(item, dict):
-                data["services"].append({
-                    "source": source,
-                    "port": item.get("port"),
-                    "protocol": item.get("transport"),
-                    "service": item.get("product"),
-                    "version": item.get("version"),
-                    "timestamp": item.get("timestamp"),
-                })
-
-    def _extract_netlas(self, source, result, data):
-        host = result.get("host", result)
-
-        if not isinstance(host, dict):
-            return
-
-        self._add(
-            data,
-            "hostname",
-            host.get("hostname"),
-            source,
-        )
-
-        self._add(
-            data,
-            "organization",
-            host.get("organization"),
-            source,
-        )
-
-        self._add(
-            data,
-            "asn",
-            host.get("asn"),
-            source,
-        )
-
-        self._add(
-            data,
-            "prefix",
-            host.get("route"),
-            source,
-        )
-
-    @staticmethod
-    def _add(
-        data: dict[str, Any],
-        field: str,
-        value: Any,
-        source: str,
-        label: str | None = None,
-    ) -> None:
-        if value in (None, "", [], {}):
-            return
-
-        data[field].append({
-            "source": source,
-            "value": value,
-            "label": label,
-        })
-
-    @staticmethod
-    def _add_location(
-        data: dict[str, Any],
-        source: str,
-        **values,
-    ) -> None:
-        cleaned = {
-            key: value
-            for key, value in values.items()
-            if value not in (None, "")
-        }
-
-        if cleaned:
-            cleaned["source"] = source
-            data["location"].append(cleaned)
-
-    @staticmethod
-    def _nested(
-        value: dict[str, Any],
-        *keys: str,
-    ) -> Any:
-        current = value
-
-        for key in keys:
-            if not isinstance(current, dict):
-                return None
-            current = current.get(key)
-
-        return current
-
-    @staticmethod
-    def _consensus(
-        observations: list[dict[str, Any]],
-    ) -> tuple[Any | None, list[tuple[Any, int]]]:
-        if not observations:
-            return None, []
-
-        counts: Counter = Counter(
-            str(item["value"])
-            for item in observations
-        )
-
-        ordered = counts.most_common()
-
-        winner_string, winner_count = ordered[0]
-
-        winner = next(
-            item["value"]
-            for item in observations
-            if str(item["value"]) == winner_string
-        )
-
-        return winner, [
-            (value, count)
-            for value, count in ordered
-            if count < winner_count
-        ]
-
-    @staticmethod
-    def _format_value(value: Any) -> str:
-        if isinstance(value, bool):
-            return "Yes" if value else "No"
-
-        return str(value)
-
-    def _identity(self, data):
-        hostname, conflicts = self._consensus(
-            data["hostname"]
-        )
-        organization, _ = self._consensus(
-            data["organization"]
-        )
-
-        lines = ["Identity"]
-
-        if hostname:
-            lines.append(
-                f"  Hostname: {hostname}"
-            )
-
-        if organization:
-            lines.append(
-                f"  Organization: {organization}"
-            )
+        lines.append("\nSources")
+        self._sources(lines, data, results)
 
         return "\n".join(lines)
 
-    def _network(self, data):
-        asn, _ = self._consensus(data["asn"])
-        prefix, _ = self._consensus(data["prefix"])
+    def _identity(self, lines, data):
+        hostname = self._first_value(
+            data,
+            [
+                ("ShodanTool", "data", "hostnames"),
+                ("CensysTool", "result", "dns", "names"),
+                ("IPInfoTool", "hostname"),
+                ("IPAPITool", "reverse"),
+            ],
+        )
 
-        lines = ["Network / ASN"]
+        organization = self._first_value(
+            data,
+            [
+                ("IPInfoTool", "org"),
+                ("NetlasTool", "organization"),
+                ("IPAPIIsTool", "company", "name"),
+                ("IPAPITool", "org"),
+                ("RobtexTool", "asname"),
+            ],
+        )
+
+        if hostname:
+            if isinstance(hostname, list):
+                hostname = hostname[0] if hostname else None
+
+            if hostname:
+                lines.append(f"  Hostname: {hostname}")
+
+        if organization:
+            lines.append(f"  Organization: {organization}")
+
+    def _network(self, lines, data):
+        asn_values = []
+        prefix_values = []
+
+        for name, result in data.items():
+            asn = self._extract_asn(name, result)
+            prefix = self._extract_prefix(name, result)
+
+            if asn:
+                asn_values.append(str(asn))
+
+            if prefix:
+                prefix_values.append(str(prefix))
+
+        asn = self._consensus(asn_values)
+        prefix = self._consensus(prefix_values)
 
         if asn:
-            lines.append(f"  ASN: AS{str(asn).removeprefix('AS')}")
+            lines.append(f"  ASN: {self._format_asn(asn)}")
 
         if prefix:
             lines.append(f"  Prefix: {prefix}")
 
-        return "\n".join(lines)
+    def _location(self, lines, data):
+        countries = []
+        regions = []
+        cities = []
 
-    def _location(self, data):
-        if not data["location"]:
-            return ""
+        for name, result in data.items():
+            country = self._extract_country(name, result)
+            region = self._extract_region(name, result)
+            city = self._extract_city(name, result)
 
-        countries = [
-            item.get("country")
-            or item.get("country_code")
-            for item in data["location"]
-            if item.get("country")
-            or item.get("country_code")
-        ]
+            if country:
+                countries.append(country)
 
-        cities = [
-            item.get("city")
-            for item in data["location"]
-            if item.get("city")
-        ]
+            if region:
+                regions.append(region)
 
-        regions = [
-            item.get("region")
-            for item in data["location"]
-            if item.get("region")
-        ]
+            if city:
+                cities.append(city)
 
-        country = self._majority(countries)
-        city = self._majority(cities)
-        region = self._majority(regions)
-
-        lines = ["Location"]
+        country = self._consensus(countries)
+        region = self._consensus(regions)
+        city = self._consensus(cities)
 
         if country:
             lines.append(f"  Country: {country}")
@@ -895,435 +141,731 @@ class IPResponder:
         if city:
             lines.append(f"  City: {city}")
 
-        return "\n".join(lines)
+    def _hosting(self, lines, data):
+        hosting_values = []
+        anycast_values = []
 
-    def _cloud_hosting(self, data):
-        lines = ["Cloud / Hosting"]
+        for name, result in data.items():
+            hosting = self._extract_bool(name, result, "hosting")
+            anycast = self._extract_bool(name, result, "anycast")
 
-        hosting = [
-            item["value"]
-            for item in data["hosting"]
-        ]
+            if hosting is not None:
+                hosting_values.append(hosting)
 
-        cloud = [
-            item["value"]
-            for item in data["cloud"]
-        ]
+            if anycast is not None:
+                anycast_values.append(anycast)
 
-        if hosting:
-            lines.append(
-                f"  Hosting: {self._format_value(self._majority(hosting))}"
-            )
+        hosting = self._majority(hosting_values)
+        anycast = self._majority(anycast_values)
 
-        if cloud:
-            lines.append(
-                f"  Anycast: {self._format_value(self._majority(cloud))}"
-            )
+        if hosting is not None:
+            lines.append(f"  Hosting: {hosting}")
 
-        return (
-            "\n".join(lines)
-            if len(lines) > 1
-            else ""
-        )
+        if anycast is not None:
+            lines.append(f"  Anycast: {anycast}")
 
-    def _exposure(self, data):
-        if not data["services"]:
-            return ""
+    def _exposure(self, lines, data):
+        ports = set()
 
-        ports = sorted({
-            item["port"]
-            for item in data["services"]
-            if item.get("port") is not None
-        })
-
-        lines = ["Exposure"]
+        for name, result in data.items():
+            for port in self._extract_ports(name, result):
+                ports.add(str(port))
 
         if ports:
+            ordered = sorted(
+                ports,
+                key=lambda value: int(value)
+                if value.isdigit()
+                else value
+            )
+
             lines.append(
-                "  Observed ports: "
-                + ", ".join(map(str, ports))
+                f"  Observed ports: {', '.join(ordered)}"
             )
 
-        return "\n".join(lines)
+    def _services(self, lines, data):
+        services = set()
 
-    def _services(self, data):
-        if not data["services"]:
-            return ""
+        for name, result in data.items():
+            for service in self._extract_services(name, result):
+                services.add(service)
 
-        lines = ["Services"]
+        for service in sorted(services):
+            lines.append(f"  {service}")
 
-        seen = set()
+    def _tls(self, lines, data):
+        certificates = {}
 
-        for service in data["services"]:
-            key = (
-                service.get("port"),
-                service.get("protocol"),
-                service.get("transport"),
-            )
+        for name, result in data.items():
+            for cert in self._extract_tls(name, result):
+                fingerprint = cert.get("sha256")
 
-            if key in seen:
-                continue
-
-            seen.add(key)
-
-            parts = []
-
-            if service.get("port") is not None:
-                parts.append(
-                    f"Port {service['port']}"
-                )
-
-            if service.get("protocol"):
-                parts.append(
-                    service["protocol"]
-                )
-
-            if service.get("transport"):
-                parts.append(
-                    f"({service['transport']})"
-                )
-
-            if parts:
-                lines.append(
-                    "  " + " ".join(parts)
-                )
-
-        return "\n".join(lines)
-
-    def _web(self, data):
-        if not data["web"]:
-            return ""
-
-        lines = ["Web"]
-
-        seen = set()
-
-        for item in data["web"]:
-            key = (
-                item.get("host"),
-                item.get("port"),
-                item.get("status"),
-                item.get("url"),
-            )
-
-            if key in seen:
-                continue
-
-            seen.add(key)
-
-            line = []
-
-            if item.get("host"):
-                line.append(item["host"])
-
-            if item.get("port"):
-                line.append(f":{item['port']}")
-
-            if item.get("status"):
-                line.append(
-                    f"HTTP {item['status']}"
-                )
-
-            if item.get("title"):
-                line.append(
-                    f"({item['title']})"
-                )
-
-            if line:
-                lines.append(
-                    "  " + " ".join(line)
-                )
-
-            if item.get("url"):
-                lines.append(
-                    f"    URL: {item['url']}"
-                )
-
-        return "\n".join(lines)
-
-    def _tls(self, data):
-        if not data["tls"]:
-            return ""
-
-        lines = ["TLS"]
-
-        seen = set()
-
-        for item in data["tls"]:
-            key = (
-                item.get("port"),
-                item.get("subject"),
-                item.get("sha256"),
-            )
-
-            if key in seen:
-                continue
-
-            seen.add(key)
-
-            if item.get("port"):
-                lines.append(
-                    f"  Port: {item['port']}"
-                )
-
-            if item.get("subject"):
-                lines.append(
-                    f"    Subject: {item['subject']}"
-                )
-
-            if item.get("issuer"):
-                lines.append(
-                    f"    Issuer: {item['issuer']}"
-                )
-
-            if item.get("tls_version"):
-                lines.append(
-                    f"    Version: {item['tls_version']}"
-                )
-
-            if item.get("sha256"):
-                lines.append(
-                    f"    SHA256: {item['sha256']}"
-                )
-
-            if item.get("names"):
-                lines.append(
-                    "    SANs: "
-                    + ", ".join(
-                        map(str, item["names"])
+                if not fingerprint:
+                    fingerprint = (
+                        cert.get("subject"),
+                        cert.get("issuer"),
                     )
+
+                if fingerprint not in certificates:
+                    certificates[fingerprint] = {
+                        "cert": cert,
+                        "sources": set(),
+                        "ports": set(),
+                    }
+
+                certificates[fingerprint]["sources"].add(name)
+
+                port = cert.get("port")
+                if port:
+                    certificates[fingerprint]["ports"].add(str(port))
+
+        for entry in certificates.values():
+            cert = entry["cert"]
+            ports = sorted(entry["ports"])
+
+            if ports:
+                lines.append(
+                    f"  Port: {', '.join(ports)}"
                 )
 
-        return "\n".join(lines)
+            if cert.get("subject"):
+                lines.append(
+                    f"    Subject: {cert['subject']}"
+                )
 
-    def _passive_dns(self, data):
-        values = self._unique_values(
-            item["value"]
-            for item in data["passive_dns"]
-        )
+            if cert.get("issuer"):
+                lines.append(
+                    f"    Issuer: {cert['issuer']}"
+                )
 
-        if not values:
-            return ""
+            if cert.get("sha256"):
+                lines.append(
+                    f"    SHA256: {cert['sha256']}"
+                )
 
-        lines = ["Passive DNS"]
+            sans = cert.get("sans", [])
 
-        for value in values[:20]:
-            lines.append(f"  {value}")
+            if sans:
+                lines.append(
+                    f"    SANs: {', '.join(sans)}"
+                )
 
-        if len(values) > 20:
-            lines.append(
-                f"  ... and {len(values) - 20} more"
+    def _passive_dns(self, lines, data):
+        domains = set()
+
+        for name, result in data.items():
+            domains.update(
+                self._extract_passive_dns(name, result)
             )
 
-        return "\n".join(lines)
+        if not domains:
+            return
 
-    def _reverse_dns(self, data):
-        values = self._unique_values(
-            item["value"]
-            for item in data["reverse_dns"]
-        )
+        ordered = sorted(domains)
 
-        if not values:
-            return ""
+        limit = 20
 
-        lines = ["Reverse DNS"]
+        for domain in ordered[:limit]:
+            lines.append(f"  {domain}")
 
-        for value in values:
+        remaining = len(ordered) - limit
+
+        if remaining > 0:
+            lines.append(
+                f"  ... and {remaining} more"
+            )
+
+    def _reverse_dns(self, lines, data):
+        values = []
+
+        for name, result in data.items():
+            value = self._extract_reverse_dns(name, result)
+
+            if value:
+                values.append(value)
+
+        value = self._consensus(values)
+
+        if value:
             lines.append(f"  {value}")
 
-        return "\n".join(lines)
+    def _reputation(self, lines, data):
+        abuse = data.get("AbuseIPDBTool")
 
-    def _reputation(self, data):
-        if not data["reputation"]:
-            return ""
+        if abuse:
+            payload = abuse.get("data", abuse)
 
-        lines = ["Reputation"]
+            score = payload.get("abuseConfidenceScore")
 
-        for item in data["reputation"]:
-            source = item["source"]
-
-            if item.get("abuse_confidence") is not None:
+            if score is not None:
                 lines.append(
-                    f"  {source}: "
-                    f"Abuse confidence "
-                    f"{item['abuse_confidence']}%"
+                    f"  AbuseIPDB: Abuse confidence {score}%"
                 )
 
-            if item.get("is_whitelisted") is not None:
+            if payload.get("isWhitelisted") is not None:
                 lines.append(
                     f"    Whitelisted: "
-                    f"{self._format_value(item['is_whitelisted'])}"
+                    f"{payload['isWhitelisted']}"
                 )
 
-            if item.get("total_reports") is not None:
+            reports = payload.get("totalReports")
+
+            if reports is not None:
                 lines.append(
-                    f"    Reports: "
-                    f"{item['total_reports']}"
+                    f"    Reports: {reports}"
                 )
 
-            if item.get("reputation") is not None:
-                lines.append(
-                    f"  {source}: "
-                    f"Reputation {item['reputation']}"
-                )
+        otx = data.get("AlienVaultOTXTool")
 
-            if item.get("analysis"):
-                analysis = item["analysis"]
-
-                lines.append(
-                    "    Analysis: "
-                    f"{analysis.get('malicious', 0)} malicious, "
-                    f"{analysis.get('suspicious', 0)} suspicious, "
-                    f"{analysis.get('harmless', 0)} harmless, "
-                    f"{analysis.get('undetected', 0)} undetected"
-                )
-
-        return "\n".join(lines)
-
-    def _threats(self, data):
-        if not data["threats"]:
-            return ""
-
-        lines = ["Threat / CVEs"]
-
-        for item in data["threats"]:
-            title = item.get("title") or "Threat context"
-
-            lines.append(
-                f"  {title}"
+        if otx:
+            reputation = self._nested(
+                otx,
+                "reputation"
             )
 
-            if item.get("severity"):
+            if reputation is not None:
                 lines.append(
-                    f"    Severity: {item['severity']}"
+                    f"  AlienVault OTX: Reputation {reputation}"
                 )
 
-            if item.get("timestamp"):
-                lines.append(
-                    f"    Observed: {item['timestamp']}"
-                )
+        vt = data.get("VirusTotalTool")
 
-        return "\n".join(lines)
-
-    def _anonymizer(self, data):
-        if not data["anonymizer"]:
-            return ""
-
-        lines = ["Anonymizer"]
-
-        for item in data["anonymizer"]:
-            lines.append(
-                f"  {item['type']}: "
-                f"{self._format_value(item['active'])}"
+        if vt:
+            attributes = self._nested(
+                vt,
+                "data",
+                "attributes"
             )
 
-            if item.get("networks"):
-                for network in item["networks"]:
+            if isinstance(attributes, dict):
+                reputation = attributes.get("reputation")
+
+                if reputation is not None:
                     lines.append(
-                        f"    Network: {network}"
+                        f"  VirusTotal: Reputation {reputation}"
                     )
 
-        return "\n".join(lines)
-
-    def _temporal(self, data):
-        if not data["temporal"]:
-            return ""
-
-        lines = ["Temporal"]
-
-        for item in data["temporal"]:
-            if item.get("type") and item.get("date"):
-                lines.append(
-                    f"  {item['type']}: "
-                    f"{item['date']}"
+                analysis = attributes.get(
+                    "last_analysis_stats"
                 )
 
-        return "\n".join(lines)
+                if isinstance(analysis, dict):
+                    lines.append(
+                        "    Analysis: "
+                        f"{analysis.get('malicious', 0)} malicious, "
+                        f"{analysis.get('suspicious', 0)} suspicious, "
+                        f"{analysis.get('harmless', 0)} harmless, "
+                        f"{analysis.get('undetected', 0)} undetected"
+                    )
 
-    def _observations(self, data):
-        lines = ["Observations"]
+    def _threat_intelligence(self, lines, data):
+        vt = data.get("VirusTotalTool")
 
-        location_conflicts = self._location_conflicts(
-            data["location"]
+        if not vt:
+            return
+
+        attributes = self._nested(
+            vt,
+            "data",
+            "attributes"
         )
 
-        if location_conflicts:
-            lines.append("  Location mismatch:")
+        if not isinstance(attributes, dict):
+            return
 
-            for value, count in location_conflicts:
+        contexts = attributes.get("crowdsourced_context", [])
+
+        if not isinstance(contexts, list):
+            return
+
+        for context in contexts:
+            if not isinstance(context, dict):
+                continue
+
+            if context.get("source") == "ThreatFox":
+                date = context.get("date")
+
+                if date:
+                    lines.append(
+                        f"  ThreatFox observation: {date}"
+                    )
+
+                severity = context.get("severity")
+
+                if severity:
+                    lines.append(
+                        f"    Severity: {severity}"
+                    )
+
+    def _anonymizer(self, lines, data):
+        tor = data.get("TorExitListTool")
+
+        if tor:
+            value = tor.get("is_tor_exit")
+
+            if value is not None:
+                lines.append(
+                    f"  Tor: {'Yes' if value else 'No'}"
+                )
+
+        vpn = data.get("X4BNetTool")
+
+        if vpn:
+            value = vpn.get("is_vpn")
+
+            if value is not None:
+                lines.append(
+                    f"  VPN: {'Yes' if value else 'No'}"
+                )
+
+    def _observations(self, lines, data):
+        found = False
+
+        location_groups = {
+            "Country": self._collect_field(
+                data,
+                self._extract_country,
+            ),
+            "Region": self._collect_field(
+                data,
+                self._extract_region,
+            ),
+            "City": self._collect_field(
+                data,
+                self._extract_city,
+            ),
+        }
+
+        for field, values in location_groups.items():
+            counts = Counter(values)
+
+            if len(counts) <= 1:
+                continue
+
+            if not found:
+                found = True
+
+            lines.append(
+                f"  {field} mismatch:"
+            )
+
+            for value, count in counts.most_common():
                 lines.append(
                     f"    {value} ({count} sources)"
                 )
 
-        return (
-            "\n".join(lines)
-            if len(lines) > 1
-            else ""
-        )
+        if not found:
+            lines.append("  None")
 
-    def _sources(self, results, failures):
-        lines = ["Sources"]
+    def _sources(self, lines, data, results):
+        successful = []
 
-        for source, _ in results:
-            lines.append(f"  {source}")
+        for name, result in results:
+            if isinstance(result, dict):
+                successful.append(name)
 
-        if failures:
-            lines.append("")
-            lines.append("Unavailable")
+        for name in successful:
+            lines.append(f"  {name}")
 
-            for failure in failures:
-                lines.append(
-                    f"  {failure['tool']}: "
-                    f"{failure['error']}"
+    def _extract_asn(self, name, result):
+        if name == "RIPEstatTool":
+            data = result.get("data", {})
+            asns = data.get("asns", [])
+
+            if asns:
+                return asns[0]
+
+        if name == "TeamCymruTool":
+            records = result.get("results", [])
+
+            if records:
+                return records[0].get("asn")
+
+        if name == "IPInfoTool":
+            value = result.get("org")
+
+            if isinstance(value, str):
+                return value.split()[0]
+
+        if name == "IPAPIIsTool":
+            value = result.get("asn")
+
+            if isinstance(value, dict):
+                return value.get("asn")
+
+            return value
+
+        if name == "IPAPITool":
+            value = result.get("as")
+
+            if isinstance(value, str):
+                return value.split()[0]
+
+        if name == "NetlasTool":
+            value = result.get("asn")
+
+            if isinstance(value, dict):
+                return value.get("asn")
+
+            return value
+
+        if name == "RobtexTool":
+            value = result.get("as")
+
+            if isinstance(value, dict):
+                return value.get("asn")
+
+            return value
+
+        return None
+
+    def _extract_prefix(self, name, result):
+        if name == "RIPEstatTool":
+            return result.get("data", {}).get("prefix")
+
+        if name == "TeamCymruTool":
+            records = result.get("results", [])
+
+            if records:
+                return records[0].get("prefix")
+
+        if name == "NetlasTool":
+            return result.get("route")
+
+        if name == "RobtexTool":
+            return result.get("route")
+
+        return None
+
+    def _extract_country(self, name, result):
+        if name == "IPInfoTool":
+            return result.get("country")
+
+        if name == "IPAPITool":
+            return result.get("country")
+
+        if name == "IPAPIIsTool":
+            return result.get("location", {}).get("country")
+
+        if name == "NetlasTool":
+            return result.get("country")
+
+        if name == "CensysTool":
+            return self._nested(
+                result,
+                "result",
+                "location",
+                "country"
+            )
+
+        if name == "RobtexTool":
+            return result.get("country")
+
+        return None
+
+    def _extract_region(self, name, result):
+        if name == "IPInfoTool":
+            return result.get("region")
+
+        if name == "IPAPITool":
+            return result.get("regionName")
+
+        if name == "IPAPIIsTool":
+            return result.get("location", {}).get("state")
+
+        if name == "NetlasTool":
+            return result.get("region")
+
+        if name == "CensysTool":
+            return self._nested(
+                result,
+                "result",
+                "location",
+                "province"
+            )
+
+        return None
+
+    def _extract_city(self, name, result):
+        if name == "IPInfoTool":
+            return result.get("city")
+
+        if name == "IPAPITool":
+            return result.get("city")
+
+        if name == "IPAPIIsTool":
+            return result.get("location", {}).get("city")
+
+        if name == "NetlasTool":
+            return result.get("city")
+
+        if name == "CensysTool":
+            return self._nested(
+                result,
+                "result",
+                "location",
+                "city"
+            )
+
+        if name == "RobtexTool":
+            return result.get("city")
+
+        return None
+
+    def _extract_bool(self, name, result, field):
+        if name == "IPInfoTool":
+            if field == "anycast":
+                return result.get("anycast")
+
+        if name == "IPAPITool":
+            if field == "hosting":
+                return result.get("hosting")
+
+        if name == "NetlasTool":
+            if field == "hosting":
+                return result.get("hosting")
+
+        if name == "IPAPIIsTool":
+            if field == "hosting":
+                return result.get("is_abuser")
+
+        return None
+
+    def _extract_ports(self, name, result):
+        ports = []
+
+        if name == "CensysTool":
+            services = self._nested(
+                result,
+                "result",
+                "services"
+            )
+
+            if isinstance(services, list):
+                for service in services:
+                    port = service.get("port")
+
+                    if port:
+                        ports.append(port)
+
+        if name == "ShodanTool":
+            raw = result.get("ports", [])
+
+            if isinstance(raw, list):
+                ports.extend(raw)
+
+        return ports
+
+    def _extract_services(self, name, result):
+        services = []
+
+        if name == "CensysTool":
+            raw = self._nested(
+                result,
+                "result",
+                "services"
+            )
+
+            if isinstance(raw, list):
+                for service in raw:
+                    port = service.get("port")
+                    transport = service.get("transport_protocol")
+                    name_value = service.get("service_name")
+
+                    parts = []
+
+                    if port:
+                        parts.append(f"Port {port}")
+
+                    if transport:
+                        parts.append(str(transport))
+
+                    if name_value:
+                        parts.append(str(name_value))
+
+                    if parts:
+                        services.append(" ".join(parts))
+
+        if name == "ShodanTool":
+            raw = result.get("data", [])
+
+            if isinstance(raw, list):
+                for item in raw:
+                    port = item.get("port")
+                    transport = item.get("transport")
+                    product = item.get("product")
+
+                    parts = []
+
+                    if port:
+                        parts.append(f"Port {port}")
+
+                    if transport:
+                        parts.append(str(transport))
+
+                    if product:
+                        parts.append(str(product))
+
+                    if parts:
+                        services.append(" ".join(parts))
+
+        return services
+
+    def _extract_tls(self, name, result):
+        tls = []
+
+        if name == "TLSXTool":
+            raw = result.get("results", [])
+
+            if isinstance(raw, list):
+                for item in raw:
+                    tls.append({
+                        "port": item.get("port"),
+                        "subject": self._nested(
+                            item,
+                            "certificate",
+                            "subject_dn"
+                        ),
+                        "issuer": self._nested(
+                            item,
+                            "certificate",
+                            "issuer_dn"
+                        ),
+                        "sha256": self._nested(
+                            item,
+                            "certificate",
+                            "hash",
+                            "sha256"
+                        ),
+                        "sans": self._nested(
+                            item,
+                            "certificate",
+                            "subject_an"
+                        ) or [],
+                    })
+
+        return tls
+
+    def _extract_passive_dns(self, name, result):
+        domains = set()
+
+        if name == "RobtexTool":
+            records = result.get("pas", [])
+
+            if isinstance(records, list):
+                for record in records:
+                    if isinstance(record, dict):
+                        hostname = (
+                            record.get("hostname")
+                            or record.get("name")
+                        )
+
+                        if hostname:
+                            domains.add(hostname)
+
+        if name == "CensysTool":
+            names = self._nested(
+                result,
+                "result",
+                "dns",
+                "names"
+            )
+
+            if isinstance(names, list):
+                domains.update(
+                    name
+                    for name in names
+                    if isinstance(name, str)
                 )
 
-        return "\n".join(lines)
+        return domains
+
+    def _extract_reverse_dns(self, name, result):
+        if name == "IPInfoTool":
+            return result.get("hostname")
+
+        if name == "IPAPITool":
+            return result.get("reverse")
+
+        if name == "CensysTool":
+            names = self._nested(
+                result,
+                "result",
+                "dns",
+                "names"
+            )
+
+            if names:
+                return names[0]
+
+        return None
+
+    @staticmethod
+    def _nested(value, *keys):
+        for key in keys:
+            if not isinstance(value, dict):
+                return None
+
+            value = value.get(key)
+
+        return value
+
+    @staticmethod
+    def _first_value(data, paths):
+        for name, *keys in paths:
+            result = data.get(name)
+
+            if result is None:
+                continue
+
+            value = IPResponder._nested(result, *keys)
+
+            if value:
+                return value
+
+        return None
+
+    @staticmethod
+    def _consensus(values):
+        values = [
+            str(value)
+            for value in values
+            if value not in (None, "")
+        ]
+
+        if not values:
+            return None
+
+        return Counter(values).most_common(1)[0][0]
 
     @staticmethod
     def _majority(values):
         if not values:
             return None
 
-        return Counter(
-            str(value)
-            for value in values
-        ).most_common(1)[0][0]
+        counts = Counter(values)
+        return counts.most_common(1)[0][0]
 
     @staticmethod
-    def _unique_values(values):
-        seen = set()
-        result = []
-
-        for value in values:
-            if value in (None, ""):
-                continue
-
-            if value in seen:
-                continue
-
-            seen.add(value)
-            result.append(value)
-
-        return result
-
-    @staticmethod
-    def _location_conflicts(location):
+    def _collect_field(data, extractor):
         values = []
 
-        for item in location:
-            value = (
-                item.get("city")
-                or item.get("region")
-                or item.get("country")
-                or item.get("country_code")
-            )
+        for name, result in data.items():
+            value = extractor(name, result)
 
-            if value:
-                values.append(value)
+            if value not in (None, ""):
+                values.append(str(value))
 
-        counts = Counter(values)
+        return values
 
-        if len(counts) <= 1:
-            return []
+    @staticmethod
+    def _format_asn(value):
+        value = str(value)
 
-        return counts.most_common()
+        if value.upper().startswith("AS"):
+            return value
+
+        if value.isdigit():
+            return f"AS{value}"
+
+        return value

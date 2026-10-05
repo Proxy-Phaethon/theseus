@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 
 from core.identifier import Identifier, EntityType
-from core.ip_responder import Responder
+from core.ip_responder import IPResponder
 from core.domain_responder import DomainResponder
 from core.email_responder import EmailResponder
 from core.url_responder import URLResponder
@@ -18,7 +18,7 @@ def build_identifier() -> Identifier:
 
 def build_responders():
     return {
-        EntityType.IP_ADDRESS: Responder(),
+        EntityType.IP_ADDRESS: IPResponder(),
         EntityType.DOMAIN: DomainResponder(),
         EntityType.EMAIL: EmailResponder(),
         EntityType.URL: URLResponder(),

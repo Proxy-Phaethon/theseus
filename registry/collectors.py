@@ -7,7 +7,6 @@ from tools.ip.ipinfo import IPInfoTool
 from tools.ip.ip_api import IPAPITool
 from tools.ip.ipapi_is import IPAPIIsTool
 from tools.ip.ripestat import RIPEstatTool
-from tools.ip.peeringdb import PeeringDBTool
 from tools.ip.team_cymru import TeamCymruTool
 from tools.ip.abuseipdb import AbuseIPDBTool
 from tools.ip.alienvault_otx import AlienVaultOTXTool
@@ -38,7 +37,6 @@ def build_collectors():
             IPAPITool(),
             IPAPIIsTool(),
             RIPEstatTool(),
-            PeeringDBTool(),
             TeamCymruTool(),
             AbuseIPDBTool(),
             AlienVaultOTXTool(),

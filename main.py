@@ -30,34 +30,96 @@ def build_responders():
         EntityType.USERNAME: UsernameResponder(),
     }
 
-def run_with_spinner(identifier, target):
-    result = []
+class InvestigationLoader:
+    FRAMES = ["◒", "◓", "◑", "◐"]
 
-    def worker():
-        result.append(identifier.process(target))
+    STAGES = [
+        "Identifying target",
+        "Mapping infrastructure",
+        "Querying network intelligence",
+        "Checking exposure",
+        "Inspecting certificates",
+        "Checking reputation",
+        "Checking threat intelligence",
+        "Checking anonymization",
+        "Correlating observations",
+        "Compiling intelligence",
+    ]
 
-    thread = threading.Thread(target=worker)
-    thread.start()
+    def __init__(self):
+        self.spinner = itertools.cycle(self.FRAMES)
+        self.running = False
+        self.thread = None
+        self.process_result = None
 
-    spinner = itertools.cycle(
-        ["|", "/", "-", "\\"]
-    )
+    def run(self, identifier, target):
+        self.running = True
 
-    while thread.is_alive():
-        sys.stdout.write(
-            f"\rInvestigating {next(spinner)}"
+        self.thread = threading.Thread(
+            target=self._investigate,
+            args=(identifier, target),
+            daemon=True,
         )
+
+        self.thread.start()
+
+        self._animate()
+
+        self.thread.join()
+
+        return self.process_result
+
+    def _investigate(self, identifier, target):
+        self.process_result = identifier.process(target)
+
+    def _animate(self):
+        first_frame = True
+
+        for stage in self.STAGES:
+            if not self.running:
+                break
+
+            duration = 0.45
+
+            end = time.time() + duration
+
+            while time.time() < end:
+                self._render(stage, first_frame)
+                first_frame = False
+                time.sleep(0.08)
+
+        while self.thread.is_alive():
+            self._render(
+                "Compiling intelligence",
+                first_frame,
+            )
+
+            first_frame = False
+            time.sleep(0.08)
+
+        self.running = False
+        self._clear()
+
+    def _render(self, stage, first_frame):
+        frame = next(self.spinner)
+
+        output = (
+            "╭─ THESEUS ───────────────────────────────╮\n"
+            f"│  {frame} {stage:<36} │\n"
+            "│                                           │\n"
+            "╰───────────────────────────────────────────╯"
+        )
+
+        if not first_frame:
+            sys.stdout.write("\033[3A")
+
+        sys.stdout.write(output)
         sys.stdout.flush()
-        time.sleep(0.1)
 
-    thread.join()
-
-    sys.stdout.write(
-        "\r" + " " * 30 + "\r"
-    )
-    sys.stdout.flush()
-
-    return result[0]
+    def _clear(self):
+        sys.stdout.write("\033[3A")
+        sys.stdout.write("\033[J")
+        sys.stdout.flush()
 
 def main() -> None:
     identifier = build_identifier()
@@ -73,7 +135,7 @@ def main() -> None:
         if not target:
             continue
 
-        entity, results = run_with_spinner(
+        entity, results = InvestigationLoader().run(
             identifier,
             target,
         )

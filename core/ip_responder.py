@@ -312,73 +312,79 @@ class IPResponder:
         return lines
 
     def _tls(self, data):
+        result = data.get("TLSXTool")
+
+        if not isinstance(result, dict):
+            return []
+
+        tls_results = result.get("results", [])
+
+        if not isinstance(tls_results, list):
+            return []
+
         lines = []
-        certificates = {}
 
-        for name, result in data.items():
-            for cert in self._extract_tls(
-                name,
-                result,
-            ):
-                fingerprint = cert.get("sha256")
+        for tls in tls_results:
+            if not isinstance(tls, dict):
+                continue
 
-                if not fingerprint:
-                    fingerprint = (
-                        cert.get("subject"),
-                        cert.get("issuer"),
-                    )
-
-                if fingerprint not in certificates:
-                    certificates[fingerprint] = {
-                        "cert": cert,
-                        "ports": set(),
-                    }
-
-                port = cert.get("port")
-
-                if port:
-                    certificates[
-                        fingerprint
-                    ]["ports"].add(str(port))
-
-        for entry in certificates.values():
-            cert = entry["cert"]
-
-            ports = sorted(
-                entry["ports"],
-                key=lambda value: (
-                    int(value)
-                    if value.isdigit()
-                    else value
-                ),
+            port = tls.get("port")
+            tls_version = tls.get("tls_version")
+            cipher = tls.get("cipher")
+            key_exchange = tls.get("key_exchange")
+            subject = tls.get("subject_cn")
+            issuer = tls.get("issuer_cn")
+            issuer_org = tls.get("issuer_org")
+            sans = tls.get("subject_an")
+            not_before = tls.get("not_before")
+            not_after = tls.get("not_after")
+            sha256 = (
+                tls.get("fingerprint_hash", {})
+                .get("sha256")
             )
+            wildcard = tls.get("wildcard_certificate")
+            mismatched = tls.get("mismatched")
 
-            if ports:
-                lines.append(
-                    f"  Port: {', '.join(ports)}"
-                )
+            if port:
+                lines.append(f"Port: {port}")
 
-            if cert.get("subject"):
-                lines.append(
-                    f"    Subject: {cert['subject']}"
-                )
+            if tls_version:
+                lines.append(f"Version: {tls_version}")
 
-            if cert.get("issuer"):
-                lines.append(
-                    f"    Issuer: {cert['issuer']}"
-                )
+            if cipher:
+                lines.append(f"Cipher: {cipher}")
 
-            if cert.get("sha256"):
-                lines.append(
-                    f"    SHA256: {cert['sha256']}"
-                )
+            if key_exchange:
+                lines.append(f"Key exchange: {key_exchange}")
 
-            sans = cert.get("sans", [])
+            if subject:
+                lines.append(f"Subject: {subject}")
+
+            if issuer:
+                issuer_text = issuer
+
+                if isinstance(issuer_org, list) and issuer_org:
+                    issuer_text += f" ({', '.join(issuer_org)})"
+
+                lines.append(f"Issuer: {issuer_text}")
 
             if sans:
-                lines.append(
-                    f"    SANs: {', '.join(sans)}"
-                )
+                lines.append(f"SANs: {', '.join(sans)}")
+
+            if not_before:
+                lines.append(f"Valid from: {not_before}")
+
+            if not_after:
+                lines.append(f"Valid until: {not_after}")
+
+            if sha256:
+                lines.append(f"SHA256: {sha256}")
+
+            if wildcard is not None:
+                lines.append(f"Wildcard: {wildcard}")
+
+            if mismatched is not None:
+                lines.append(f"Certificate mismatch: {mismatched}")
 
         return lines
 

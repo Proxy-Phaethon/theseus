@@ -72,11 +72,13 @@ class Identifier:
         results = []
 
         for tool in tools:
-            result = tool.run(entity.value)
-
-            results.append(
-                (tool.__class__.__name__, result)
-            )
+            try:
+                result = tool.run(entity.value)
+                results.append((tool.__class__.__name__, result))
+            except Exception as exc:
+                print(
+                    f"[!] {tool.__class__.__name__} failed: {exc}"
+                )
 
         return results
 

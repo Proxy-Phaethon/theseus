@@ -1,5 +1,10 @@
 from dotenv import load_dotenv
 
+import itertools
+import sys
+import threading
+import time
+
 from core.identifier import Identifier, EntityType
 from core.ip_responder import IPResponder
 from core.domain_responder import DomainResponder
@@ -25,6 +30,35 @@ def build_responders():
         EntityType.USERNAME: UsernameResponder(),
     }
 
+def run_with_spinner(identifier, target):
+    result = []
+
+    def worker():
+        result.append(identifier.process(target))
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+
+    spinner = itertools.cycle(
+        ["|", "/", "-", "\\"]
+    )
+
+    while thread.is_alive():
+        sys.stdout.write(
+            f"\rInvestigating {next(spinner)}"
+        )
+        sys.stdout.flush()
+        time.sleep(0.1)
+
+    thread.join()
+
+    sys.stdout.write(
+        "\r" + " " * 30 + "\r"
+    )
+    sys.stdout.flush()
+
+    return result[0]
+
 def main() -> None:
     identifier = build_identifier()
     responders = build_responders()
@@ -39,7 +73,10 @@ def main() -> None:
         if not target:
             continue
 
-        entity, results = identifier.process(target)
+        entity, results = run_with_spinner(
+            identifier,
+            target,
+        )
 
         print(f"\nType: {entity.type.value}")
 

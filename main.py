@@ -100,7 +100,7 @@ def main() -> None:
     while True:
         target = input("\n> ").strip()
 
-        if target.lower() in {"q", "q.", "quit", "quit.", "bye", "bye.", "exit", "exit."}:
+        if target.strip().lower() in {"q", "q.", "quit", "quit.", "bye", "bye.", "exit", "exit."}:
             print("Exiting.")
             break
 

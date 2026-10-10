@@ -1,12 +1,19 @@
+import contextlib
 import io
-from contextlib import redirect_stdout, redirect_stderr
-
+import traceback
 import dnstwist
 
 class DNSTwistTool:
     def run(self, domain):
-        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            return dnstwist.run(
-                domain=domain,
-                registered=True,
-            )
+        try:
+            with (
+                contextlib.redirect_stdout(io.StringIO()),
+                contextlib.redirect_stderr(io.StringIO()),
+            ):
+                return dnstwist.run(
+                    domain=domain,
+                    registered=True,
+                )
+        except Exception:
+            traceback.print_exc()
+            raise

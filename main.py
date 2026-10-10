@@ -16,9 +16,7 @@ from registry.collectors import build_collectors
 load_dotenv()
 
 def build_identifier() -> Identifier:
-    return Identifier(
-        tools=build_collectors()
-    )
+    return Identifier(tools=build_collectors())
 
 def build_responders():
     return {
@@ -43,16 +41,15 @@ STAGES = [
 
 def investigate(identifier, target):
     result = []
+    errors = []
 
     def worker():
-        result.append(
-            identifier.process(target)
-        )
+        try:
+            result.append(identifier.process(target))
+        except Exception as exc:
+            errors.append(exc)
 
-    thread = threading.Thread(
-        target=worker
-    )
-
+    thread = threading.Thread(target=worker)
     thread.start()
 
     with alive_bar(
@@ -63,7 +60,6 @@ def investigate(identifier, target):
         elapsed=False,
         monitor=False,
     ) as bar:
-
         while thread.is_alive():
             for stage in STAGES:
                 if not thread.is_alive():
@@ -72,7 +68,6 @@ def investigate(identifier, target):
                 for i in range(1, len(stage) + 1):
                     if not thread.is_alive():
                         break
-
                     bar.text = stage[:i]
                     time.sleep(0.035)
 
@@ -82,7 +77,6 @@ def investigate(identifier, target):
                 for i in range(len(stage) - 1, 0, -1):
                     if not thread.is_alive():
                         break
-
                     bar.text = stage[:i]
                     time.sleep(0.025)
 
@@ -91,7 +85,37 @@ def investigate(identifier, target):
 
     thread.join()
 
+    if errors:
+        raise errors[0]
+    if not result:
+        raise RuntimeError("Investigation finished without returning results.")
+
     return result[0]
+
+def print_all_subdomains(responder):
+    subdomains = getattr(responder, "subdomains", [])
+    if not subdomains:
+        return
+
+    answer = input(
+        f"\nPrint all {len(subdomains)} discovered subdomains? [y/N]: "
+    ).strip().lower()
+
+    if answer not in {"y", "yes"}:
+        return
+
+    print("\nAll discovered subdomains:")
+    for item in subdomains:
+        if isinstance(item, dict):
+            hostname = item.get("hostname")
+            sources = item.get("sources", [])
+            if not hostname:
+                continue
+            source_text = ", ".join(str(source) for source in sources if source)
+            suffix = f" [{source_text}]" if source_text else ""
+            print(f"  {hostname}{suffix}")
+        else:
+            print(f"  {item}")
 
 def main() -> None:
     identifier = build_identifier()
@@ -100,35 +124,36 @@ def main() -> None:
     while True:
         target = input("\n> ").strip()
 
-        if target.strip().lower() in {"q", "q.", "quit", "quit.", "bye", "bye.", "exit", "exit."}:
+        if target.lower() in {
+            "q", "q.", "quit", "quit.", "bye", "bye.", "exit", "exit."
+        }:
             print("Exiting.")
             break
 
         if not target:
             continue
 
-        entity, results = investigate(
-            identifier,
-            target,
-        )
+        try:
+            entity, results = investigate(identifier, target)
+        except Exception as exc:
+            print(f"\nInvestigation failed: {exc}")
+            continue
 
         print(f"\nType: {entity.type.value}")
 
         responder = responders.get(entity.type)
-
         if responder is None:
-            print(
-                f"\nNo responder available for "
-                f"{entity.type.value}."
-            )
+            print(f"\nNo responder available for {entity.type.value}.")
             continue
 
-        response = responder.respond(
-            entity,
-            results,
-        )
+        response = responder.respond(entity, results)
+        if response:
+            print(f"\n{response}")
+        else:
+            print("\nNo reportable findings returned by the available collectors.")
 
-        print(f"\n{response}")
+        if entity.type == EntityType.DOMAIN:
+            print_all_subdomains(responder)
 
 if __name__ == "__main__":
     main()

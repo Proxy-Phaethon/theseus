@@ -21,7 +21,6 @@ from tools.domain.rdap import RDAPTool
 from tools.domain.assetfinder import AssetfinderTool
 from tools.domain.checkdmarc import CheckDMARCTool
 from tools.domain.dig import DIGTool
-from tools.domain.dnstwist import DNSTwistTool
 from tools.domain.dnsx import DNSXTool
 from tools.domain.subfinder import SubfinderTool
 from tools.domain.virustotal import VirusTotalTool
@@ -61,7 +60,6 @@ def build_collectors():
             AssetfinderTool(),
             CheckDMARCTool(),
             DIGTool(),
-            DNSTwistTool(),
             DNSXTool(),
             SubfinderTool(),
             VirusTotalTool(),

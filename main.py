@@ -37,6 +37,10 @@ STAGES = [
     "Petting Cats...",
     "Verifying Results...",
     "Concluding...",
+    "Wait a Minute...",
+    "Finding a Playlist...",
+    "Contemplating Life...",
+    "Trying to Figure Out...",
 ]
 
 def investigate(identifier, target):

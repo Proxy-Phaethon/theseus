@@ -18,6 +18,14 @@ from tools.ip.tlsx import TLSXTool
 
 from tools.domain.ldns import LDNSTool
 from tools.domain.rdap import RDAPTool
+from tools.domain.assetfinder import AssetfinderTool
+from tools.domain.checkdmarc import CheckDMARCTool
+from tools.domain.dig import DigTool
+from tools.domain.dnstwist import DNSTwistTool
+from tools.domain.dnsx import DnsxTool
+from tools.domain.subfinder import SubfinderTool
+from tools.domain.virustotal import VirustotalTool
+from tools.domain.whois import WhoisTool
 
 from tools.email.xposedornot import XposedOrNotTool
 from tools.email.disify import DisifyTool
@@ -50,6 +58,14 @@ def build_collectors():
         EntityType.DOMAIN: [
             LDNSTool(),
             RDAPTool(),
+            AssetfinderTool(),
+            CheckDMARCTool(),
+            DigTool(),
+            DNSTwistTool(),
+            DnsxTool(),
+            SubfinderTool(),
+            VirustotalTool(),
+            WhoisTool(),
         ],
 
         EntityType.EMAIL: [

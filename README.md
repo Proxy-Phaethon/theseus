@@ -342,6 +342,7 @@ The goal is to make Theseus capable of navigating an investigation across many e
 
 ---
 
-# License
+## License
 
-MIT License
+Theseus v1 is licensed under the Apache License 2.0.
+See the [LICENSE](LICENSE) file for details.

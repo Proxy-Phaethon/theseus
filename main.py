@@ -102,7 +102,7 @@ def print_all_subdomains(responder):
         return
 
     answer = input(
-        f"\nPrint all {len(subdomains)} discovered subdomains? [y/N]: "
+        f"\nPrint all {len(subdomains)} discovered subdomains? [y/n]: "
     ).strip().lower()
 
     if answer not in {"y", "yes"}:

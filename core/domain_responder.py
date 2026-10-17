@@ -338,9 +338,21 @@ class DomainResponder:
                         add(kind, raw_line, name)
             elif "dnsx" in normalized_name and isinstance(result, str):
                 for raw_line in result.splitlines():
-                    match = re.match(r"\S+\s+\[([^]]+)\]\s+\[(.*)]\s*$", raw_line.strip())
-                    if match:
-                        add(match.group(1), match.group(2), name)
+                    raw_line = raw_line.strip()
+                    if not raw_line:
+                        continue
+
+                    match = re.match(
+                        r"^\S+\s+\[([A-Z]+)\]\s+\[(.+)\]$",
+                        raw_line,
+                        re.IGNORECASE,
+                    )
+
+                    if not match:
+                        continue
+
+                    record_type, value = match.groups()
+                    add(record_type, value, name)
             elif "checkdmarc" in normalized_name and isinstance(result, dict):
                 for key, kind in (("ns", "NS"), ("mx", "MX")):
                     block = result.get(key)

@@ -341,6 +341,8 @@ class DomainResponder:
                                 raw_line = " ".join(fields[index + 2:])
                         add(kind, raw_line, name)
             elif "dnsx" in normalized_name and isinstance(result, str):
+                result = self._strip_ansi(result)
+
                 for raw_line in result.splitlines():
                     raw_line = raw_line.strip()
                     if not raw_line:
@@ -352,11 +354,13 @@ class DomainResponder:
                         re.IGNORECASE,
                     )
 
-                    if not match:
-                        continue
+                    if match:
+                        record_type, value = match.groups()
 
-                    record_type, value = match.groups()
-                    add(record_type, value, name)
+                        if record_type.upper() == "SOA":
+                            continue
+
+                        add(record_type, value, name)
             elif "checkdmarc" in normalized_name and isinstance(result, dict):
                 for key, kind in (("ns", "NS"), ("mx", "MX")):
                     block = result.get(key)

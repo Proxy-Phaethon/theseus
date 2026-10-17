@@ -131,8 +131,6 @@ Enter `q` to exit.
 
 ## IP Addresses
 
-IP investigation is currently the most developed part of Theseus.
-
 The IP collector ecosystem covers several categories of intelligence:
 
 * Network and ASN information
@@ -189,26 +187,34 @@ The purpose is to preserve the collected evidence rather than manufacture certai
 
 ## Domains
 
-Domain investigation is currently being expanded.
+Domain investigation expands Theseus beyond individual IP addresses to examine domain infrastructure, ownership, and exposure.
+
+The domain collector ecosystem covers several categories of intelligence:
+
+* Domain identity and registration
+* Registrar information and registration dates
+* Nameservers and DNS records
+* DNSSEC and email security posture
+* Subdomain discovery
+* Web presence and domain-related infrastructure
+* Certificate and threat intelligence
+* WHOIS and RDAP registration data
 
 Current collectors include:
 
 * **LDNS**
 * **RDAP**
+* **WHOIS**
+* **Assetfinder**
+* **Subfinder**
+* **dig**
+* **dnsx**
+* **CheckDMARC**
+* **VirusTotal**
 
-Domain collection covers information such as:
+Theseus combines observations from multiple sources into a consolidated domain investigation report, organizing the collected information into relevant sections rather than presenting a disconnected list of tool outputs.
 
-* Domain identity
-* Web presence
-* Redirects
-* HTTP security headers
-* Registrar information
-* Registration dates
-* Expiration dates
-* Domain status
-* Nameservers
-* DNSSEC
-* DNS records
+The goal is to make it easier to investigate a domain's infrastructure, discover related assets, understand its security posture, and identify potential avenues for further investigation.
 
 ---
 

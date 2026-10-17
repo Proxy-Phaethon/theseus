@@ -286,48 +286,43 @@ class DomainResponder:
     @staticmethod
     def _normalize_dns_value(record_type, value):
         record_type = str(record_type).upper().strip()
-        value = str(value).strip()
+        display = str(value).strip()
+        normalized = display
 
         if record_type in {"NS", "CNAME", "PTR"}:
-            return value.rstrip(".")
+            normalized = display.rstrip(".")
 
-        if record_type == "SOA":
-            parts = value.split()
+        elif record_type == "SOA":
+            parts = display.split()
 
-            # SOA format:
-            # mname rname serial refresh retry expire minimum
+            # Normalize the SOA primary nameserver and responsible mailbox.
             if len(parts) >= 2:
                 parts[0] = parts[0].rstrip(".")
                 parts[1] = parts[1].rstrip(".")
 
-            return " ".join(parts)
+            normalized = " ".join(parts)
 
-        if record_type == "CAA":
+        elif record_type == "CAA":
             match = re.match(
                 r'^(\d+)\s+(\S+)\s+(.+)$',
-                value,
+                display,
             )
 
             if match:
                 flags, tag, content = match.groups()
                 content = content.strip().strip('"').strip()
+                normalized = f"{flags} {tag} {content}"
 
-                return f"{flags} {tag} {content}"
-
-            return value
-
-        if record_type == "MX":
-            parts = value.split(maxsplit=1)
+        elif record_type == "MX":
+            parts = display.split(maxsplit=1)
 
             if len(parts) == 2:
-                return f"{parts[0]} {parts[1].rstrip('.')}"
+                normalized = f"{parts[0]} {parts[1].rstrip('.')}"
 
-            return value
+        elif record_type == "TXT":
+            normalized = display.strip('"')
 
-        if record_type == "TXT":
-            return value.strip('"')
-
-        return value
+        return display, normalized
 
     def _dns(self, data):
         records = {}

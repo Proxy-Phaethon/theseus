@@ -285,31 +285,49 @@ class DomainResponder:
 
     @staticmethod
     def _normalize_dns_value(record_type, value):
-        value = str(value).strip().strip('"').strip()
-        if not value:
-            return "", ""
-        kind = str(record_type).upper().strip()
-        if kind in {"A", "AAAA"}:
-            try:
-                parsed = ipaddress.ip_address(value)
-                return str(parsed), str(parsed)
-            except ValueError:
-                pass
-        if kind in {"NS", "CNAME", "PTR"}:
-            display = value.rstrip(".")
-            return display, display.lower()
-        if kind == "MX":
-            fields = value.split()
-            if len(fields) >= 2 and fields[0].isdigit():
-                display = f"{fields[0]} {fields[1].rstrip('.')}"
-            else:
-                display = value.rstrip(".")
-            return display, display.lower()
-        if kind == "TXT":
-            display = re.sub(r'"\s+"', "", value)
-            return display, display.lower()
-        display = " ".join(value.split())
-        return display, display.lower()
+        record_type = str(record_type).upper().strip()
+        value = str(value).strip()
+
+        if record_type in {"NS", "CNAME", "PTR"}:
+            return value.rstrip(".")
+
+        if record_type == "SOA":
+            parts = value.split()
+
+            # SOA format:
+            # mname rname serial refresh retry expire minimum
+            if len(parts) >= 2:
+                parts[0] = parts[0].rstrip(".")
+                parts[1] = parts[1].rstrip(".")
+
+            return " ".join(parts)
+
+        if record_type == "CAA":
+            match = re.match(
+                r'^(\d+)\s+(\S+)\s+(.+)$',
+                value,
+            )
+
+            if match:
+                flags, tag, content = match.groups()
+                content = content.strip().strip('"').strip()
+
+                return f"{flags} {tag} {content}"
+
+            return value
+
+        if record_type == "MX":
+            parts = value.split(maxsplit=1)
+
+            if len(parts) == 2:
+                return f"{parts[0]} {parts[1].rstrip('.')}"
+
+            return value
+
+        if record_type == "TXT":
+            return value.strip('"')
+
+        return value
 
     def _dns(self, data):
         records = {}

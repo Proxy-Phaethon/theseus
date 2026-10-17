@@ -80,6 +80,10 @@ class DomainResponder:
         return re.sub(r"[^a-z0-9]", "", str(name).lower())
 
     @staticmethod
+    def _strip_ansi(text):
+        return re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
+
+    @staticmethod
     def _add_section(sections, title, lines):
         if lines:
             sections.append(title + "\n" + "\n".join(lines))

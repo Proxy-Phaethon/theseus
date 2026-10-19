@@ -15,122 +15,66 @@ class EmailResponder:
             for tool_name, result in results
         }
 
-        xposedornot = data.get("XposedOrNotTool", {})
-        disify = data.get("DisifyTool", {})
+        xposedornot = self._tool(data, "xposedornot")
+        disify = self._tool(data, "disify")
+        github = self._tool(data, "github")
+        holehe = self._tool(data, "holehe")
 
         sections = []
 
-        identity = self._identity(xposedornot, disify)
-        if identity:
-            sections.append(("Email Identity", identity))
+        self._add_section(
+            sections,
+            "Email Identity",
+            self._identity(entity, xposedornot, disify),
+        )
 
-        infrastructure = self._infrastructure(disify)
-        if infrastructure:
-            sections.append(("Email Infrastructure", infrastructure))
+        self._add_section(
+            sections,
+            "Email Infrastructure",
+            self._infrastructure(disify),
+        )
 
-        breaches = self._breaches(xposedornot)
-        if breaches:
-            sections.append(("Breach Exposure", breaches))
+        self._add_section(
+            sections,
+            "Breach Exposure",
+            self._breaches(xposedornot),
+        )
+
+        self._add_section(
+            sections,
+            "Associated Accounts",
+            self._accounts(holehe),
+        )
+
+        self._add_section(
+            sections,
+            "Code & Developer Footprint",
+            self._github(github),
+        )
 
         return self._format_sections(sections)
 
-    def _identity(self, xposedornot, disify):
-        lines = []
+    @staticmethod
+    def _tool(data: dict[str, Any], name: str) -> Any:
+        for tool_name, result in data.items():
+            if name in tool_name.lower():
+                return result
 
-        email = xposedornot.get("email")
-        if email:
-            lines.append(f"Email: {email}")
-
-        domain = disify.get("domain")
-        if domain:
-            lines.append(f"Domain: {domain}")
-
-        domain_info = disify.get("domain_info", {})
-
-        tld = domain_info.get("tld")
-        if tld:
-            lines.append(f"TLD: .{tld}")
-
-        is_subdomain = domain_info.get("is_subdomain")
-        if is_subdomain is not None:
-            lines.append(
-                f"Subdomain: {'Yes' if is_subdomain else 'No'}"
-            )
-
-        format_valid = disify.get("format")
-        if format_valid is not None:
-            lines.append(
-                f"Format: {'Valid' if format_valid else 'Invalid'}"
-            )
-
-        disposable = disify.get("disposable")
-        if disposable is not None:
-            lines.append(
-                f"Disposable: {'Yes' if disposable else 'No'}"
-            )
-
-        role = disify.get("role")
-        if role is not None:
-            lines.append(
-                f"Role Account: {'Yes' if role else 'No'}"
-            )
-
-        free = disify.get("free")
-        if free is not None:
-            lines.append(
-                f"Free Provider: {'Yes' if free else 'No'}"
-            )
-
-        dns = disify.get("dns")
-        if dns is not None:
-            lines.append(
-                f"DNS: {'Available' if dns else 'Not detected'}"
-            )
-
-        whitelist = disify.get("whitelist")
-        if whitelist is not None:
-            lines.append(
-                f"Whitelist: {'Yes' if whitelist else 'No'}"
-            )
-
-        confidence = disify.get("confidence")
-        if confidence is not None:
-            lines.append(f"Confidence: {confidence}")
-
-        return lines
-
-    def _infrastructure(self, disify):
-        mx_records = disify.get("mx_info", [])
-
-        if not mx_records:
-            return []
-
-        lines = ["MX Records:"]
-
-        for record in mx_records:
-            lines.append(f"  {record}")
-
-        return lines
-
-    def _breaches(self, xposedornot):
-        breaches = xposedornot.get("breaches", [])
-
-        if not breaches:
-            return []
-
-        lines = ["Breaches:"]
-
-        for breach in breaches:
-            if isinstance(breach, list):
-                for name in breach:
-                    lines.append(f"  {name}")
-            else:
-                lines.append(f"  {breach}")
-
-        return lines
+        return {}
 
     @staticmethod
-    def _format_sections(sections):
+    def _add_section(
+        sections: list[tuple[str, list[str]]],
+        title: str,
+        lines: list[str],
+    ) -> None:
+        if lines:
+            sections.append((title, lines))
+
+    @staticmethod
+    def _format_sections(
+        sections: list[tuple[str, list[str]]],
+    ) -> str:
         output = []
 
         for title, lines in sections:
@@ -142,3 +86,206 @@ class EmailResponder:
             output.append("")
 
         return "\n".join(output).rstrip()
+
+    def _identity(self, entity, xposedornot, disify):
+        lines = []
+
+        email = (
+            xposedornot.get("email")
+            if isinstance(xposedornot, dict)
+            else None
+        )
+
+        if not email:
+            email = getattr(entity, "value", None)
+
+        if email:
+            lines.append(f"Email: {email}")
+
+        if not isinstance(disify, dict):
+            return lines
+
+        domain = disify.get("domain")
+        if domain:
+            lines.append(f"Domain: {domain} [DisifyTool]")
+
+        domain_info = disify.get("domain_info") or {}
+
+        if isinstance(domain_info, dict):
+            tld = domain_info.get("tld")
+            if tld:
+                lines.append(f"TLD: .{tld} [DisifyTool]")
+
+            is_subdomain = domain_info.get("is_subdomain")
+            if is_subdomain is not None:
+                value = "Yes" if is_subdomain else "No"
+                lines.append(
+                    f"Subdomain: {value} [DisifyTool]"
+                )
+
+        fields = (
+            ("format", "Format", {True: "Valid", False: "Invalid"}),
+            ("disposable", "Disposable", {True: "Yes", False: "No"}),
+            ("role", "Role Account", {True: "Yes", False: "No"}),
+            ("free", "Free Provider", {True: "Yes", False: "No"}),
+            ("dns", "DNS", {True: "Available", False: "Not detected"}),
+            ("whitelist", "Whitelist", {True: "Yes", False: "No"}),
+        )
+
+        for key, label, values in fields:
+            value = disify.get(key)
+
+            if isinstance(value, bool):
+                lines.append(
+                    f"{label}: {values[value]} [DisifyTool]"
+                )
+
+        confidence = disify.get("confidence")
+        if confidence is not None:
+            lines.append(
+                f"Confidence: {confidence} [DisifyTool]"
+            )
+
+        return lines
+
+    def _infrastructure(self, disify):
+        if not isinstance(disify, dict):
+            return []
+
+        mx_records = disify.get("mx_info") or []
+        if not mx_records:
+            return []
+
+        lines = []
+
+        for record in mx_records:
+            lines.append(f"MX Record: {record} [DisifyTool]")
+
+        return lines
+
+    def _breaches(self, xposedornot):
+        if not isinstance(xposedornot, dict):
+            return []
+
+        breaches = xposedornot.get("breaches") or []
+        if not breaches:
+            return []
+
+        lines = []
+        seen = set()
+
+        for breach in breaches:
+            names = breach if isinstance(breach, list) else [breach]
+
+            for name in names:
+                value = str(name).strip()
+
+                if value and value not in seen:
+                    seen.add(value)
+                    lines.append(
+                        f"{value} [XposedOrNotTool]"
+                    )
+
+        return lines
+
+    def _accounts(self, holehe):
+        if not isinstance(holehe, list):
+            return []
+
+        lines = []
+        seen = set()
+
+        for result in holehe:
+            if not isinstance(result, dict):
+                continue
+
+            if result.get("exists") is not True:
+                continue
+
+            service = result.get("name") or result.get("domain")
+            if not service:
+                continue
+
+            service = str(service).strip()
+            key = service.casefold()
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+            lines.append(f"{service} [HoleheTool]")
+
+        return lines
+
+    def _github(self, github):
+        if not isinstance(github, dict):
+            return []
+
+        items = github.get("items") or []
+        if not items:
+            return []
+
+        lines = []
+        seen_accounts = set()
+        seen_commits = set()
+
+        total_count = github.get("total_count")
+        if total_count is not None:
+            lines.append(f"Matching Commits: {total_count} [GitHubTool]")
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+
+            commit = item.get("commit") or {}
+            author = commit.get("author") or {}
+            committer = commit.get("committer") or {}
+
+            for role in ("author", "committer"):
+                account = item.get(role)
+
+                if not isinstance(account, dict):
+                    continue
+
+                login = account.get("login")
+                profile = account.get("html_url")
+
+                if login:
+                    key = login.casefold()
+
+                    if key not in seen_accounts:
+                        seen_accounts.add(key)
+                        line = f"GitHub User: {login}"
+
+                        if profile:
+                            line += f" ({profile})"
+
+                        lines.append(f"{line} [GitHubTool]")
+
+            for role, metadata in (
+                ("Author", author),
+                ("Committer", committer),
+            ):
+                if not isinstance(metadata, dict):
+                    continue
+
+                name = metadata.get("name")
+                email = metadata.get("email")
+
+                if name:
+                    key = (role, name.casefold(), (email or "").casefold())
+
+                    if key not in seen_commits:
+                        seen_commits.add(key)
+                        line = f"{role}: {name}"
+
+                        if email:
+                            line += f" ({email})"
+
+                        lines.append(f"{line} [GitHubTool]")
+
+            url = item.get("html_url")
+            if url:
+                lines.append(f"Commit: {url} [GitHubTool]")
+
+        return lines

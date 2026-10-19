@@ -347,9 +347,6 @@ class EmailResponder:
                 lines.append("")
                 lines.append(account["name"])
 
-                if account["status"]:
-                    lines.append(f"  Status: {account['status']}")
-
                 category = metadata.get("category")
                 if category:
                     lines.append(f"  Category: {category}")

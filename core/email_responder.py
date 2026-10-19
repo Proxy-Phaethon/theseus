@@ -11,65 +11,49 @@ class EmailResponder:
         results: list[tuple[str, Any]],
     ) -> str:
         data = {
-            tool_name: result
+            tool_name.lower(): result
             for tool_name, result in results
         }
 
-        xposedornot = self._tool(data, "xposedornot")
         disify = self._tool(data, "disify")
-        github = self._tool(data, "github")
+        xposedornot = self._tool(data, "xposedornot")
         holehe = self._tool(data, "holehe")
+        github = self._tool(data, "github")
 
         sections = []
 
-        self._add_section(
-            sections,
-            "Email Identity",
-            self._identity(entity, xposedornot, disify),
-        )
+        identity = self._identity(entity.value, disify)
+        if identity:
+            sections.append(("Email Identity", identity))
 
-        self._add_section(
-            sections,
-            "Email Infrastructure",
-            self._infrastructure(disify),
-        )
+        infrastructure = self._infrastructure(disify)
+        if infrastructure:
+            sections.append(("Email Infrastructure", infrastructure))
 
-        self._add_section(
-            sections,
-            "Breach Exposure",
-            self._breaches(xposedornot),
-        )
+        breaches = self._breaches(xposedornot)
+        if breaches:
+            sections.append(("Breach Exposure", breaches))
 
-        self._add_section(
-            sections,
-            "Associated Accounts",
-            self._accounts(holehe),
-        )
+        accounts = self._accounts(holehe)
+        if accounts:
+            sections.append((
+                "Possible Account Registrations "
+                "(rate-limited checks may be unreliable)",
+                accounts,
+            ))
 
-        self._add_section(
-            sections,
-            "Code & Developer Footprint",
-            self._github(github),
-        )
+        footprint = self._github(github)
+        if footprint:
+            sections.append(("Public Code Footprint", footprint))
 
         return self._format_sections(sections)
 
     @staticmethod
     def _tool(data: dict[str, Any], name: str) -> Any:
         for tool_name, result in data.items():
-            if name in tool_name.lower():
+            if name in tool_name:
                 return result
-
         return {}
-
-    @staticmethod
-    def _add_section(
-        sections: list[tuple[str, list[str]]],
-        title: str,
-        lines: list[str],
-    ) -> None:
-        if lines:
-            sections.append((title, lines))
 
     @staticmethod
     def _format_sections(
@@ -77,215 +61,211 @@ class EmailResponder:
     ) -> str:
         output = []
 
-        for title, lines in sections:
-            output.append(title)
+        for heading, lines in sections:
+            if not lines:
+                continue
 
-            for line in lines:
-                output.append(f"  {line}")
-
+            output.append(heading)
+            output.extend(f"  {line}" for line in lines)
             output.append("")
 
         return "\n".join(output).rstrip()
 
-    def _identity(self, entity, xposedornot, disify):
-        lines = []
+    @staticmethod
+    def _identity(email: str, data: Any) -> list[str]:
+        if not isinstance(data, dict):
+            data = {}
 
-        email = (
-            xposedornot.get("email")
-            if isinstance(xposedornot, dict)
-            else None
-        )
+        lines = [f"Address: {email}"]
 
-        if not email:
-            email = getattr(entity, "value", None)
-
-        if email:
-            lines.append(f"Email: {email}")
-
-        if not isinstance(disify, dict):
-            return lines
-
-        domain = disify.get("domain")
+        domain = data.get("domain")
         if domain:
-            lines.append(f"Domain: {domain} [DisifyTool]")
+            lines.append(f"Domain: {domain}")
 
-        domain_info = disify.get("domain_info") or {}
+        tld = data.get("tld")
+        if not tld and isinstance(domain, str) and "." in domain:
+            tld = "." + domain.rsplit(".", 1)[-1]
 
-        if isinstance(domain_info, dict):
-            tld = domain_info.get("tld")
-            if tld:
-                lines.append(f"TLD: .{tld} [DisifyTool]")
+        if tld:
+            lines.append(f"TLD: {tld}")
 
-            is_subdomain = domain_info.get("is_subdomain")
-            if is_subdomain is not None:
-                value = "Yes" if is_subdomain else "No"
-                lines.append(
-                    f"Subdomain: {value} [DisifyTool]"
+        fields = [
+            ("format", "Format", lambda v: "Valid" if v is True else "Invalid" if v is False else str(v)),
+            ("disposable", "Disposable", lambda v: "Yes" if v is True else "No" if v is False else str(v)),
+            ("role", "Role Account", lambda v: "Yes" if v is True else "No" if v is False else str(v)),
+            ("free", "Free Provider", lambda v: "Yes" if v is True else "No" if v is False else str(v)),
+            ("dns", "DNS", lambda v: "Available" if v is True else "Unavailable" if v is False else str(v)),
+        ]
+
+        for key, label, formatter in fields:
+            value = data.get(key)
+            if value is not None:
+                lines.append(f"{label}: {formatter(value)}")
+
+        return lines
+
+    @staticmethod
+    def _infrastructure(data: Any) -> list[str]:
+        if not isinstance(data, dict):
+            return []
+
+        mx_info = data.get("mx_info")
+        if not mx_info:
+            return []
+
+        if isinstance(mx_info, dict):
+            records = mx_info.get("records", mx_info.get("mx", []))
+        else:
+            records = mx_info
+
+        if isinstance(records, str):
+            records = [records]
+
+        if not isinstance(records, (list, tuple)):
+            return []
+
+        hosts = []
+
+        for record in records:
+            if isinstance(record, str):
+                host = record
+            elif isinstance(record, dict):
+                host = (
+                    record.get("exchange")
+                    or record.get("host")
+                    or record.get("hostname")
+                    or record.get("target")
+                    or record.get("name")
                 )
+            else:
+                host = None
 
-        fields = (
-            ("format", "Format", {True: "Valid", False: "Invalid"}),
-            ("disposable", "Disposable", {True: "Yes", False: "No"}),
-            ("role", "Role Account", {True: "Yes", False: "No"}),
-            ("free", "Free Provider", {True: "Yes", False: "No"}),
-            ("dns", "DNS", {True: "Available", False: "Not detected"}),
-            ("whitelist", "Whitelist", {True: "Yes", False: "No"}),
-        )
+            if host and str(host) not in hosts:
+                hosts.append(str(host))
 
-        for key, label, values in fields:
-            value = disify.get(key)
+        if not hosts:
+            return []
 
-            if isinstance(value, bool):
-                lines.append(
-                    f"{label}: {values[value]} [DisifyTool]"
-                )
-
-        confidence = disify.get("confidence")
-        if confidence is not None:
-            lines.append(
-                f"Confidence: {confidence} [DisifyTool]"
-            )
-
+        lines = [f"MX Records: {len(hosts)}"]
+        lines.extend(f"  {host}" for host in hosts)
         return lines
 
-    def _infrastructure(self, disify):
-        if not isinstance(disify, dict):
+    @staticmethod
+    def _breaches(data: Any) -> list[str]:
+        if not isinstance(data, dict):
             return []
 
-        mx_records = disify.get("mx_info") or []
-        if not mx_records:
+        breaches = data.get("breaches", [])
+        names = []
+
+        def collect(value: Any) -> None:
+            if isinstance(value, str):
+                if value not in names:
+                    names.append(value)
+            elif isinstance(value, dict):
+                name = value.get("name") or value.get("Name")
+                if name and name not in names:
+                    names.append(str(name))
+            elif isinstance(value, (list, tuple)):
+                for item in value:
+                    collect(item)
+
+        collect(breaches)
+
+        if not names:
             return []
 
-        lines = []
+        return [
+            f"Breaches Found: {len(names)}",
+            *(f"Breach: {name}" for name in names),
+        ]
 
-        for record in mx_records:
-            lines.append(f"MX Record: {record} [DisifyTool]")
-
-        return lines
-
-    def _breaches(self, xposedornot):
-        if not isinstance(xposedornot, dict):
+    @staticmethod
+    def _accounts(data: Any) -> list[str]:
+        if not isinstance(data, list):
             return []
 
-        breaches = xposedornot.get("breaches") or []
-        if not breaches:
-            return []
+        accounts = []
 
-        lines = []
-        seen = set()
-
-        for breach in breaches:
-            names = breach if isinstance(breach, list) else [breach]
-
-            for name in names:
-                value = str(name).strip()
-
-                if value and value not in seen:
-                    seen.add(value)
-                    lines.append(
-                        f"{value} [XposedOrNotTool]"
-                    )
-
-        return lines
-
-    def _accounts(self, holehe):
-        if not isinstance(holehe, list):
-            return []
-
-        lines = []
-        seen = set()
-
-        for result in holehe:
+        for result in data:
             if not isinstance(result, dict):
                 continue
 
             if result.get("exists") is not True:
                 continue
 
-            service = result.get("name") or result.get("domain")
-            if not service:
-                continue
+            name = result.get("name") or result.get("domain")
+            if name and name not in accounts:
+                accounts.append(str(name))
 
-            service = str(service).strip()
-            key = service.casefold()
+        return sorted(accounts, key=str.lower)
 
-            if key in seen:
-                continue
-
-            seen.add(key)
-            lines.append(f"{service} [HoleheTool]")
-
-        return lines
-
-    def _github(self, github):
-        if not isinstance(github, dict):
+    @staticmethod
+    def _github(data: Any) -> list[str]:
+        if not isinstance(data, dict):
             return []
 
-        items = github.get("items") or []
-        if not items:
-            return []
-
+        items = data.get("items", [])
+        total_count = data.get("total_count")
         lines = []
-        seen_accounts = set()
-        seen_commits = set()
 
-        total_count = github.get("total_count")
-        if total_count is not None:
-            lines.append(f"Matching Commits: {total_count} [GitHubTool]")
+        if isinstance(total_count, int):
+            lines.append(f"Matching Commits: {total_count}")
 
-        for item in items:
-            if not isinstance(item, dict):
-                continue
+        users = []
+        identities = []
 
-            commit = item.get("commit") or {}
-            author = commit.get("author") or {}
-            committer = commit.get("committer") or {}
-
-            for role in ("author", "committer"):
-                account = item.get(role)
-
-                if not isinstance(account, dict):
+        if isinstance(items, list):
+            for item in items:
+                if not isinstance(item, dict):
                     continue
 
-                login = account.get("login")
-                profile = account.get("html_url")
+                account = item.get("author")
+                if isinstance(account, dict):
+                    login = account.get("login")
+                    url = account.get("html_url")
 
-                if login:
-                    key = login.casefold()
+                    if (
+                        login
+                        and not login.lower().endswith("[bot]")
+                        and login.lower() not in {"web-flow"}
+                    ):
+                        entry = (login, url)
+                        if entry not in users:
+                            users.append(entry)
 
-                    if key not in seen_accounts:
-                        seen_accounts.add(key)
-                        line = f"GitHub User: {login}"
-
-                        if profile:
-                            line += f" ({profile})"
-
-                        lines.append(f"{line} [GitHubTool]")
-
-            for role, metadata in (
-                ("Author", author),
-                ("Committer", committer),
-            ):
-                if not isinstance(metadata, dict):
+                commit = item.get("commit", {})
+                if not isinstance(commit, dict):
                     continue
 
-                name = metadata.get("name")
-                email = metadata.get("email")
+                for key in ("author", "committer"):
+                    person = commit.get(key)
+                    if not isinstance(person, dict):
+                        continue
 
-                if name:
-                    key = (role, name.casefold(), (email or "").casefold())
+                    name = person.get("name")
+                    email = person.get("email")
 
-                    if key not in seen_commits:
-                        seen_commits.add(key)
-                        line = f"{role}: {name}"
+                    if not name or not email:
+                        continue
 
-                        if email:
-                            line += f" ({email})"
+                    if name.lower() == "github" or email.lower().endswith(
+                        "@users.noreply.github.com"
+                    ) or email.lower() == "noreply@github.com":
+                        continue
 
-                        lines.append(f"{line} [GitHubTool]")
+                    identity = (name, email)
+                    if identity not in identities:
+                        identities.append(identity)
 
-            url = item.get("html_url")
-            if url:
-                lines.append(f"Commit: {url} [GitHubTool]")
+        if users:
+            lines.append(f"GitHub Accounts Found: {len(users)}")
+            for login, url in users:
+                lines.append(f"GitHub User: {login}" + (f" ({url})" if url else ""))
+
+        if identities:
+            lines.append(f"Commit Identities Found: {len(identities)}")
+            for name, email in identities:
+                lines.append(f"{name} ({email})")
 
         return lines

@@ -1,6 +1,7 @@
+import logging
+
 import httpx
 import trio
-import warnings
 
 from holehe.core import get_functions, import_submodules, launch_module
 
@@ -12,17 +13,21 @@ class HoleheTool:
         results = []
         client = httpx.AsyncClient(timeout=10)
 
-        try:
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    message=(
-                        r"Some characters could not be decoded, "
-                        r"and were replaced with REPLACEMENT CHARACTER\."
-                    ),
-                    category=UnicodeWarning,
-                )
+        warning_message = (
+            "Some characters could not be decoded, and were "
+            "replaced with REPLACEMENT CHARACTER."
+        )
 
+        class DecodeWarningFilter(logging.Filter):
+            def filter(self, record):
+                return record.getMessage() != warning_message
+
+        root_logger = logging.getLogger()
+        warning_filter = DecodeWarningFilter()
+        root_logger.addFilter(warning_filter)
+
+        try:
+            async with client:
                 async with trio.open_nursery() as nursery:
                     for website in websites:
                         nursery.start_soon(
@@ -33,11 +38,10 @@ class HoleheTool:
                             results,
                         )
         finally:
-            await client.aclose()
+            root_logger.removeFilter(warning_filter)
 
         return sorted(results, key=lambda item: item["name"])
 
     def run(self, email):
         email = email.strip()
-
         return trio.run(self._run, email)

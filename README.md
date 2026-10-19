@@ -24,31 +24,39 @@ Give Theseus a target such as an IP address, domain, email address, username, or
 
 ```text
 Target
-   ↓
+  ↓
 Identifier
-   ↓
+  ↓
 Collectors
-   ↓
+  ↓
 Responder
-   ↓
+  ↓
 Investigation Report
 ```
 
 Theseus is an **internet explorer**, not a search engine.
 
-It does not try to replace the individual tools it uses. Instead, it provides the layer that connects them.
+It does not attempt to replace the individual tools it uses. Instead, it provides the layer that connects them, routes targets to relevant collectors, and organizes their findings into a structured report.
 
 ---
 
 ## Current Status
 
-**Version: v0.2.0**
+**Version: v0.4.0**
 
-Theseus is being developed around an entity-based architecture.
+Theseus uses an entity-based architecture. The identifier determines the target type, the collector registry selects the relevant tools, and the responder organizes their results into an investigation report.
 
-The current release focuses heavily on IP investigations, combining network intelligence, exposure data, TLS information, reputation, threat intelligence, anonymizer detection, DNS information, and observations from multiple independent sources.
+The current implementation supports investigations involving:
 
-Other entity types are being expanded incrementally.
+- IP addresses
+- Domains
+- Email addresses
+- Usernames
+- URLs
+
+IP and domain investigations cover infrastructure, exposure, registration, DNS, and related intelligence. Email investigation combines email validation, breach exposure, account discovery, and public code activity.
+
+The collector ecosystem is designed to be extensible, allowing additional tools and entity-specific capabilities to be integrated over time.
 
 ---
 
@@ -68,9 +76,9 @@ theseus
 
 ---
 
-## API Keys
+## API Keys and Configuration
 
-Some collectors require external API keys.
+Some collectors require external API keys or credentials.
 
 For example, Shodan requires:
 
@@ -85,9 +93,9 @@ echo 'export SHODAN_API_KEY="your-api-key"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-Other collectors may require their own credentials.
+Other collectors may require their own credentials or configuration.
 
-API keys should never be committed to the repository.
+API keys should never be committed to the repository. Consult the documentation for each integrated tool to determine its configuration requirements.
 
 ---
 
@@ -99,13 +107,13 @@ Start Theseus:
 theseus
 ```
 
-Then provide a target:
+Provide a target:
 
 ```text
 > 8.8.8.8
 ```
 
-Examples of other targets:
+Other examples:
 
 ```text
 > wikipedia.com
@@ -119,9 +127,7 @@ Examples of other targets:
 
 Theseus identifies the entity type automatically and routes the target to the appropriate collectors.
 
-Once collection begins, Theseus displays a terminal loading indicator while the collectors run.
-
-When collection is complete, the responder organizes the collected observations into a structured investigation report.
+During collection, Theseus displays a terminal loading indicator while the collectors run. When collection is complete, the responder organizes the collected observations into a structured investigation report.
 
 Enter `q` to exit.
 
@@ -131,39 +137,44 @@ Enter `q` to exit.
 
 ## IP Addresses
 
-The IP collector ecosystem covers several categories of intelligence:
+IP investigation is currently one of the most developed parts of Theseus. It combines network intelligence, infrastructure observations, reputation data, and internet exposure information from multiple independent sources.
 
-* Network and ASN information
-* Geolocation
-* Hosting and infrastructure
-* Open ports and services
-* TLS certificates
-* Reverse DNS
-* Passive DNS
-* Reputation
-* Threat intelligence
-* Anonymizer detection
-* Web information
-* Internet exposure
+The IP collector ecosystem covers the following categories:
+
+- Network and ASN information
+- Geolocation
+- Hosting and infrastructure
+- Open ports and services
+- TLS certificates
+- Reverse DNS
+- Passive DNS
+- Reputation
+- Threat intelligence
+- Anonymizer detection
+- Web information
+- Internet exposure
 
 Current collectors include:
 
-* **Shodan**
-* **Censys**
-* **Netlas**
-* **IPinfo**
-* **ip-api**
-* **ipapi.is**
-* **RIPEstat**
-* **Team Cymru**
-* **AbuseIPDB**
-* **AlienVault OTX**
-* **VirusTotal**
-* **Tor exit-node lists**
-* **DNS and passive DNS sources**
-* **tlsx**
+- **Shodan**
+- **Censys**
+- **Netlas**
+- **IPinfo**
+- **ip-api**
+- **ipapi.is**
+- **RIPEstat**
+- **Team Cymru**
+- **AbuseIPDB**
+- **AlienVault OTX**
+- **VirusTotal**
+- **Tor exit-node lists**
+- **X4BNet**
+- **Robtex**
+- **tlsx**
 
-Theseus does not blindly merge conflicting observations into a single value.
+Theseus organizes the collected observations into relevant sections of the IP investigation report.
+
+It does not blindly merge conflicting observations into a single value.
 
 For example, if different sources report different locations:
 
@@ -181,100 +192,148 @@ Observations
 
 the disagreement remains visible in the report.
 
-The purpose is to preserve the collected evidence rather than manufacture certainty where the sources disagree.
-
----
+The purpose is to preserve collected evidence rather than manufacture certainty where the sources disagree.
 
 ## Domains
 
-Domain investigation expands Theseus beyond individual IP addresses to examine domain infrastructure, ownership, and exposure.
+Domain investigation expands Theseus beyond individual IP addresses to examine domain infrastructure, registration, related assets, and potential exposure.
 
-The domain collector ecosystem covers several categories of intelligence:
+The domain collector ecosystem covers:
 
-* Domain identity and registration
-* Registrar information and registration dates
-* Nameservers and DNS records
-* DNSSEC and email security posture
-* Subdomain discovery
-* Web presence and domain-related infrastructure
-* Certificate and threat intelligence
-* WHOIS and RDAP registration data
+- **WHOIS and RDAP:** registration details, registrar information, dates, and domain status
+- **DNS:** records, nameservers, and related infrastructure
+- **Subdomains:** discovery of additional assets associated with a domain
+- **Email posture:** DNS-based email infrastructure and security configuration, including SPF and DMARC checks
+- **Certificates and threat intelligence:** domain-related certificate and reputation observations
+- **Hosting and IPs:** infrastructure associated with the target domain
 
 Current collectors include:
 
-* **LDNS**
-* **RDAP**
-* **WHOIS**
-* **Assetfinder**
-* **Subfinder**
-* **dig**
-* **dnsx**
-* **CheckDMARC**
-* **VirusTotal**
+- **LDNS**
+- **RDAP**
+- **WHOIS**
+- **Assetfinder**
+- **Subfinder**
+- **dig**
+- **dnsx**
+- **CheckDMARC**
+- **VirusTotal**
 
-Theseus combines observations from multiple sources into a consolidated domain investigation report, organizing the collected information into relevant sections rather than presenting a disconnected list of tool outputs.
+Theseus combines observations from multiple sources into a consolidated domain investigation report rather than presenting a disconnected list of tool outputs.
 
 The goal is to make it easier to investigate a domain's infrastructure, discover related assets, understand its security posture, and identify potential avenues for further investigation.
 
----
-
 ## Email Addresses
+
+Email investigation examines the target address itself, its exposure in known breaches, its possible presence on online services, and publicly visible activity associated with the address.
+
+The email responder organizes findings into four main areas.
+
+### Email identity
+
+Email validation and domain-level information currently use **Disify**.
+
+Collected information can include:
+
+- Email address and domain
+- Top-level domain
+- Format validation
+- Disposable email detection
+- Role-account detection
+- Free-provider detection
+- DNS availability
+
+### Email infrastructure
+
+Where available, Theseus reports the target domain's mail exchange (MX) records. These records identify the mail servers associated with receiving email for the domain.
+
+### Breach exposure
+
+**XposedOrNot** provides breach-related observations associated with the email address.
+
+The responder summarizes the names of identified breaches, making it easier to see whether the address appears in known breach datasets.
+
+Breach findings indicate exposure in reported datasets. They do not, by themselves, establish that an account is currently compromised.
+
+### Account discovery
+
+Theseus combines results from **User Scanner** and **Holehe** to identify services that may be associated with an email address.
+
+User Scanner can provide additional information when available, including:
+
+- Service and category
+- Website URL
+- Username or login
+- Public profile URL
+- Account identifier
+- Account type
+- Matching method
+- Profile image URL
+
+Holehe complements these findings with account-registration checks across supported services. Where both tools report the same service, Theseus can consolidate the findings.
+
+Some checks may be skipped because they would trigger a password-reset email or another notification. Other checks may fail because of rate limits, access restrictions, or unexpected responses. These inconclusive results are reported separately and are not treated as proof that an account does not exist.
+
+### Public code footprint
+
+The **GitHub** collector searches public commit metadata for the target email address.
+
+The responder can report:
+
+- Matching commit count
+- Associated GitHub accounts
+- Commit author or committer identities
+
+This can help connect an email address with publicly visible development activity. Search counts and commit identities are observations, not definitive proof of account ownership or personal identity.
+
+### Email collectors
 
 Current email collectors include:
 
-* **XposedOrNot**
-* **Disify**
+- **Disify**
+- **XposedOrNot**
+- **User Scanner**
+- **Holehe**
+- **GitHub**
 
-They provide information such as:
-
-* Email and domain information
-* Disposable email detection
-* Role-account detection
-* Free-provider detection
-* DNS/MX information
-* Known breach exposure
-
----
+The responder consolidates their findings into a single report while retaining useful distinctions between validation, breach exposure, account discovery, and public code activity.
 
 ## Usernames
 
-Current username collection uses:
-
-* **WhatsMyName**
+Username investigation currently uses **WhatsMyName**.
 
 Theseus uses the WhatsMyName dataset to check usernames across supported websites.
 
 Results can include:
 
-* Website
-* Category
-* Detected URL
-* HTTP status
+- Website
+- Category
+- Detected URL
+- HTTP status
 
----
+Username discovery can help identify potentially related public profiles across different services. A match should be treated as a lead for further investigation, not automatic confirmation that every profile belongs to the same person.
 
 ## URLs
 
-URL investigation currently uses:
+URL investigation currently uses HTTP and DNS collectors to gather information about the specific URL being investigated.
 
-* **HTTP**
-* **DNS**
+Collected observations can include:
 
-These collectors gather information about the specific URL being investigated, including:
+- Requested URL
+- Final URL
+- Redirect chain
+- HTTP status
+- Content type
+- Response size
+- Response time
+- DNS records
+- A and AAAA records
+- CNAME records
+- MX records
+- NS records
+- TXT records
 
-* Requested URL
-* Final URL
-* Redirect chain
-* HTTP status
-* Content type
-* Response size
-* Response time
-* DNS records
-* A / AAAA records
-* CNAME
-* MX
-* NS
-* TXT
+These observations provide a starting point for understanding how a URL resolves and responds, along with the infrastructure associated with it.
 
 ---
 
@@ -297,7 +356,7 @@ IP
  ├── AbuseIPDB
  ├── VirusTotal
  ├── RIPEstat
- ├── ...
+ └── ...
 ```
 
 With Theseus:
@@ -314,35 +373,34 @@ Investigation report
 
 The investigator provides the target.
 
-Theseus handles the routing and collection.
+Theseus handles identification, routing, collection, and presentation.
 
-The underlying tools remain the sources of intelligence.
+The underlying tools remain the sources of intelligence, while Theseus provides the workflow that connects them.
 
 ---
 
 # Roadmap
 
-Theseus is being developed incrementally.
+Theseus is being developed incrementally, with a focus on expanding the collector ecosystem and improving the investigation responders for each supported entity type.
 
-Current development focuses on expanding the collector ecosystem and improving the investigation responders for each supported entity type.
+Planned development areas include:
 
-Planned areas include:
+- Additional OSINT collectors
+- Expanded entity support
+- More cross-source correlation
+- Improved investigation reports
+- Better collector error handling
+- Concurrent collection
+- Collector configuration
+- Expanded local-tool integration
+- Improved CLI experience
 
-* More OSINT collectors
-* More entity types
-* More cross-source correlation
-* Improved investigation reports
-* Better collector error handling
-* Concurrent collection
-* Collector configuration
-* Expanded local-tool integration
-* Improved CLI experience
-
-The goal is to make Theseus capable of navigating an investigation across many existing intelligence sources without requiring the investigator to manually operate each one.
+The architecture is intended to support additional collectors and investigation capabilities without requiring the entire workflow to be redesigned each time a new tool is integrated.
 
 ---
 
 ## License
 
 Theseus v1 is licensed under the Apache License 2.0.
+
 See the [LICENSE](LICENSE) file for details.

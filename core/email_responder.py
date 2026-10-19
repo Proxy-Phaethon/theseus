@@ -45,11 +45,21 @@ class EmailResponder:
 
         return self._format_sections(sections)
 
+
     @staticmethod
     def _tool(data: dict[str, Any], name: str) -> Any:
+        normalized_name = "".join(
+            char for char in name.lower() if char.isalnum()
+        )
+
         for tool_name, result in data.items():
-            if name in tool_name:
+            normalized_tool_name = "".join(
+                char for char in tool_name.lower() if char.isalnum()
+            )
+
+            if normalized_name in normalized_tool_name:
                 return result
+
         return {}
 
     @staticmethod

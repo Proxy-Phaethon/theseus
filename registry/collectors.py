@@ -26,8 +26,10 @@ from tools.domain.subfinder import SubfinderTool
 from tools.domain.virustotal import VirusTotalTool
 from tools.domain.whois import WHOISTool
 
-from tools.email.xposedornot import XposedOrNotTool
 from tools.email.disify import DisifyTool
+from tools.email.xposedornot import XposedOrNotTool
+from tools.email.github import GitHubTool
+from tools.email.holehe import HoleheTool
 
 from tools.url.http import HTTPTool
 from tools.url.dns import DNSTool
@@ -69,6 +71,8 @@ def build_collectors():
         EntityType.EMAIL: [
             XposedOrNotTool(),
             DisifyTool(),
+            GitHubTool(),
+            HoleheTool(),
         ],
 
         EntityType.URL: [

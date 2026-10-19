@@ -18,6 +18,7 @@ class EmailResponder:
         disify = self._tool(data, "disify")
         xposedornot = self._tool(data, "xposedornot")
         holehe = self._tool(data, "holehe")
+        user_scanner = self._tool(data, "user_scanner")
         github = self._tool(data, "github")
 
         sections = []
@@ -34,13 +35,9 @@ class EmailResponder:
         if breaches:
             sections.append(("Breach Exposure", breaches))
 
-        accounts = self._accounts(holehe)
+        accounts = self._accounts(user_scanner, holehe)
         if accounts:
-            sections.append((
-                "Possible Account Registrations "
-                "(rate-limited checks may be unreliable)",
-                accounts,
-            ))
+            sections.append(("Account Discovery", accounts))
 
         footprint = self._github(github)
         if footprint:
@@ -90,11 +87,31 @@ class EmailResponder:
             lines.append(f"TLD: {tld}")
 
         fields = [
-            ("format", "Format", lambda v: "Valid" if v is True else "Invalid" if v is False else str(v)),
-            ("disposable", "Disposable", lambda v: "Yes" if v is True else "No" if v is False else str(v)),
-            ("role", "Role Account", lambda v: "Yes" if v is True else "No" if v is False else str(v)),
-            ("free", "Free Provider", lambda v: "Yes" if v is True else "No" if v is False else str(v)),
-            ("dns", "DNS", lambda v: "Available" if v is True else "Unavailable" if v is False else str(v)),
+            (
+                "format",
+                "Format",
+                lambda v: "Valid" if v is True else "Invalid" if v is False else str(v),
+            ),
+            (
+                "disposable",
+                "Disposable",
+                lambda v: "Yes" if v is True else "No" if v is False else str(v),
+            ),
+            (
+                "role",
+                "Role Account",
+                lambda v: "Yes" if v is True else "No" if v is False else str(v),
+            ),
+            (
+                "free",
+                "Free Provider",
+                lambda v: "Yes" if v is True else "No" if v is False else str(v),
+            ),
+            (
+                "dns",
+                "DNS",
+                lambda v: "Available" if v is True else "Unavailable" if v is False else str(v),
+            ),
         ]
 
         for key, label, formatter in fields:
@@ -146,9 +163,10 @@ class EmailResponder:
         if not hosts:
             return []
 
-        lines = [f"MX Records: {len(hosts)}"]
-        lines.extend(f"  {host}" for host in hosts)
-        return lines
+        return [
+            f"MX Records: {len(hosts)}",
+            *(f"  {host}" for host in hosts),
+        ]
 
     @staticmethod
     def _breaches(data: Any) -> list[str]:
@@ -180,14 +198,112 @@ class EmailResponder:
             *(f"Breach: {name}" for name in names),
         ]
 
-    @staticmethod
-    def _accounts(data: Any) -> list[str]:
-        if not isinstance(data, list):
-            return []
+    @classmethod
+    def _accounts(
+        cls,
+        user_scanner: Any,
+        holehe: Any,
+    ) -> list[str]:
+        # Normalize service names so that variants such as X (Twitter)
+        # and twitter can be merged into a single finding.
+        accounts: dict[str, dict[str, Any]] = {}
 
-        accounts = []
+        def normalize_name(value: Any) -> str:
+            name = str(value or "").strip().lower()
 
-        for result in data:
+            aliases = {
+                "x (twitter)": "x",
+                "twitter": "x",
+                "x.com": "x",
+                "office365.com": "office365",
+                "office.com": "office365",
+                "microsoft 365": "office365",
+            }
+
+            return aliases.get(name, name)
+
+        def get_account(name: Any) -> dict[str, Any] | None:
+            if not name:
+                return None
+
+            normalized = normalize_name(name)
+            if not normalized:
+                return None
+
+            if normalized not in accounts:
+                accounts[normalized] = {
+                    "name": str(name).strip(),
+                    "sources": [],
+                    "metadata": {},
+                    "status": None,
+                }
+
+            return accounts[normalized]
+
+        # User Scanner returns a list of records with status, site_name,
+        # category, url, extra metadata, and sometimes media.
+        scanner_records = user_scanner if isinstance(user_scanner, list) else []
+
+        skipped_count = 0
+        error_count = 0
+
+        for result in scanner_records:
+            if not isinstance(result, dict):
+                continue
+
+            status = str(result.get("status") or "").strip().lower()
+
+            if status == "skipped":
+                skipped_count += 1
+                continue
+
+            if status == "error":
+                error_count += 1
+                continue
+
+            # Not Registered is a negative result, not a discovered account.
+            if status != "registered":
+                continue
+
+            name = result.get("site_name")
+            account = get_account(name)
+            if account is None:
+                continue
+
+            if "User Scanner" not in account["sources"]:
+                account["sources"].append("User Scanner")
+
+            account["status"] = "Registered"
+
+            for key in ("category", "url"):
+                value = result.get(key)
+                if value and key not in account["metadata"]:
+                    account["metadata"][key] = value
+
+            extra = result.get("extra")
+            if isinstance(extra, dict):
+                for key in (
+                    "login",
+                    "user_id",
+                    "profile",
+                    "account_type",
+                    "matched_by",
+                ):
+                    value = extra.get(key)
+                    if value is not None and value != "":
+                        account["metadata"].setdefault(key, value)
+
+            media = result.get("media")
+            if isinstance(media, dict):
+                avatar = media.get("avatar")
+                if avatar:
+                    account["metadata"].setdefault("avatar", avatar)
+
+        # Holehe's positive checks complement User Scanner. Do not treat
+        # rate-limited negative checks as evidence that an account is absent.
+        holehe_records = holehe if isinstance(holehe, list) else []
+
+        for result in holehe_records:
             if not isinstance(result, dict):
                 continue
 
@@ -195,10 +311,102 @@ class EmailResponder:
                 continue
 
             name = result.get("name") or result.get("domain")
-            if name and name not in accounts:
-                accounts.append(str(name))
+            account = get_account(name)
+            if account is None:
+                continue
 
-        return sorted(accounts, key=str.lower)
+            if "Holehe" not in account["sources"]:
+                account["sources"].append("Holehe")
+
+            account["status"] = account["status"] or "Positive"
+
+        if not accounts:
+            lines = []
+        else:
+            lines = []
+
+            ordered_accounts = sorted(
+                accounts.values(),
+                key=lambda item: item["name"].lower(),
+            )
+
+            lines.append(f"Services Found: {len(ordered_accounts)}")
+
+            for account in ordered_accounts:
+                metadata = account["metadata"]
+                lines.append("")
+                lines.append(account["name"])
+
+                if account["status"]:
+                    lines.append(f"  Status: {account['status']}")
+
+                category = metadata.get("category")
+                if category:
+                    lines.append(f"  Category: {category}")
+
+                login = metadata.get("login")
+                if login:
+                    lines.append(f"  Username: {login}")
+
+                profile = metadata.get("profile")
+                if profile:
+                    lines.append(f"  Profile: {profile}")
+
+                # If there is no profile-specific URL, retain the service URL.
+                elif metadata.get("url"):
+                    lines.append(f"  Website: {metadata['url']}")
+
+                user_id = metadata.get("user_id")
+                if user_id is not None:
+                    lines.append(f"  User ID: {user_id}")
+
+                account_type = metadata.get("account_type")
+                if account_type:
+                    lines.append(f"  Account Type: {account_type}")
+
+                matched_by = metadata.get("matched_by")
+                if matched_by:
+                    lines.append(f"  Evidence: {matched_by}")
+
+                avatar = metadata.get("avatar")
+                if avatar:
+                    lines.append(f"  Avatar: {avatar}")
+
+                lines.append(f"  Sources: {', '.join(account['sources'])}")
+
+        # Summarize inconclusive checks separately. They are not account
+        # findings and must not be presented as negative results.
+        if skipped_count or error_count:
+            if lines:
+                lines.append("")
+            lines.append("Inconclusive Checks")
+
+            if skipped_count:
+                lines.append(f"User Scanner Skipped: {skipped_count}")
+
+            if error_count:
+                lines.append(f"User Scanner Errors: {error_count}")
+
+        if holehe_records:
+            rate_limited = sum(
+                1
+                for result in holehe_records
+                if isinstance(result, dict)
+                and (
+                    result.get("rateLimit") is True
+                    or result.get("frequent_rate_limit") is True
+                )
+            )
+
+            if rate_limited:
+                if lines:
+                    lines.append("")
+                lines.append(
+                    f"Holehe Rate-Limited Checks: {rate_limited} "
+                    "(results may be inconclusive)"
+                )
+
+        return lines
 
     @staticmethod
     def _github(data: Any) -> list[str]:
@@ -249,9 +457,11 @@ class EmailResponder:
                     if not name or not email:
                         continue
 
-                    if name.lower() == "github" or email.lower().endswith(
-                        "@users.noreply.github.com"
-                    ) or email.lower() == "noreply@github.com":
+                    if (
+                        name.lower() == "github"
+                        or email.lower().endswith("@users.noreply.github.com")
+                        or email.lower() == "noreply@github.com"
+                    ):
                         continue
 
                     identity = (name, email)
@@ -261,7 +471,9 @@ class EmailResponder:
         if users:
             lines.append(f"GitHub Accounts Found: {len(users)}")
             for login, url in users:
-                lines.append(f"GitHub User: {login}" + (f" ({url})" if url else ""))
+                lines.append(
+                    f"GitHub User: {login}" + (f" ({url})" if url else "")
+                )
 
         if identities:
             lines.append(f"Commit Identities Found: {len(identities)}")

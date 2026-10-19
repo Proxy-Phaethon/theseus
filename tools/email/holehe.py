@@ -22,8 +22,14 @@ class HoleheTool:
             def filter(self, record):
                 return record.getMessage() != warning_message
 
-        root_logger = logging.getLogger()
         warning_filter = DecodeWarningFilter()
+
+        # Filter Beautiful Soup's decoding warning at its source.
+        bs4_logger = logging.getLogger("bs4.dammit")
+        bs4_logger.addFilter(warning_filter)
+
+        # Also cover versions that emit the warning through the root logger.
+        root_logger = logging.getLogger()
         root_logger.addFilter(warning_filter)
 
         try:
@@ -38,6 +44,7 @@ class HoleheTool:
                             results,
                         )
         finally:
+            bs4_logger.removeFilter(warning_filter)
             root_logger.removeFilter(warning_filter)
 
         return sorted(results, key=lambda item: item["name"])

@@ -30,6 +30,7 @@ from tools.email.disify import DisifyTool
 from tools.email.xposedornot import XposedOrNotTool
 from tools.email.github import GitHubTool
 from tools.email.holehe import HoleheTool
+from tools.email.user_scanner import UserScannerTool
 
 from tools.url.http import HTTPTool
 from tools.url.dns import DNSTool
@@ -73,6 +74,7 @@ def build_collectors():
             DisifyTool(),
             GitHubTool(),
             HoleheTool(),
+            UserScannerTool(),
         ],
 
         EntityType.URL: [

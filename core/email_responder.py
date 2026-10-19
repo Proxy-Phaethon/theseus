@@ -382,8 +382,6 @@ class EmailResponder:
                 if avatar:
                     lines.append(f"  Avatar: {avatar}")
 
-                lines.append(f"  Sources: {', '.join(account['sources'])}")
-
         # Summarize inconclusive checks separately. They are not account
         # findings and must not be presented as negative results.
         if skipped_count or error_count:

@@ -36,7 +36,7 @@ class UsernameResponder:
                     continue
 
                 normalized_url = self._normalize_url(url)
-                key = (site.casefold(), normalized_url)
+                key = normalized_url    
 
                 if key not in accounts:
                     accounts[key] = {

@@ -6,67 +6,85 @@ from urllib.parse import urlsplit, urlunsplit
 from core.identifier import Entity
 
 class UsernameResponder:
+    EXCLUDED_FIELDS = {
+        "source",
+        "sources",
+        "http_status",
+        "response_time_s",
+        "url_main",
+    }
+
     def respond(
         self,
         entity: Entity,
         results: list[tuple[str, Any]],
     ) -> str:
-        accounts: dict[str, dict[str, Any]] = {}
+        accounts: dict[tuple[str, str], dict[str, Any]] = {}
 
         for tool_name, result in results:
             if not isinstance(result, list):
                 continue
 
-            for record in result:
-                if not isinstance(record, dict):
+            for account in result:
+                if not isinstance(account, dict):
                     continue
 
-                site = record.get("site") or record.get("site_name")
-                url = record.get("url")
+                site = account.get("site") or account.get("site_name")
+                url = account.get("url")
 
-                if not isinstance(site, str) or not site.strip():
+                if not site or not url:
                     continue
 
-                if not isinstance(url, str) or not url.strip():
-                    continue
-
-                key = self._normalize_url(url)
-
-                if not key:
-                    continue
-
-                source = record.get("source") or tool_name
-                category = record.get("category")
-                extra = record.get("extra")
+                normalized_url = self._normalize_url(url)
+                key = (site.casefold(), normalized_url)
 
                 if key not in accounts:
                     accounts[key] = {
-                        "site": site.strip(),
-                        "url": url.strip(),
-                        "category": None,
-                        "sources": set(),
+                        "site": site,
+                        "url": url,
+                        "category": account.get("category"),
                         "extra": {},
                     }
 
-                account = accounts[key]
-                account["sources"].add(source)
+                merged = accounts[key]
 
-                if not account["category"] and isinstance(category, str):
-                    account["category"] = category
+                if not merged["category"] and account.get("category"):
+                    merged["category"] = account["category"]
 
+                extra = account.get("extra", {})
                 if isinstance(extra, dict):
-                    for field, value in extra.items():
-                        if value is not None and value != "":
-                            account["extra"].setdefault(field, value)
+                    merged["extra"].update(extra)
+
+                # Preserve useful top-level metadata from collectors.
+                for field, value in account.items():
+                    if field in {
+                        "site",
+                        "site_name",
+                        "url",
+                        "category",
+                        "extra",
+                    }:
+                        continue
+
+                    if field.casefold() in self.EXCLUDED_FIELDS:
+                        continue
+
+                    if field.startswith("_") or value is None:
+                        continue
+
+                    merged["extra"].setdefault(field, value)
 
         if not accounts:
             return "No accounts found."
 
-        lines = []
+        lines: list[str] = []
 
         for account in sorted(
             accounts.values(),
-            key=lambda item: item["site"].casefold(),
+            key=lambda item: (
+                item["site"].casefold(),
+                item["url"].casefold(),
+            ),
         ):
             lines.append(account["site"])
 
@@ -74,13 +92,12 @@ class UsernameResponder:
                 lines.append(f"  Category: {account['category']}")
 
             lines.append(f"  URL: {account['url']}")
-            lines.append(
-                f"  Sources: {', '.join(sorted(account['sources']))}"
-            )
 
-            if account["extra"]:
-                for field, value in account["extra"].items():
-                    lines.append(f"  {field}: {value}")
+            for field, value in sorted(
+                account["extra"].items(),
+                key=lambda item: item[0].casefold(),
+            ):
+                lines.append(f"  {field}: {value}")
 
             lines.append("")
 
@@ -89,20 +106,15 @@ class UsernameResponder:
     @staticmethod
     def _normalize_url(url: str) -> str:
         try:
-            parsed = urlsplit(url.strip())
-
-            if parsed.scheme.lower() not in {"http", "https"}:
-                return ""
-
-            if not parsed.hostname:
-                return ""
-
-            return urlunsplit((
-                parsed.scheme.lower(),
-                parsed.netloc.lower(),
-                parsed.path.rstrip("/") or "/",
-                parsed.query,
-                "",
-            ))
-        except ValueError:
-            return ""
+            parts = urlsplit(url)
+            return urlunsplit(
+                (
+                    parts.scheme.lower(),
+                    parts.netloc.lower(),
+                    parts.path.rstrip("/"),
+                    parts.query,
+                    "",
+                )
+            )
+        except (TypeError, ValueError):
+            return url

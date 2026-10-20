@@ -109,18 +109,40 @@ class UsernameResponder:
 
         return "\n".join(lines).rstrip()
 
-    @staticmethod
-    def _normalize_url(url: str) -> str:
-        try:
-            parts = urlsplit(url)
-            return urlunsplit(
-                (
-                    parts.scheme.lower(),
-                    parts.netloc.lower(),
-                    parts.path.rstrip("/"),
-                    parts.query,
-                    "",
-                )
+@staticmethod
+def _normalize_url(url: str) -> str:
+    try:
+        parts = urlsplit(url.strip())
+
+        scheme = parts.scheme.lower()
+        hostname = (parts.hostname or "").lower()
+
+        # Treat common URL variants as the same host.
+        if hostname.startswith("www."):
+            hostname = hostname[4:]
+
+        # Threads has used both domains for profile URLs.
+        if hostname == "threads.net":
+            hostname = "threads.com"
+
+        port = parts.port
+        if port and not (
+            (scheme == "https" and port == 443)
+            or (scheme == "http" and port == 80)
+        ):
+            hostname = f"{hostname}:{port}"
+
+        path = parts.path.rstrip("/") or "/"
+
+        return urlunsplit(
+            (
+                scheme,
+                hostname,
+                path,
+                parts.query,
+                "",
             )
-        except (TypeError, ValueError):
-            return url
+        ).casefold()
+
+    except (TypeError, ValueError):
+        return url.strip().casefold()

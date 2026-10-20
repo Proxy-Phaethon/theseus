@@ -10,6 +10,7 @@ class UsernameResponder:
         "source",
         "sources",
         "http_status",
+        "status_code",
         "response_time_s",
         "url_main",
     }

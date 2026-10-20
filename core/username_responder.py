@@ -53,7 +53,13 @@ class UsernameResponder:
 
                 extra = account.get("extra", {})
                 if isinstance(extra, dict):
-                    merged["extra"].update(extra)
+                    for field, value in extra.items():
+                        if field.casefold() in self.EXCLUDED_FIELDS:
+                            continue
+                        if field.startswith("_") or value is None:
+                            continue
+
+                        merged["extra"].setdefault(field, value)
 
                 # Preserve useful top-level metadata from collectors.
                 for field, value in account.items():

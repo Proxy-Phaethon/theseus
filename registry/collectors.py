@@ -37,6 +37,9 @@ from tools.url.dns import DNSTool
 
 from tools.username.whatsmyname import WhatsMyNameTool
 from tools.username.userscanner import UserScannerTool
+from tools.username.enola import EnolaTool
+from tools.username.sherlock import SherlockTool
+from tools.username.maigret import MaigretTool
 
 def build_collectors():
     return {
@@ -85,6 +88,9 @@ def build_collectors():
 
         EntityType.USERNAME: [
             WhatsMyNameTool(),
-            UserScannerTool()
+            UserScannerTool(),
+            EnolaTool(),
+            SherlockTool(),
+            MaigretTool()
         ],
     }

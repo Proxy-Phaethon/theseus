@@ -36,6 +36,7 @@ from tools.url.http import HTTPTool
 from tools.url.dns import DNSTool
 
 from tools.username.whatsmyname import WhatsMyNameTool
+from tools.username.userscanner import UserScannerTool
 
 def build_collectors():
     return {
@@ -84,5 +85,6 @@ def build_collectors():
 
         EntityType.USERNAME: [
             WhatsMyNameTool(),
+            UserScannerTool()
         ],
     }

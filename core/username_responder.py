@@ -19,7 +19,7 @@ class UsernameResponder:
         entity: Entity,
         results: list[tuple[str, Any]],
     ) -> str:
-        accounts: dict[tuple[str, str], dict[str, Any]] = {}
+        accounts: dict[str, dict[str, Any]] = {}
 
         for tool_name, result in results:
             if not isinstance(result, list):

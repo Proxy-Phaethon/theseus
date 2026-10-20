@@ -42,7 +42,7 @@ It does not attempt to replace the individual tools it uses. Instead, it provide
 
 ## Current Status
 
-**Version: v0.4.0**
+**Version: v0.5.0**
 
 Theseus uses an entity-based architecture. The identifier determines the target type, the collector registry selects the relevant tools, and the responder organizes their results into an investigation report.
 
@@ -54,7 +54,7 @@ The current implementation supports investigations involving:
 - Usernames
 - URLs
 
-IP and domain investigations cover infrastructure, exposure, registration, DNS, and related intelligence. Email investigation combines email validation, breach exposure, account discovery, and public code activity.
+IP and domain investigations cover infrastructure, exposure, registration, DNS, and related intelligence. Email investigation combines email validation, breach exposure, account discovery, and public code activity. Username investigation searches supported websites for potential profiles, while URL investigation examines HTTP responses, redirects, and associated DNS information.
 
 The collector ecosystem is designed to be extensible, allowing additional tools and entity-specific capabilities to be integrated over time.
 
@@ -62,7 +62,7 @@ The collector ecosystem is designed to be extensible, allowing additional tools 
 
 ## Installation
 
-Install the latest version directly from GitHub:
+Install Theseus directly from GitHub:
 
 ```bash
 pip install git+https://github.com/Proxy-Phaethon/theseus.git
@@ -73,8 +73,6 @@ Once installed, run:
 ```bash
 theseus
 ```
-
----
 
 ## API Keys and Configuration
 
@@ -137,7 +135,7 @@ Enter `q` to exit.
 
 ## IP Addresses
 
-IP investigation is currently one of the most developed parts of Theseus. It combines network intelligence, infrastructure observations, reputation data, and internet exposure information from multiple independent sources.
+IP investigation is one of the most developed parts of Theseus. It combines network intelligence, infrastructure observations, reputation data, and internet exposure information from multiple independent sources.
 
 The IP collector ecosystem covers the following categories:
 
@@ -200,12 +198,12 @@ Domain investigation expands Theseus beyond individual IP addresses to examine d
 
 The domain collector ecosystem covers:
 
-- **WHOIS and RDAP:** registration details, registrar information, dates, and domain status
-- **DNS:** records, nameservers, and related infrastructure
-- **Subdomains:** discovery of additional assets associated with a domain
+- **WHOIS and RDAP:** Registration details, registrar information, dates, and domain status
+- **DNS:** Records, nameservers, and related infrastructure
+- **Subdomains:** Discovery of additional assets associated with a domain
 - **Email posture:** DNS-based email infrastructure and security configuration, including SPF and DMARC checks
-- **Certificates and threat intelligence:** domain-related certificate and reputation observations
-- **Hosting and IPs:** infrastructure associated with the target domain
+- **Certificates and threat intelligence:** Domain-related certificate and reputation observations
+- **Hosting and IPs:** Infrastructure associated with the target domain
 
 Current collectors include:
 
@@ -300,22 +298,46 @@ The responder consolidates their findings into a single report while retaining u
 
 ## Usernames
 
-Username investigation currently uses **WhatsMyName**.
+Username investigation brings together multiple account-discovery tools to search supported websites for potential profiles associated with a target username.
 
-Theseus uses the WhatsMyName dataset to check usernames across supported websites.
+Current collectors include:
 
-Results can include:
+- **WhatsMyName**
+- **User Scanner**
+- **Maigret**
+- **Sherlock**
+- **Enola**
 
-- Website
+These tools use different datasets and detection methods. Running them together expands coverage beyond what a single username checker can provide.
+
+### Investigation results
+
+Depending on the collector and the information available, results can include:
+
+- Website or service name
 - Category
-- Detected URL
-- HTTP status
+- Profile URL
+- Username and account identifiers
+- Public profile details
+- Other useful account metadata
 
-Username discovery can help identify potentially related public profiles across different services. A match should be treated as a lead for further investigation, not automatic confirmation that every profile belongs to the same person.
+The username responder combines findings from the collectors into a consolidated report. It filters internal collection metadata, removes unnecessary HTTP status and response-time fields, and merges duplicate records when their normalized profile URLs match.
+
+URL normalization also handles selected common variations, such as `www` prefixes, trailing slashes, and known domain aliases.
+
+Different URLs are not automatically treated as the same account simply because they contain the same username or mention the same service.
+
+### Interpreting results
+
+Username discovery produces leads for further investigation, not confirmed identities.
+
+A result may be a false positive, an unrelated profile, or a page that does not actually represent an account. Some services may also block automated checks or return incomplete information.
+
+Each candidate profile should be verified independently before drawing conclusions about ownership or linking accounts to a person.
 
 ## URLs
 
-URL investigation currently uses HTTP and DNS collectors to gather information about the specific URL being investigated.
+URL investigation gathers HTTP and DNS observations about the specific URL being investigated.
 
 Collected observations can include:
 

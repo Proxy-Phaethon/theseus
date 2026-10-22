@@ -46,61 +46,6 @@ class EmailResponder:
         return self._format_sections(sections)
 
     @staticmethod
-    def cross_scan(results: list[tuple[str, Any]]) -> list[str]:
-        """Extract and print usernames discovered by email User Scanner results."""
-        data = {
-            tool_name.lower(): result
-            for tool_name, result in results
-        }
-        user_scanner = EmailResponder._tool(data, "user_scanner")
-
-        usernames = []
-        seen = set()
-
-        if isinstance(user_scanner, list):
-            for record in user_scanner:
-                if not isinstance(record, dict):
-                    continue
-                if str(record.get("status") or "").strip().lower() != "registered":
-                    continue
-
-                extra = record.get("extra")
-                if not isinstance(extra, dict):
-                    continue
-
-                login = extra.get("login")
-                if not isinstance(login, str):
-                    continue
-
-                username = login.strip()
-                if not username or not username.isascii():
-                    continue
-
-                # Keep candidates compatible with Identifier's username syntax.
-                if not (1 <= len(username) <= 30):
-                    continue
-                if any(
-                    not (char.isalnum() or char in "._-")
-                    for char in username
-                ):
-                    continue
-
-                normalized = username.casefold()
-                if normalized not in seen:
-                    seen.add(normalized)
-                    usernames.append(username)
-
-        if not usernames:
-            print("No usernames found.")
-            return []
-
-        print("Usernames found:")
-        for username in usernames:
-            print(f"  {username}")
-
-        return usernames
-
-    @staticmethod
     def _tool(data: dict[str, Any], name: str) -> Any:
         normalized_name = "".join(
             char for char in name.lower() if char.isalnum()
@@ -115,42 +60,6 @@ class EmailResponder:
                 return result
 
         return {}
-
-    @classmethod
-    def cross_scan(
-        cls,
-        results: list[tuple[str, Any]],
-    ) -> list[str]:
-        """Extract unique usernames from registered User Scanner results."""
-        data = {
-            tool_name.lower(): result
-            for tool_name, result in results
-        }
-
-        user_scanner = cls._tool(data, "user_scanner")
-
-        if not isinstance(user_scanner, list):
-            return []
-
-        usernames = set()
-
-        for record in user_scanner:
-            if not isinstance(record, dict):
-                continue
-
-            status = str(record.get("status") or "").strip().lower()
-            if status != "registered":
-                continue
-
-            extra = record.get("extra")
-            if not isinstance(extra, dict):
-                continue
-
-            login = extra.get("login")
-            if isinstance(login, str) and login.strip():
-                usernames.add(login.strip())
-
-        return sorted(usernames, key=str.lower)
 
     @staticmethod
     def _format_sections(
@@ -304,8 +213,6 @@ class EmailResponder:
         user_scanner: Any,
         holehe: Any,
     ) -> list[str]:
-        # Normalize service names so that variants such as X (Twitter)
-        # and twitter can be merged into a single finding.
         accounts: dict[str, dict[str, Any]] = {}
 
         def normalize_name(value: Any) -> str:
@@ -340,8 +247,6 @@ class EmailResponder:
 
             return accounts[normalized]
 
-        # User Scanner returns a list of records with status, site_name,
-        # category, url, extra metadata, and sometimes media.
         scanner_records = user_scanner if isinstance(user_scanner, list) else []
 
         skipped_count = 0
@@ -361,7 +266,6 @@ class EmailResponder:
                 error_count += 1
                 continue
 
-            # Not Registered is a negative result, not a discovered account.
             if status != "registered":
                 continue
 
@@ -399,8 +303,6 @@ class EmailResponder:
                 if avatar:
                     account["metadata"].setdefault("avatar", avatar)
 
-        # Holehe's positive checks complement User Scanner. Do not treat
-        # rate-limited negative checks as evidence that an account is absent.
         holehe_records = holehe if isinstance(holehe, list) else []
 
         for result in holehe_records:
@@ -420,11 +322,9 @@ class EmailResponder:
 
             account["status"] = account["status"] or "Positive"
 
-        if not accounts:
-            lines = []
-        else:
-            lines = []
+        lines = []
 
+        if accounts:
             ordered_accounts = sorted(
                 accounts.values(),
                 key=lambda item: item["name"].lower(),
@@ -448,8 +348,6 @@ class EmailResponder:
                 profile = metadata.get("profile")
                 if profile:
                     lines.append(f"  Profile: {profile}")
-
-                # If there is no profile-specific URL, retain the service URL.
                 elif metadata.get("url"):
                     lines.append(f"  Website: {metadata['url']}")
 
@@ -469,8 +367,6 @@ class EmailResponder:
                 if avatar:
                     lines.append(f"  Avatar: {avatar}")
 
-        # Summarize inconclusive checks separately. They are not account
-        # findings and must not be presented as negative results.
         if skipped_count or error_count:
             if lines:
                 lines.append("")

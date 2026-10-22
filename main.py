@@ -4,7 +4,7 @@ from alive_progress import alive_bar
 import threading
 import time
 
-from core.identifier import Identifier, EntityType
+from core.identifier import Identifier, Entity, EntityType
 from core.ip_responder import IPResponder
 from core.domain_responder import DomainResponder
 from core.email_responder import EmailResponder
@@ -43,13 +43,17 @@ STAGES = [
     "Trying to Figure Out...",
 ]
 
-def investigate(identifier, target):
+def investigate(identifier, target, forced_type=None):
     result = []
     errors = []
 
     def worker():
         try:
-            result.append(identifier.process(target))
+            if forced_type is None:
+                result.append(identifier.process(target))
+            else:
+                entity = Entity(target, forced_type)
+                result.append((entity, identifier.run(entity)))
         except Exception as exc:
             errors.append(exc)
 
@@ -86,78 +90,3 @@ def investigate(identifier, target):
 
         bar.text = "Compiling intelligence"
         time.sleep(1)
-
-    thread.join()
-
-    if errors:
-        raise errors[0]
-    if not result:
-        raise RuntimeError("Investigation finished without returning results.")
-
-    return result[0]
-
-def print_all_subdomains(responder):
-    subdomains = getattr(responder, "subdomains", [])
-    if not subdomains:
-        return
-
-    answer = input(
-        f"\nPrint all {len(subdomains)} discovered subdomains? [y/n]: "
-    ).strip().lower()
-
-    if answer not in {"y", "yes"}:
-        return
-
-    print("\nAll discovered subdomains:")
-    for item in subdomains:
-        if isinstance(item, dict):
-            hostname = item.get("hostname")
-            sources = item.get("sources", [])
-            if not hostname:
-                continue
-            source_text = ", ".join(str(source) for source in sources if source)
-            suffix = f" [{source_text}]" if source_text else ""
-            print(f"  {hostname}{suffix}")
-        else:
-            print(f"  {item}")
-
-def main() -> None:
-    identifier = build_identifier()
-    responders = build_responders()
-
-    while True:
-        target = input("\n> ").strip()
-
-        if target.lower() in {
-            "q", "q.", "quit", "quit.", "bye", "bye.", "exit", "exit."
-        }:
-            print("Exiting.")
-            break
-
-        if not target:
-            continue
-
-        try:
-            entity, results = investigate(identifier, target)
-        except Exception as exc:
-            print(f"\nInvestigation failed: {exc}")
-            continue
-
-        print(f"\nType: {entity.type.value}")
-
-        responder = responders.get(entity.type)
-        if responder is None:
-            print(f"\nNo responder available for {entity.type.value}.")
-            continue
-
-        response = responder.respond(entity, results)
-        if response:
-            print(f"\n{response}")
-        else:
-            print("\nNo reportable findings returned by the available collectors.")
-
-        if entity.type == EntityType.DOMAIN:
-            print_all_subdomains(responder)
-
-if __name__ == "__main__":
-    main()

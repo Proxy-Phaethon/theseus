@@ -192,6 +192,13 @@ def main() -> None:
             continue
 
         if cross_scan:
+            for tool_name, raw_result in results:
+                normalized_name = tool_name.lower().replace("_", "")
+
+                if "userscanner" in normalized_name:
+                    print(f"\nDEBUG: {tool_name}")
+                    print(raw_result)
+
             run_cross_scan(identifier, responders, results)
             continue
 

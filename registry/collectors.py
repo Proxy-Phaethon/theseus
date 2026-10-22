@@ -34,6 +34,14 @@ from tools.email.user_scanner import UserScannerTool
 
 from tools.url.http import HTTPTool
 from tools.url.dns import DNSTool
+from tools.url.cert_transparency import CertTransparencyTool
+from tools.url.virustotal import VirusTotalTool
+from tools.url.common_crawl import CommonCrawlTool
+from tools.url.playwright import PlaywrightTool
+from tools.url.safe_browsing import SafeBrowsingTool
+from tools.url.urlhaus import URLhausTool
+from tools.url.urlscan import URLScanTool
+from tools.url.wayback import WaybackTool
 
 from tools.username.whatsmyname import WhatsMyNameTool
 from tools.username.userscanner import UserScannerTool
@@ -84,6 +92,14 @@ def build_collectors():
         EntityType.URL: [
             HTTPTool(),
             DNSTool(),
+            CertTransparencyTool(),
+            VirusTotalTool(),
+            CommonCrawlTool(),
+            PlaywrightTool(),
+            SafeBrowsingTool(),
+            URLhausTool(),
+            URLScanTool(),
+            WaybackTool(),
         ],
 
         EntityType.USERNAME: [

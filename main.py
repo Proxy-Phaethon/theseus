@@ -130,7 +130,12 @@ def run_cross_scan(identifier, responders, email_results):
     usernames = email_responder.cross_scan(email_results)
 
     if not usernames:
+        print("No usernames found.")
         return
+
+    print("Usernames discovered:")
+    for username in usernames:
+        print(f"  {username}")
 
     username_responder = responders[EntityType.USERNAME]
 

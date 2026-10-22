@@ -43,17 +43,13 @@ STAGES = [
     "Trying to Figure Out...",
 ]
 
-def investigate(identifier, target, forced_type=None):
+def investigate(identifier, target):
     result = []
     errors = []
 
     def worker():
         try:
-            if forced_type is None:
-                result.append(identifier.process(target))
-            else:
-                entity = Entity(target, forced_type)
-                result.append((entity, identifier.run(entity)))
+            result.append(identifier.process(target))
         except Exception as exc:
             errors.append(exc)
 
@@ -125,38 +121,6 @@ def print_all_subdomains(responder):
         else:
             print(f"  {item}")
 
-def run_cross_scan(identifier, responders, email_results):
-    email_responder = responders[EntityType.EMAIL]
-    usernames = email_responder.cross_scan(email_results)
-
-    if not usernames:
-        print("No usernames found.")
-        return
-
-    print("Usernames discovered:")
-    for username in usernames:
-        print(f"  {username}")
-
-    username_responder = responders[EntityType.USERNAME]
-
-    for username in usernames:
-        try:
-            entity, results = investigate(
-                identifier,
-                username,
-                forced_type=EntityType.USERNAME,
-            )
-        except Exception as exc:
-            print(f"\nUsername investigation failed for {username}: {exc}")
-            continue
-
-        response = username_responder.respond(entity, results)
-        print(f"\n{username}")
-        if response:
-            print(response)
-        else:
-            print("No reportable findings returned by the available collectors.")
-
 def main() -> None:
     identifier = build_identifier()
     responders = build_responders()
@@ -165,7 +129,8 @@ def main() -> None:
         target = input("\n> ").strip()
 
         if target.lower() in {
-            "q", "q.", "quit", "quit.", "bye", "bye.", "exit", "exit."
+            "q", "q.", "quit", "quit.", "bye", "bye.",
+            "exit", "exit."
         }:
             print("Exiting.")
             break
@@ -173,26 +138,10 @@ def main() -> None:
         if not target:
             continue
 
-        cross_scan = target.endswith("+")
-        if cross_scan:
-            target = target[:-1].strip()
-            if not target:
-                print("\nThe + operator requires an email address.")
-                continue
-
-            identified_entity = identifier.identify(target)
-            if identified_entity.type != EntityType.EMAIL:
-                print("\nThe + operator is currently supported for email targets only.")
-                continue
-
         try:
             entity, results = investigate(identifier, target)
         except Exception as exc:
             print(f"\nInvestigation failed: {exc}")
-            continue
-
-        if cross_scan:
-            run_cross_scan(identifier, responders, results)
             continue
 
         print(f"\nType: {entity.type.value}")

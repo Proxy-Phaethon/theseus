@@ -24,7 +24,7 @@ class CertTransparencyTool:
         response = requests.get(
             self.API_URL,
             params={
-                "q": f"%.{domain}",
+                "q": domain,
                 "output": "json",
             },
             headers={

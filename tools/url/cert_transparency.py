@@ -40,8 +40,10 @@ class CertTransparencyTool:
         if not isinstance(raw_result, list):
             raise ValueError("Unexpected response from crt.sh")
 
+        
         certificates = []
         hostnames = set()
+        wildcard_names = set()
 
         for certificate in raw_result:
             if not isinstance(certificate, dict):
@@ -52,19 +54,25 @@ class CertTransparencyTool:
             for name in names.splitlines():
                 name = name.strip().lower().rstrip(".")
 
-                if name.startswith("*."):
-                    name = name[2:]
+                if not name or "/" in name:
+                    continue
 
-                # Keep only the queried domain and its subdomains.
-                if (
-                    name == domain
-                    or name.endswith("." + domain)
-                ) and not any(char in name for char in ("*", "/")):
-                    if re.fullmatch(
-                        r"[a-z0-9.-]+",
-                        name,
-                    ):
-                        hostnames.add(name)
+                is_wildcard = name.startswith("*.")
+                normalized_name = name[2:] if is_wildcard else name
+
+                if not re.fullmatch(r"[a-z0-9.-]+", normalized_name):
+                    continue
+
+                if not (
+                    normalized_name == domain
+                    or normalized_name.endswith("." + domain)
+                ):
+                    continue
+
+                if is_wildcard:
+                    wildcard_names.add(name)
+                else:
+                    hostnames.add(normalized_name)
 
             certificates.append(certificate)
 

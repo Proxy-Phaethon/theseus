@@ -20,7 +20,7 @@
 
 Theseus is an OSINT investigation tool that brings existing intelligence tools and services together behind a single workflow.
 
-Give Theseus a target such as an IP address, domain, email address, username, or URL. Theseus identifies the target, selects the relevant collectors, gathers information from those sources, and organizes the results into an investigation report.
+Give Theseus a target such as an IP address, domain, email address, username, or URL. Theseus identifies the target, selects the relevant collectors, gathers information from those sources, and organizes their findings into an investigation report.
 
 ```text
 Target
@@ -36,17 +36,17 @@ Investigation Report
 
 Theseus is an **internet explorer**, not a search engine.
 
-It does not attempt to replace the individual tools it uses. Instead, it provides the layer that connects them, routes targets to relevant collectors, and organizes their findings into a structured report.
+It does not attempt to replace the individual tools it uses. Instead, it connects them, routes targets to relevant collectors, and organizes their findings into a structured report.
 
 ---
 
 ## Current Status
 
-**Version: v0.5.0**
+**Version: v0.6.0**
 
 Theseus uses an entity-based architecture. The identifier determines the target type, the collector registry selects the relevant tools, and the responder organizes their results into an investigation report.
 
-The current implementation supports investigations involving:
+The current implementation supports five entity types:
 
 - IP addresses
 - Domains
@@ -54,11 +54,11 @@ The current implementation supports investigations involving:
 - Usernames
 - URLs
 
-IP and domain investigations cover infrastructure, exposure, registration, DNS, and related intelligence. Email investigation combines email validation, breach exposure, account discovery, and public code activity. Username investigation searches supported websites for potential profiles, while URL investigation examines HTTP responses, redirects, and associated DNS information.
+Each supported entity has its own collector ecosystem and responder. Theseus combines observations from multiple sources while retaining distinctions between different types of findings.
 
-The collector ecosystem is designed to be extensible, allowing additional tools and entity-specific capabilities to be integrated over time.
+At v0.6.0, the investigation workflows for all five supported entity types are implemented. Development is shifting toward improving the consistency, reliability, usability, and overall presentation of the existing system ahead of v1.0.0.
 
----
+The architecture remains extensible, allowing additional collectors and capabilities to be integrated without redesigning the entire workflow.
 
 ## Installation
 
@@ -84,18 +84,16 @@ For example, Shodan requires:
 export SHODAN_API_KEY="your-api-key"
 ```
 
-On macOS, this can be added to `~/.zshrc`:
+On macOS using Zsh, you can add this to your shell configuration:
 
 ```bash
 echo 'export SHODAN_API_KEY="your-api-key"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
-Other collectors may require their own credentials or configuration.
+Other collectors may require their own credentials, configuration, or locally installed command-line tools.
 
 API keys should never be committed to the repository. Consult the documentation for each integrated tool to determine its configuration requirements.
-
----
 
 ## Usage
 
@@ -105,7 +103,7 @@ Start Theseus:
 theseus
 ```
 
-Provide a target:
+Enter a target at the prompt:
 
 ```text
 > 8.8.8.8
@@ -125,7 +123,7 @@ Other examples:
 
 Theseus identifies the entity type automatically and routes the target to the appropriate collectors.
 
-During collection, Theseus displays a terminal loading indicator while the collectors run. When collection is complete, the responder organizes the collected observations into a structured investigation report.
+During collection, Theseus displays a terminal loading indicator while the tools run. When collection finishes, the relevant responder organizes the collected observations into an investigation report.
 
 Enter `q` to exit.
 
@@ -135,9 +133,9 @@ Enter `q` to exit.
 
 ## IP Addresses
 
-IP investigation is one of the most developed parts of Theseus. It combines network intelligence, infrastructure observations, reputation data, and internet exposure information from multiple independent sources.
+IP investigation combines network intelligence, infrastructure observations, reputation data, and internet exposure information from multiple independent sources.
 
-The IP collector ecosystem covers the following categories:
+The IP collector ecosystem covers:
 
 - Network and ASN information
 - Geolocation
@@ -174,7 +172,7 @@ Theseus organizes the collected observations into relevant sections of the IP in
 
 It does not blindly merge conflicting observations into a single value.
 
-For example, if different sources report different locations:
+For example, if different sources report different locations, Theseus can preserve the disagreement:
 
 ```text
 Observations
@@ -188,22 +186,20 @@ Observations
     Ashburn (1 source)
 ```
 
-the disagreement remains visible in the report.
-
-The purpose is to preserve collected evidence rather than manufacture certainty where the sources disagree.
+The goal is to preserve collected evidence rather than manufacture certainty where the sources disagree.
 
 ## Domains
 
-Domain investigation expands Theseus beyond individual IP addresses to examine domain infrastructure, registration, related assets, and potential exposure.
+Domain investigation examines registration details, DNS infrastructure, related assets, and potential exposure.
 
 The domain collector ecosystem covers:
 
-- **WHOIS and RDAP:** Registration details, registrar information, dates, and domain status
-- **DNS:** Records, nameservers, and related infrastructure
-- **Subdomains:** Discovery of additional assets associated with a domain
-- **Email posture:** DNS-based email infrastructure and security configuration, including SPF and DMARC checks
-- **Certificates and threat intelligence:** Domain-related certificate and reputation observations
-- **Hosting and IPs:** Infrastructure associated with the target domain
+- **WHOIS and RDAP:** Registration details, registrar information, dates, and domain status.
+- **DNS:** Records, nameservers, and related infrastructure.
+- **Subdomains:** Discovery of additional assets associated with a domain.
+- **Email posture:** DNS-based email infrastructure and security configuration, including SPF and DMARC checks.
+- **Certificates and threat intelligence:** Domain-related certificate and reputation observations.
+- **Hosting and IPs:** Infrastructure associated with the target domain.
 
 Current collectors include:
 
@@ -225,7 +221,7 @@ The goal is to make it easier to investigate a domain's infrastructure, discover
 
 Email investigation examines the target address itself, its exposure in known breaches, its possible presence on online services, and publicly visible activity associated with the address.
 
-The email responder organizes findings into four main areas.
+The email responder organizes findings into five areas.
 
 ### Email identity
 
@@ -337,92 +333,117 @@ Each candidate profile should be verified independently before drawing conclusio
 
 ## URLs
 
-URL investigation gathers HTTP and DNS observations about the specific URL being investigated.
+URL investigation examines a specific URL through HTTP requests, DNS lookups, browser inspection, threat-intelligence sources, certificate records, and web archives.
+
+Unlike a basic URL checker, Theseus combines observations from multiple collectors into one report, making it easier to examine a URL's behavior, infrastructure, reputation, and historical presence.
+
+### HTTP and DNS
+
+The HTTP collector examines the URL's response and redirect behavior.
 
 Collected observations can include:
 
 - Requested URL
 - Final URL
+- HTTP status and reason
 - Redirect chain
-- HTTP status
+- Response headers
 - Content type
 - Response size
 - Response time
-- DNS records
+
+The DNS collector retrieves records associated with the URL's hostname, including:
+
 - A and AAAA records
 - CNAME records
 - MX records
 - NS records
 - TXT records
 
-These observations provide a starting point for understanding how a URL resolves and responds, along with the infrastructure associated with it.
+Together, these findings provide a starting point for understanding how the URL resolves and responds.
 
----
+### Browser inspection
 
-# Why Theseus?
+**Playwright** examines the target using a browser session.
 
-The internet already has an enormous number of OSINT tools.
+Depending on the page and the information available, the responder can report:
 
-There are APIs, datasets, command-line utilities, search engines, scanners, passive DNS services, reputation databases, certificate sources, and specialized intelligence platforms.
+- Final URL and page title
+- Browser HTTP status and content type
+- Redirect chain
+- DOM length and SHA-256 fingerprint
+- Links found on the page
+- Forms and their fields
+- Browser network requests and resource types
+- Failed requests
+- JavaScript console errors
+- Page errors
+- Elapsed inspection time
 
-The problem is not necessarily the lack of tools.
+This provides a view of the page as a browser loads it, complementing the HTTP collector's direct request.
 
-It is the amount of glue required to use them together.
+### Infrastructure and certificates
 
-Without Theseus, an investigation might look like:
+**URLScan** provides scan observations that can include:
 
-```text
-IP
- ├── Shodan
- ├── Censys
- ├── AbuseIPDB
- ├── VirusTotal
- ├── RIPEstat
- └── ...
-```
+- Page title and final scanned URL
+- Observed IP addresses
+- ASN and network organization
+- Server information
+- TLS certificate metadata
+- Domain age and ranking information
+- Observed domains, URLs, and linked domains
+- Scan verdicts and request statistics
 
-With Theseus:
+**Certificate Transparency** uses `crt.sh` to retrieve certificate records associated with the queried domain.
 
-```text
-Target
-  ↓
-Theseus
-  ↓
-Relevant collectors
-  ↓
-Investigation report
-```
+The responder can report certificate counts, concrete hostnames, wildcard patterns, and selected certificate metadata.
 
-The investigator provides the target.
+Wildcard certificate names are kept distinct from concrete hostnames. A certificate for `*.example.com`, for instance, does not establish that every possible subdomain exists.
 
-Theseus handles identification, routing, collection, and presentation.
+### Threat intelligence
 
-The underlying tools remain the sources of intelligence, while Theseus provides the workflow that connects them.
+Theseus integrates several sources for URL-related reputation and threat observations.
 
----
+- **VirusTotal:** Retrieves an existing URL report, including available analysis statistics, reputation, categories, community votes, and outgoing links.
+- **Google Safe Browsing:** Checks whether the URL matches supported threat lists.
+- **URLhaus:** Checks for matching URL records associated with malware distribution.
 
-# Roadmap
+These sources are reported separately because they have different coverage, data, and detection methods.
 
-Theseus is being developed incrementally, with a focus on expanding the collector ecosystem and improving the investigation responders for each supported entity type.
+A missing record or a lack of detections is not proof that a URL is safe. Community votes, automated engine results, and reputation scores may also disagree and should be interpreted in context.
 
-Planned development areas include:
+### Web archives
 
-- Additional OSINT collectors
-- Expanded entity support
-- More cross-source correlation
-- Improved investigation reports
-- Better collector error handling
-- Concurrent collection
-- Collector configuration
-- Expanded local-tool integration
-- Improved CLI experience
+Theseus uses two archive sources to investigate historical web presence.
 
-The architecture is intended to support additional collectors and investigation capabilities without requiring the entire workflow to be redesigned each time a new tool is integrated.
+**Wayback Machine** retrieves archived captures, including timestamps, original URLs, status codes, and links to individual archived pages.
+
+**Common Crawl** searches its available crawl index for captures associated with the queried domain. The report can include the index used, capture timestamps, URLs, status codes, and content digests.
+
+Archive results can help establish that a URL or domain appeared in a particular crawl or snapshot. They do not necessarily establish ownership, malicious intent, or the complete history of a website.
+
+### URL collectors
+
+Current URL collectors include:
+
+- **HTTP**
+- **DNS**
+- **Certificate Transparency (`crt.sh`)**
+- **VirusTotal**
+- **Common Crawl**
+- **Playwright**
+- **Google Safe Browsing**
+- **URLhaus**
+- **URLScan**
+- **Wayback Machine**
+
+Individual collectors may fail because of timeouts, rate limits, unavailable services, or other external dependencies. Theseus can still produce a report from the collectors that return results.
 
 ---
 
 ## License
 
-Theseus v1 is licensed under the Apache License 2.0.
+Theseus is licensed under the Apache License 2.0.
 
 See the [LICENSE](LICENSE) file for details.

@@ -83,6 +83,8 @@ class CertTransparencyTool:
             "certificate_count": len(certificates),
             "hostname_count": len(hostnames),
             "hostnames": sorted(hostnames),
+            "wildcard_count": len(wildcard_names),
+            "wildcard_names": sorted(wildcard_names),
             "certificates": certificates,
             "elapsed_ms": round(
                 (time.perf_counter() - start) * 1000

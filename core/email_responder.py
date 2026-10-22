@@ -116,6 +116,42 @@ class EmailResponder:
 
         return {}
 
+    @classmethod
+    def cross_scan(
+        cls,
+        results: list[tuple[str, Any]],
+    ) -> list[str]:
+        """Extract unique usernames from registered User Scanner results."""
+        data = {
+            tool_name.lower(): result
+            for tool_name, result in results
+        }
+
+        user_scanner = cls._tool(data, "user_scanner")
+
+        if not isinstance(user_scanner, list):
+            return []
+
+        usernames = set()
+
+        for record in user_scanner:
+            if not isinstance(record, dict):
+                continue
+
+            status = str(record.get("status") or "").strip().lower()
+            if status != "registered":
+                continue
+
+            extra = record.get("extra")
+            if not isinstance(extra, dict):
+                continue
+
+            login = extra.get("login")
+            if isinstance(login, str) and login.strip():
+                usernames.add(login.strip())
+
+        return sorted(usernames, key=str.lower)
+
     @staticmethod
     def _format_sections(
         sections: list[tuple[str, list[str]]],

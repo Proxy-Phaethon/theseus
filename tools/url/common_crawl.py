@@ -8,6 +8,9 @@ class CommonCrawlTool:
     COLLECTIONS_URL = "https://index.commoncrawl.org/collinfo.json"
     TIMEOUT = 45
     MAX_CAPTURES = 100
+    RETRY_DELAYS = (5, 15)
+
+    TRANSIENT_STATUS_CODES = {429, 500, 502, 503, 504}
 
     def run(self, url):
         parsed = urlparse(url)
@@ -38,30 +41,52 @@ class CommonCrawlTool:
         index_url = collection.get("cdx-api")
 
         if not index_id or not index_url:
-            raise ValueError("Latest Common Crawl index has no usable endpoint")
+            raise ValueError(
+                "Latest Common Crawl index has no usable endpoint"
+            )
 
         # Search for captures of the domain and its subdomains.
-        response = requests.get(
-            index_url,
-            params={
-                "url": domain,
-                "matchType": "domain",
-                "output": "json",
-                "limit": self.MAX_CAPTURES,
-            },
-            headers=headers,
-            timeout=self.TIMEOUT,
-        )
+        params = {
+            "url": domain,
+            "matchType": "domain",
+            "output": "json",
+            "limit": self.MAX_CAPTURES,
+        }
 
-        if response.status_code == 404:
-            raw_result = []
-        else:
-            response.raise_for_status()
-            raw_result = [
-                json.loads(line)
-                for line in response.text.splitlines()
-                if line.strip()
-            ]
+        raw_result = []
+
+        for attempt in range(len(self.RETRY_DELAYS) + 1):
+            try:
+                response = requests.get(
+                    index_url,
+                    params=params,
+                    headers=headers,
+                    timeout=self.TIMEOUT,
+                )
+
+                if response.status_code == 404:
+                    raw_result = []
+                    break
+
+                if response.status_code in self.TRANSIENT_STATUS_CODES:
+                    if attempt < len(self.RETRY_DELAYS):
+                        time.sleep(self.RETRY_DELAYS[attempt])
+                        continue
+
+                response.raise_for_status()
+
+                raw_result = [
+                    json.loads(line)
+                    for line in response.text.splitlines()
+                    if line.strip()
+                ]
+                break
+
+            except requests.exceptions.RequestException:
+                if attempt >= len(self.RETRY_DELAYS):
+                    raise
+
+                time.sleep(self.RETRY_DELAYS[attempt])
 
         return {
             "requested_url": url,

@@ -1,7 +1,12 @@
 from collections import Counter
 
+from rich.console import Group, RenderableType
+from rich.panel import Panel
+from rich.text import Text
+
 class IPResponder:
-    def respond(self, entity, results):
+    def respond(self, entity, results) -> RenderableType:
+        """Build a styled Rich report while preserving collector parsing."""
         data = {
             name: result
             for name, result in results
@@ -10,85 +15,65 @@ class IPResponder:
 
         sections = []
 
-        self._add_section(
-            sections,
-            "Identity",
-            self._identity(data),
-        )
+        self._add_section(sections, "Identity", self._identity(data))
+        self._add_section(sections, "Network / ASN", self._network(data))
+        self._add_section(sections, "Location", self._location(data))
+        self._add_section(sections, "Cloud / Hosting", self._hosting(data))
+        self._add_section(sections, "Exposure", self._exposure(data))
+        self._add_section(sections, "Services", self._services(data))
+        self._add_section(sections, "TLS", self._tls(data))
+        self._add_section(sections, "Passive DNS", self._passive_dns(data))
+        self._add_section(sections, "Reverse DNS", self._reverse_dns(data))
+        self._add_section(sections, "Reputation", self._reputation(data))
+        self._add_section(sections, "Threat Intelligence", self._threat_intelligence(data))
+        self._add_section(sections, "Anonymizer", self._anonymizer(data))
+        self._add_section(sections, "Observations", self._observations(data))
 
-        self._add_section(
-            sections,
-            "Network / ASN",
-            self._network(data),
-        )
+        if not sections:
+            return Text(
+                "No IP findings were available from the returned collector results.",
+                style="muted",
+            )
 
-        self._add_section(
-            sections,
-            "Location",
-            self._location(data),
-        )
+        panels = [
+            Panel(
+                self._render_lines(lines),
+                title=Text(title, style="heading"),
+                title_align="left",
+                border_style="border",
+                padding=(0, 1),
+                expand=True,
+            )
+            for title, lines in sections
+        ]
+        return Group(*panels)
 
-        self._add_section(
-            sections,
-            "Cloud / Hosting",
-            self._hosting(data),
-        )
+    @staticmethod
+    def _render_lines(lines: list[str]) -> Group:
+        """Style field labels while keeping evidence safe and wrap-friendly."""
+        rendered = []
 
-        self._add_section(
-            sections,
-            "Exposure",
-            self._exposure(data),
-        )
+        for line in lines:
+            value = line.strip()
+            text = Text()
 
-        self._add_section(
-            sections,
-            "Services",
-            self._services(data),
-        )
+            if not value:
+                rendered.append(text)
+                continue
 
-        self._add_section(
-            sections,
-            "TLS",
-            self._tls(data),
-        )
+            if ":" in value:
+                label, remainder = value.split(":", 1)
+                if label and len(label) <= 42 and not label.startswith(("http", "[")):
+                    text.append(f"{label}: ", style="muted")
+                    text.append(remainder.lstrip(), style="text")
+                else:
+                    text.append(value, style="text")
+            else:
+                text.append(value, style="text")
 
-        self._add_section(
-            sections,
-            "Passive DNS",
-            self._passive_dns(data),
-        )
+            rendered.append(text)
 
-        self._add_section(
-            sections,
-            "Reverse DNS",
-            self._reverse_dns(data),
-        )
-
-        self._add_section(
-            sections,
-            "Reputation",
-            self._reputation(data),
-        )
-
-        self._add_section(
-            sections,
-            "Threat Intelligence",
-            self._threat_intelligence(data),
-        )
-
-        self._add_section(
-            sections,
-            "Anonymizer",
-            self._anonymizer(data),
-        )
-
-        self._add_section(
-            sections,
-            "Observations",
-            self._observations(data),
-        )
-
-        return "\n\n".join(sections)
+        return Group(*rendered)
 
     def _identity(self, data):
         lines = []
@@ -1132,19 +1117,10 @@ class IPResponder:
         return str(value).strip()
 
     @staticmethod
-    def _add_section(
-        sections,
-        title,
-        lines,
-    ):
+    def _add_section(sections, title, lines):
         if not lines:
             return
-
-        sections.append(
-            "\n".join(
-                [title, *lines]
-            )
-        )
+        sections.append((title, lines))
 
     @staticmethod
     def _nested(value, *keys):

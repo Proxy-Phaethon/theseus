@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from rich.console import Group, RenderableType
+from rich.panel import Panel
+from rich.text import Text
+
 from core.identifier import Entity
 
 class EmailResponder:
@@ -9,7 +13,8 @@ class EmailResponder:
         self,
         entity: Entity,
         results: list[tuple[str, Any]],
-    ) -> str:
+    ) -> RenderableType:
+        """Build a styled Rich report without changing collector result parsing."""
         data = {
             tool_name.lower(): result
             for tool_name, result in results
@@ -43,7 +48,24 @@ class EmailResponder:
         if footprint:
             sections.append(("Public Code Footprint", footprint))
 
-        return self._format_sections(sections)
+        if not sections:
+            return Text(
+                "No email findings were available from the returned collector results.",
+                style="muted",
+            )
+
+        panels = [
+            Panel(
+                self._render_lines(lines),
+                title=Text(heading, style="heading"),
+                title_align="left",
+                border_style="border",
+                padding=(0, 1),
+                expand=True,
+            )
+            for heading, lines in sections
+        ]
+        return Group(*panels)
 
     @staticmethod
     def _tool(data: dict[str, Any], name: str) -> Any:
@@ -62,20 +84,31 @@ class EmailResponder:
         return {}
 
     @staticmethod
-    def _format_sections(
-        sections: list[tuple[str, list[str]]],
-    ) -> str:
-        output = []
+    def _render_lines(lines: list[str]) -> Group:
+        """Render field labels and evidence as safe, wrapping Rich text."""
+        rendered = []
 
-        for heading, lines in sections:
-            if not lines:
+        for line in lines:
+            value = line.strip()
+            text = Text()
+
+            if not value:
+                rendered.append(text)
                 continue
 
-            output.append(heading)
-            output.extend(f"  {line}" for line in lines)
-            output.append("")
+            if ":" in value:
+                label, remainder = value.split(":", 1)
+                if label and len(label) <= 42 and not label.startswith(("http", "[")):
+                    text.append(f"{label}: ", style="muted")
+                    text.append(remainder.lstrip(), style="text")
+                else:
+                    text.append(value, style="text")
+            else:
+                text.append(value, style="text")
 
-        return "\n".join(output).rstrip()
+            rendered.append(text)
+
+        return Group(*rendered)
 
     @staticmethod
     def _identity(email: str, data: Any) -> list[str]:

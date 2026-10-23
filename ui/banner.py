@@ -1,37 +1,26 @@
-from __future__ import annotations
+from pathlib import Path
 
-from rich.align import Align
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.text import Text
 
-MINOTAUR = r"""
-           ███                      ███
-         ████████                ████████
-        ██████████   ██    ██  ███████████
-       ███     ████████    ████████     ███
-       █▒█        ████      ████        █▒█
-       █▓█     ███ █          █ ███     █▓█
-       ███        █            █        ███
-       ███         ██        ██         ███
-        ███         ██      ██         ███
-           ██       ██      ██       ██
-                    ███    ███
-                      █    █
-                      █    █
+ASSET_DIR = Path(__file__).parent / "assets"
+MINOTAUR_PATH = ASSET_DIR / "minotaur.txt"
 
-                       █  █
-""".strip("\n")
+def load_minotaur() -> str:
+    """Load the Minotaur emblem while preserving its artwork spacing."""
+    return MINOTAUR_PATH.read_text(encoding="utf-8").rstrip("\n")
 
 def render_banner(
     console: Console,
     version: str = "0.7.0",
     *,
-    subtitle: str = "INTERNET EXPLORER  /  OSINT INVESTIGATION",
+    subtitle: str = "INTERNET EXPLORER  /  OSINT INVESTIGATION TOOL",
 ) -> None:
     """Render the Theseus startup banner."""
 
-    emblem = Text(MINOTAUR, style="primary", justify="center")
+    emblem = Text(load_minotaur(), style="primary", no_wrap=True)
+
     identity = Text()
     identity.append("THESEUS", style="bold text")
     identity.append(f"  v{version}", style="muted")
@@ -39,9 +28,10 @@ def render_banner(
     tagline = Text(subtitle, style="dim")
 
     content = Group(
-        Align.center(emblem),
-        Align.center(identity),
-        Align.center(tagline),
+        emblem,
+        Text(),
+        identity,
+        tagline,
     )
 
     console.print()
@@ -51,7 +41,6 @@ def render_banner(
             border_style="border",
             padding=(1, 2),
             expand=False,
-        ),
-        justify="center",
+        )
     )
     console.print()

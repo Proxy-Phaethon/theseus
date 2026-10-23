@@ -28,9 +28,9 @@
 
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge\&logo=python\&logoColor=white)
 
-</div>
-
 # Theseus
+
+</div>
 
 Theseus is an OSINT investigation tool that brings existing intelligence tools and services together behind a single workflow.
 

@@ -1,13 +1,14 @@
-from dotenv import load_dotenv
+from __future__ import annotations
 
 import random
 import threading
 import time
 
+from dotenv import load_dotenv
+from rich.console import Console, Group
 from rich.live import Live
 from rich.spinner import Spinner
 from rich.text import Text
-from rich.console import Group
 
 from core.identifier import Identifier, EntityType
 from core.ip_responder import IPResponder
@@ -19,11 +20,14 @@ from core.username_responder import UsernameResponder
 from registry.collectors import build_collectors
 
 from ui.banner import render_banner
-from ui.terminal import detect_terminal, create_terminal_console
-from ui.status import print_status
+from ui.commands import CommandHandler
 from ui.panels import print_message_panel
+from ui.status import print_status
+from ui.terminal import detect_terminal, create_terminal_console
 
 load_dotenv()
+
+VERSION = "0.7.0"
 
 INVESTIGATION_MESSAGES = [
     "Identifying target...",
@@ -64,7 +68,13 @@ def build_responders():
         EntityType.USERNAME: UsernameResponder(),
     }
 
-def investigate(identifier, target, console, *, animate=True):
+def investigate(
+    identifier: Identifier,
+    target: str,
+    console: Console,
+    *,
+    animate: bool = True,
+):
     """Run an investigation with a spinner and rotating commentary."""
 
     if not animate:
@@ -75,7 +85,7 @@ def investigate(identifier, target, console, *, animate=True):
     result = []
     errors = []
 
-    def worker():
+    def worker() -> None:
         try:
             result.append(identifier.process(target))
         except BaseException as exc:
@@ -102,18 +112,11 @@ def investigate(identifier, target, console, *, animate=True):
 
                 display = Group(
                     spinner,
-                    Text(
-                        f"  └─ {message}",
-                        style="muted",
-                    ),
-                    Text(
-                        f"     Elapsed: {elapsed:.1f}s",
-                        style="dim",
-                    ),
+                    Text(f"  └─ {message}", style="muted"),
+                    Text(f"     Elapsed: {elapsed:.1f}s", style="dim"),
                 )
                 live.update(display, refresh=True)
 
-                # Change the commentary every few seconds.
                 if stop_event.wait(2.5):
                     break
 
@@ -133,12 +136,16 @@ def investigate(identifier, target, console, *, animate=True):
         raise errors[0]
 
     if not result:
-        raise RuntimeError("Investigation finished without returning results.")
+        raise RuntimeError(
+            "Investigation finished without returning results."
+        )
 
     return result[0]
 
-def print_all_subdomains(responder, console) -> None:
+def print_all_subdomains(responder, console: Console) -> None:
+    """Optionally print the complete subdomain list from a domain report."""
     subdomains = getattr(responder, "subdomains", [])
+
     if not subdomains:
         return
 
@@ -166,7 +173,11 @@ def print_all_subdomains(responder, console) -> None:
             source_text = ", ".join(
                 str(source) for source in sources if source
             )
-            suffix = f" [muted][{source_text}][/muted]" if source_text else ""
+            suffix = (
+                f" [muted][{source_text}][/muted]"
+                if source_text
+                else ""
+            )
             console.print(f"  {hostname}{suffix}")
         else:
             console.print(f"  {item}")
@@ -175,28 +186,35 @@ def main() -> None:
     terminal = detect_terminal()
     console = create_terminal_console(terminal)
 
-    render_banner(console, version="0.7.0")
+    render_banner(console, version=VERSION)
 
     identifier = build_identifier()
     responders = build_responders()
 
-    while True:
+    commands = CommandHandler(
+        console,
+        responders,
+        version=VERSION,
+    )
+
+    while not commands.should_quit:
         try:
             target = input("\n> ").strip()
         except (EOFError, KeyboardInterrupt):
             console.print("\n[muted]Exiting.[/muted]")
             break
 
-        if target.lower() in {
-            "q", "q.", "quit", "quit.", "bye", "bye.",
-            "exit", "exit.",
-        }:
-            console.print("[muted]Exiting.[/muted]")
-            break
-
         if not target:
             continue
 
+        # Helper commands are handled before entity identification.
+        command = identifier.identify_command(target)
+
+        if command is not None:
+            commands.execute(command)
+            continue
+
+        # Everything else enters the existing investigation pipeline.
         try:
             entity, results = investigate(
                 identifier,
@@ -219,6 +237,9 @@ def main() -> None:
                 f"Investigation failed: {exc}",
             )
             continue
+
+        # Record successful pipeline completion, even if there are no findings.
+        commands.record_investigation(target)
 
         console.print()
         console.print(

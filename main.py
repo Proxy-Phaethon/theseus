@@ -1,5 +1,12 @@
 from dotenv import load_dotenv
 
+from rich.progress import (
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
+
 from core.identifier import Identifier, EntityType
 from core.ip_responder import IPResponder
 from core.domain_responder import DomainResponder
@@ -11,7 +18,7 @@ from registry.collectors import build_collectors
 
 from ui.banner import render_banner
 from ui.terminal import detect_terminal, create_terminal_console
-from ui.status import print_status, print_collector_status
+from ui.status import print_status
 from ui.panels import print_message_panel
 
 load_dotenv()
@@ -28,10 +35,23 @@ def build_responders():
         EntityType.USERNAME: UsernameResponder(),
     }
 
-def investigate(identifier, target):
-    """Run the investigation and return its entity and collector results."""
-    return identifier.process(target)
+def investigate(identifier, target, console, *, animate=True):
+    """Run an investigation with optional live progress animation."""
+    if not animate:
+        return identifier.process(target)
 
+    with Progress(
+        SpinnerColumn(spinner_name="dots", style="primary"),
+        TextColumn("[text]{task.description}"),
+        TimeElapsedColumn(),
+        console=console,
+        refresh_per_second=10,
+        transient=True,
+        redirect_stdout=False,
+        redirect_stderr=False,
+    ) as progress:
+        progress.add_task("Investigating Target Entity...", total=None)
+        return identifier.process(target)
 
 def print_all_subdomains(responder, console) -> None:
     subdomains = getattr(responder, "subdomains", [])
@@ -50,10 +70,12 @@ def print_all_subdomains(responder, console) -> None:
         return
 
     console.print("\n[heading]All discovered subdomains[/heading]")
+
     for item in subdomains:
         if isinstance(item, dict):
             hostname = item.get("hostname")
             sources = item.get("sources", [])
+
             if not hostname:
                 continue
 
@@ -92,7 +114,12 @@ def main() -> None:
             continue
 
         try:
-            entity, results = investigate(identifier, target)
+            entity, results = investigate(
+                identifier,
+                target,
+                console,
+                animate=terminal.animate,
+            )
         except KeyboardInterrupt:
             console.print()
             print_status(
@@ -110,9 +137,12 @@ def main() -> None:
             continue
 
         console.print()
-        console.print(f"[muted]Type:[/muted] [target]{entity.type.value}[/target]")
+        console.print(
+            f"[muted]Type:[/muted] [target]{entity.type.value}[/target]"
+        )
 
         responder = responders.get(entity.type)
+
         if responder is None:
             print_status(
                 console,
@@ -125,7 +155,11 @@ def main() -> None:
             response = responder.respond(entity, results)
         except KeyboardInterrupt:
             console.print()
-            print_status(console, "warning", "Report generation interrupted.")
+            print_status(
+                console,
+                "warning",
+                "Report generation interrupted.",
+            )
             continue
         except Exception as exc:
             print_status(

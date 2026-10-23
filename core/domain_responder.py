@@ -2,6 +2,10 @@ from datetime import datetime, timezone
 import ipaddress
 import re
 
+from rich.console import Group, RenderableType
+from rich.panel import Panel
+from rich.text import Text
+
 class DomainResponder:
     """Render domain collector results without modifying the raw results."""
 
@@ -9,7 +13,8 @@ class DomainResponder:
     CERTIFICATE_NAME_LIMIT = 30
     GENERIC_OUTPUT_LIMIT = 3000
 
-    def respond(self, entity, results):
+    def respond(self, entity, results) -> RenderableType:
+        """Build a styled Rich report while preserving raw collector results."""
         self.data = self._results_to_dict(results)
         target = getattr(entity, "value", None) or getattr(entity, "target", None)
         self.subdomains = self.get_subdomains(self.data, target=target)
@@ -31,7 +36,50 @@ class DomainResponder:
 
         for title, build in section_builders:
             self._add_section(sections, title, build())
-        return "\n\n".join(sections)
+
+        if not sections:
+            return Text("No domain findings were available from the returned collector results.", style="muted")
+
+        panels = [
+            Panel(
+                self._render_lines(lines),
+                title=Text(title, style="heading"),
+                title_align="left",
+                border_style="border",
+                padding=(0, 1),
+                expand=True,
+            )
+            for title, lines in sections
+        ]
+        return Group(*panels)
+
+    @staticmethod
+    def _render_lines(lines: list[str]) -> Group:
+        """Style report lines without interpreting collector data as markup."""
+        rendered = []
+
+        for line in lines:
+            value = line.strip()
+            text = Text()
+
+            if not value:
+                rendered.append(text)
+                continue
+
+            # Style the field name separately when a line is label/value data.
+            if ":" in value:
+                label, remainder = value.split(":", 1)
+                if label and len(label) <= 42 and not label.startswith(("http", "[")):
+                    text.append(f"{label}: ", style="muted")
+                    text.append(remainder.lstrip(), style="text")
+                else:
+                    text.append(value, style="text")
+            else:
+                text.append(value, style="text")
+
+            rendered.append(text)
+
+        return Group(*rendered)
 
     def get_subdomains(self, results=None, target=None):
         """Return every unique subdomain for optional display by the CLI."""
@@ -86,7 +134,7 @@ class DomainResponder:
     @staticmethod
     def _add_section(sections, title, lines):
         if lines:
-            sections.append(title + "\n" + "\n".join(lines))
+            sections.append((title, lines))
 
     @classmethod
     def _tool(cls, data, *terms):

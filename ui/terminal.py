@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass
+from typing import TextIO
 
 from rich.console import Console
 
-from ui.theme import create_console
+from ui.theme import THEME
 
 @dataclass(frozen=True)
 class TerminalConfig:
@@ -20,14 +22,14 @@ def detect_terminal(
     *,
     force_plain: bool = False,
     force_color: bool = False,
-    stdin=None,
-    stdout=None,
-    stderr=None,
+    stdin: TextIO | None = None,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
 ) -> TerminalConfig:
     """Determine whether styling and animation are appropriate.
 
-    Plain mode takes precedence over forced color. Animation is enabled
-    only when both stdin and stdout are interactive terminals.
+    Plain mode takes precedence over forced color. Animation requires
+    both stdin and stdout to be attached to terminals.
     """
     stdin = sys.stdin if stdin is None else stdin
     stdout = sys.stdout if stdout is None else stdout
@@ -35,25 +37,22 @@ def detect_terminal(
 
     stdin_tty = _is_tty(stdin)
     stdout_tty = _is_tty(stdout)
-    stderr_tty = _is_tty(stderr)
 
-    plain = force_plain or (
-        not force_color
-        and (
-            _env_enabled("NO_COLOR")
-            or _env_enabled("THESEUS_PLAIN")
-            or not stdout_tty
-        )
+    no_color = _env_enabled("NO_COLOR")
+    plain_env = _env_enabled("THESEUS_PLAIN")
+
+    plain = force_plain or plain_env or (
+        no_color and not force_color
     )
 
     interactive = stdin_tty and stdout_tty
-    color = not plain and (force_color or stdout_tty)
-    animate = interactive and not plain
+
+    color = not plain and (stdout_tty or force_color)
 
     return TerminalConfig(
         plain=plain,
         interactive=interactive,
-        animate=animate,
+        animate=interactive and not plain,
         color=color,
     )
 
@@ -62,25 +61,17 @@ def create_terminal_console(
     *,
     stderr: bool = False,
 ) -> Console:
-    """Create a Rich console using the resolved terminal settings."""
-    console = create_console(
-        plain=config.plain or not config.color,
+    """Create a Rich console using the shared Theseus theme."""
+    return Console(
+        theme=THEME,
+        no_color=config.plain or not config.color,
+        highlight=False,
+        soft_wrap=False,
         stderr=stderr,
+        force_terminal=config.interactive and config.color,
     )
 
-    if not config.interactive:
-        console = Console(
-            theme=console._theme,
-            no_color=config.plain or not config.color,
-            highlight=False,
-            soft_wrap=False,
-            stderr=stderr,
-            force_terminal=False,
-        )
-
-    return console
-
-def _is_tty(stream) -> bool:
+def _is_tty(stream: TextIO) -> bool:
     """Safely check whether a stream is attached to a terminal."""
     try:
         return bool(stream.isatty())
@@ -89,5 +80,5 @@ def _is_tty(stream) -> bool:
 
 def _env_enabled(name: str) -> bool:
     """Return whether an environment variable is set to a truthy value."""
-    value = __import__("os").environ.get(name, "").strip().lower()
-    return value not in ("", "0", "false", "no", "off")
+    value = os.environ.get(name, "").strip().lower()
+    return value not in {"", "0", "false", "no", "off"}

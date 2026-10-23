@@ -18,19 +18,76 @@ class EntityType(Enum):
     ORGANIZATION = "organization"
     UNKNOWN = "unknown"
 
+class CommandType(Enum):
+    HELP = "help"
+    ABOUT = "about"
+    CLEAR = "clear"
+    HISTORY = "history"
+    STATUS = "status"
+    QUIT = "quit"
+
 @dataclass(frozen=True)
 class Entity:
     value: str
     type: EntityType
 
+@dataclass(frozen=True)
+class Command:
+    type: CommandType
+    argument: str | None = None
+
 class Identifier:
+    """Recognize CLI commands and identify investigation entities."""
+
+    COMMAND_ALIASES = {
+        "help": CommandType.HELP,
+        "about": CommandType.ABOUT,
+        "clear": CommandType.CLEAR,
+        "history": CommandType.HISTORY,
+        "status": CommandType.STATUS,
+        "q": CommandType.QUIT,
+        "q.": CommandType.QUIT,
+        "quit": CommandType.QUIT,
+        "quit.": CommandType.QUIT,
+        "bye": CommandType.QUIT,
+        "bye.": CommandType.QUIT,
+        "exit": CommandType.QUIT,
+        "exit.": CommandType.QUIT,
+    }
+
     def __init__(
         self,
         tools: dict[EntityType, list[Any]] | None = None,
     ) -> None:
         self.tools = tools or {}
 
+    def identify_command(self, value: str) -> Command | None:
+        """Recognize a helper command without executing it.
+
+        Returns None when the input is not a recognized command.
+        Optional arguments are preserved for command handlers.
+        """
+        value = value.strip()
+
+        if not value:
+            return None
+
+        parts = value.split(maxsplit=1)
+        name = parts[0].lower()
+        argument = parts[1].strip() if len(parts) > 1 else None
+
+        command_type = self.COMMAND_ALIASES.get(name)
+
+        if command_type is None:
+            return None
+
+        return Command(
+            type=command_type,
+            argument=argument or None,
+        )
+
     def identify(self, target: str) -> Entity:
+        """Identify the type of an investigation target."""
         target = target.strip()
 
         if not target:
@@ -62,6 +119,7 @@ class Identifier:
         return Entity(target, EntityType.UNKNOWN)
 
     def run(self, entity: Entity) -> list[tuple[str, Any]]:
+        """Run the registered tools for an identified entity."""
         tools = self.tools.get(entity.type, [])
 
         if not tools:
@@ -86,6 +144,12 @@ class Identifier:
         self,
         target: str,
     ) -> tuple[Entity, list[tuple[str, Any]]]:
+        """Identify a target and run its registered tools.
+
+        This existing investigation interface remains unchanged.
+        CLI commands should be checked separately using
+        identify_command() before calling process().
+        """
         entity = self.identify(target)
         results = self.run(entity)
 

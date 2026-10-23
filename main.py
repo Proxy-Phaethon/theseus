@@ -1,10 +1,6 @@
 from dotenv import load_dotenv
-from alive_progress import alive_bar
 
-import threading
-import time
-
-from core.identifier import Identifier, Entity, EntityType
+from core.identifier import Identifier, EntityType
 from core.ip_responder import IPResponder
 from core.domain_responder import DomainResponder
 from core.email_responder import EmailResponder
@@ -12,6 +8,11 @@ from core.url_responder import URLResponder
 from core.username_responder import UsernameResponder
 
 from registry.collectors import build_collectors
+
+from ui.banner import render_banner
+from ui.terminal import detect_terminal, create_terminal_console
+from ui.status import print_status, print_collector_status
+from ui.panels import print_message_panel
 
 load_dotenv()
 
@@ -27,112 +28,64 @@ def build_responders():
         EntityType.USERNAME: UsernameResponder(),
     }
 
-STAGES = [
-    "Identifying Target...",
-    "Doing Somersaults...",
-    "Zoning Out...",
-    "Locking In...",
-    "Drinking Tea...",
-    "Checking Data...",
-    "Petting Cats...",
-    "Verifying Results...",
-    "Concluding...",
-    "Wait a Minute...",
-    "Finding a Playlist...",
-    "Contemplating Life...",
-    "Trying to Figure Out...",
-]
-
 def investigate(identifier, target):
-    result = []
-    errors = []
+    """Run the investigation and return its entity and collector results."""
+    return identifier.process(target)
 
-    def worker():
-        try:
-            result.append(identifier.process(target))
-        except Exception as exc:
-            errors.append(exc)
 
-    thread = threading.Thread(target=worker)
-    thread.start()
-
-    with alive_bar(
-        1,
-        spinner="waves2",
-        bar=None,
-        stats=False,
-        elapsed=False,
-        monitor=False,
-    ) as bar:
-        while thread.is_alive():
-            for stage in STAGES:
-                if not thread.is_alive():
-                    break
-
-                for i in range(1, len(stage) + 1):
-                    if not thread.is_alive():
-                        break
-                    bar.text = stage[:i]
-                    time.sleep(0.035)
-
-                if thread.is_alive():
-                    time.sleep(0.15)
-
-                for i in range(len(stage) - 1, 0, -1):
-                    if not thread.is_alive():
-                        break
-                    bar.text = stage[:i]
-                    time.sleep(0.025)
-
-        bar.text = "Compiling intelligence"
-        time.sleep(1)
-
-    thread.join()
-
-    if errors:
-        raise errors[0]
-    if not result:
-        raise RuntimeError("Investigation finished without returning results.")
-
-    return result[0]
-
-def print_all_subdomains(responder):
+def print_all_subdomains(responder, console) -> None:
     subdomains = getattr(responder, "subdomains", [])
     if not subdomains:
         return
 
-    answer = input(
-        f"\nPrint all {len(subdomains)} discovered subdomains? [y/n]: "
-    ).strip().lower()
+    try:
+        answer = input(
+            f"\nPrint all {len(subdomains)} discovered subdomains? [y/n]: "
+        ).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        console.print()
+        return
 
     if answer not in {"y", "yes"}:
         return
 
-    print("\nAll discovered subdomains:")
+    console.print("\n[heading]All discovered subdomains[/heading]")
     for item in subdomains:
         if isinstance(item, dict):
             hostname = item.get("hostname")
             sources = item.get("sources", [])
             if not hostname:
                 continue
-            source_text = ", ".join(str(source) for source in sources if source)
-            suffix = f" [{source_text}]" if source_text else ""
-            print(f"  {hostname}{suffix}")
+
+            source_text = ", ".join(
+                str(source) for source in sources if source
+            )
+            suffix = f" [muted][{source_text}][/muted]" if source_text else ""
+            console.print(f"  {hostname}{suffix}")
         else:
-            print(f"  {item}")
+            console.print(f"  {item}")
 
 def main() -> None:
+    terminal = detect_terminal()
+    console = create_terminal_console(terminal)
+
+    render_banner(console, version="0.7.0")
+
     identifier = build_identifier()
     responders = build_responders()
 
     while True:
-        target = input("\n> ").strip()
+        try:
+            target = input("\n> ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[muted]Exiting.[/muted]")
+            break
 
         if target.lower() in {
             "q", "q.", "quit", "quit.", "bye", "bye.",
-            "exit", "exit."
+            "exit", "exit.",
         }:
-            print("Exiting.")
+            console.print("[muted]Exiting.[/muted]")
             break
 
         if not target:
@@ -140,25 +93,61 @@ def main() -> None:
 
         try:
             entity, results = investigate(identifier, target)
+        except KeyboardInterrupt:
+            console.print()
+            print_status(
+                console,
+                "warning",
+                "Investigation interrupted.",
+            )
+            continue
         except Exception as exc:
-            print(f"\nInvestigation failed: {exc}")
+            print_status(
+                console,
+                "error",
+                f"Investigation failed: {exc}",
+            )
             continue
 
-        print(f"\nType: {entity.type.value}")
+        console.print()
+        console.print(f"[muted]Type:[/muted] [target]{entity.type.value}[/target]")
 
         responder = responders.get(entity.type)
         if responder is None:
-            print(f"\nNo responder available for {entity.type.value}.")
+            print_status(
+                console,
+                "warning",
+                f"No responder available for {entity.type.value}.",
+            )
             continue
 
-        response = responder.respond(entity, results)
+        try:
+            response = responder.respond(entity, results)
+        except KeyboardInterrupt:
+            console.print()
+            print_status(console, "warning", "Report generation interrupted.")
+            continue
+        except Exception as exc:
+            print_status(
+                console,
+                "error",
+                f"Responder failed: {exc}",
+            )
+            continue
+
         if response:
-            print(f"\n{response}")
+            console.print()
+            console.print(response, soft_wrap=True)
         else:
-            print("\nNo reportable findings returned by the available collectors.")
+            print_message_panel(
+                console,
+                "No reportable findings returned by the available collectors.",
+                title="No findings",
+                status="info",
+            )
 
         if entity.type == EntityType.DOMAIN:
-            print_all_subdomains(responder)
+            print_all_subdomains(responder, console)
 
 if __name__ == "__main__":
     main()

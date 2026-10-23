@@ -1,11 +1,13 @@
 from dotenv import load_dotenv
 
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    TimeElapsedColumn,
-)
+import random
+import threading
+import time
+
+from rich.live import Live
+from rich.spinner import Spinner
+from rich.text import Text
+from rich.console import Group
 
 from core.identifier import Identifier, EntityType
 from core.ip_responder import IPResponder
@@ -23,6 +25,33 @@ from ui.panels import print_message_panel
 
 load_dotenv()
 
+INVESTIGATION_MESSAGES = [
+    "Identifying target...",
+    "Asking the internet nicely...",
+    "Consulting the suspiciously large notebook...",
+    "Following the digital breadcrumbs...",
+    "Checking whether the DNS knows something...",
+    "Untangling the web...",
+    "Looking under the digital doormat...",
+    "Cross-referencing the evidence...",
+    "Interrogating the metadata...",
+    "Connecting dots that may or may not connect...",
+    "Checking the back of the filing cabinet...",
+    "Politely bothering public APIs...",
+    "Sorting signal from noise...",
+    "Making the internet explain itself...",
+    "Consulting the archives...",
+    "Trying not to get distracted by unrelated domains...",
+    "Counting the breadcrumbs...",
+    "Having a word with the registry...",
+    "Checking the other side of the rabbit hole...",
+    "Compiling the findings...",
+    "Drinking tea while the packets do their thing...",
+    "Petting the metaphorical cat...",
+    "Wondering who configured this DNS...",
+    "Almost certainly not summoning anything...",
+]
+
 def build_identifier() -> Identifier:
     return Identifier(tools=build_collectors())
 
@@ -36,22 +65,77 @@ def build_responders():
     }
 
 def investigate(identifier, target, console, *, animate=True):
-    """Run an investigation with optional live progress animation."""
+    """Run an investigation with a spinner and rotating commentary."""
+
     if not animate:
         return identifier.process(target)
 
-    with Progress(
-        SpinnerColumn(spinner_name="dots", style="primary"),
-        TextColumn("[text]{task.description}"),
-        TimeElapsedColumn(),
-        console=console,
-        refresh_per_second=10,
-        transient=True,
-        redirect_stdout=False,
-        redirect_stderr=False,
-    ) as progress:
-        progress.add_task("Investigating Target Entity...", total=None)
-        return identifier.process(target)
+    started = time.monotonic()
+    stop_event = threading.Event()
+    result = []
+    errors = []
+
+    def worker():
+        try:
+            result.append(identifier.process(target))
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            stop_event.set()
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+
+    message = random.choice(INVESTIGATION_MESSAGES)
+    spinner = Spinner("dots", text=Text(message, style="text"), style="primary")
+
+    try:
+        with Live(
+            console=console,
+            refresh_per_second=10,
+            transient=True,
+            redirect_stdout=False,
+            redirect_stderr=False,
+        ) as live:
+            while not stop_event.is_set():
+                elapsed = time.monotonic() - started
+
+                display = Group(
+                    spinner,
+                    Text(
+                        f"  └─ {message}",
+                        style="muted",
+                    ),
+                    Text(
+                        f"     Elapsed: {elapsed:.1f}s",
+                        style="dim",
+                    ),
+                )
+                live.update(display, refresh=True)
+
+                # Change the commentary every few seconds.
+                if stop_event.wait(2.5):
+                    break
+
+                message = random.choice(INVESTIGATION_MESSAGES)
+                spinner = Spinner(
+                    "dots",
+                    text=Text("Investigating target...", style="text"),
+                    style="primary",
+                )
+    except KeyboardInterrupt:
+        stop_event.set()
+        raise
+
+    thread.join()
+
+    if errors:
+        raise errors[0]
+
+    if not result:
+        raise RuntimeError("Investigation finished without returning results.")
+
+    return result[0]
 
 def print_all_subdomains(responder, console) -> None:
     subdomains = getattr(responder, "subdomains", [])

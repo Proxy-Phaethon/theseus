@@ -369,14 +369,15 @@ def _print_breach_results(console: Console, breach: Any) -> None:
     )
 
 def _print_associated_services(console: Console, services: Any) -> None:
+    """Display confirmed service associations and profile URLs when available."""
     services = services or []
 
-    # Only show useful leads in the main report. The original executor
-    # result retains all negative and unimplemented service checks.
+    # Only confirmed associations belong in the normal report. Other results
+    # remain available in the original investigation data.
     visible = [
         service
         for service in services
-        if _get(service, "status") in {"associated", "possible"}
+        if _get(service, "status") == "associated"
     ]
 
     if not visible:
@@ -389,48 +390,18 @@ def _print_associated_services(console: Console, services: Any) -> None:
         return
 
     rows = []
-
     for service in visible:
         name = str(_get(service, "service", "Unknown service"))
-        status = _status_label(_get(service, "status"))
         url = _get(service, "url")
-        evidence = _get(service, "evidence", {}) or {}
-
-        rows.append([name, status, str(url or "No profile URL returned")])
-
-        display_name = evidence.get("display_name")
-        if display_name:
-            rows.append(["", f"Display name: {display_name}", ""])
+        rows.append([name, str(url) if url else "URL couldn't be retrieved"])
 
     _print_table(
         console,
         "Associated Services",
-        ["Service", "Status / Evidence", "Profile"],
+        ["Service", "Profile URL"],
         rows,
         border_style="success",
     )
-
-    # Show useful evidence without dumping every metadata field.
-    for service in visible:
-        name = _get(service, "service", "Unknown service")
-        evidence = _get(service, "evidence", {}) or {}
-
-        details = []
-        for key, label in (
-            ("display_name", "Display name"),
-            ("avatar_url", "Avatar"),
-        ):
-            value = evidence.get(key)
-            if value:
-                details.append((label, str(value)))
-
-        if details:
-            print_summary_panel(
-                console,
-                f"{name} Evidence",
-                details,
-                status="success",
-            )
 
 def _print_investigation_metadata(console: Console, investigation: Any) -> None:
     status = _get(investigation, "status", "unknown")

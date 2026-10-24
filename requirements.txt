@@ -1,1 +1,2 @@
 publicsuffix2
+dnspython

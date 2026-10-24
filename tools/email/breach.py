@@ -1,14 +1,13 @@
 """
 Email breach lookup for Theseus.
 
-Uses the Have I Been Pwned (HIBP) API v3.
-Requires HIBP_API_KEY in the environment.
+Uses the free XposedOrNot API.
+No API key or third-party Python package required.
 """
 
 from __future__ import annotations
 
 import json
-import os
 import time
 import urllib.error
 import urllib.parse
@@ -16,7 +15,7 @@ import urllib.request
 from dataclasses import asdict, dataclass
 from typing import Any
 
-API_BASE = "https://haveibeenpwned.com/api/v3"
+API_BASE = "https://api.xposedornot.com/v1"
 TIMEOUT = 15
 
 @dataclass
@@ -24,9 +23,10 @@ class BreachResult:
     email: str
     status: str
     breach_count: int
-    breaches: list[dict[str, Any]]
+    breaches: list[Any]
     source: str
     queried_at: float
+    raw_response: dict[str, Any]
     http_status: int | None = None
     error: str | None = None
 
@@ -34,9 +34,10 @@ class BreachResult:
         return asdict(self)
 
 def lookup_breaches(email: str) -> BreachResult:
-    """Look up known breaches associated with an email address."""
+    """Check whether an email appears in known data breaches."""
 
     email = email.strip()
+    source = "XposedOrNot"
 
     if not email or "@" not in email:
         return BreachResult(
@@ -44,33 +45,20 @@ def lookup_breaches(email: str) -> BreachResult:
             status="invalid_target",
             breach_count=0,
             breaches=[],
-            source="Have I Been Pwned",
+            source=source,
             queried_at=time.time(),
+            raw_response={},
             error="Expected an email address",
         )
 
-    api_key = os.environ.get("HIBP_API_KEY", "").strip()
-
-    if not api_key:
-        return BreachResult(
-            email=email,
-            status="configuration_error",
-            breach_count=0,
-            breaches=[],
-            source="Have I Been Pwned",
-            queried_at=time.time(),
-            error="HIBP_API_KEY is not set",
-        )
-
     encoded_email = urllib.parse.quote(email, safe="")
-    url = f"{API_BASE}/breachedaccount/{encoded_email}?truncateResponse=false"
+    url = f"{API_BASE}/check-email/{encoded_email}"
 
     request = urllib.request.Request(
         url,
         headers={
-            "hibp-api-key": api_key,
-            "user-agent": "Theseus-OSINT",
-            "accept": "application/json",
+            "User-Agent": "Theseus-OSINT",
+            "Accept": "application/json",
         },
         method="GET",
     )
@@ -80,49 +68,85 @@ def lookup_breaches(email: str) -> BreachResult:
             http_status = response.status
             payload = json.loads(response.read().decode("utf-8"))
 
-        if not isinstance(payload, list):
-            raise ValueError("Unexpected response format from HIBP")
+        if not isinstance(payload, dict):
+            raise ValueError("Unexpected API response format")
 
-        return BreachResult(
-            email=email,
-            status="found" if payload else "not_found",
-            breach_count=len(payload),
-            breaches=payload,
-            source="Have I Been Pwned",
-            queried_at=time.time(),
-            http_status=http_status,
-        )
-
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
+        if payload.get("Error") == "Not found":
             return BreachResult(
                 email=email,
                 status="not_found",
                 breach_count=0,
                 breaches=[],
-                source="Have I Been Pwned",
+                source=source,
                 queried_at=time.time(),
-                http_status=404,
+                raw_response=payload,
+                http_status=http_status,
             )
 
-        messages = {
-            400: "Invalid request",
-            401: "API key missing or invalid",
-            403: "Access forbidden; check API permissions",
-            429: "Rate limit exceeded",
-        }
+        if payload.get("status") != "success":
+            return BreachResult(
+                email=email,
+                status="error",
+                breach_count=0,
+                breaches=[],
+                source=source,
+                queried_at=time.time(),
+                raw_response=payload,
+                http_status=http_status,
+                error="API returned an unrecognized response",
+            )
+
+        raw_breaches = payload.get("breaches", [])
+
+        if not isinstance(raw_breaches, list):
+            raise ValueError("Unexpected breach data format")
+
+        breach_names = []
+
+        for item in raw_breaches:
+            if isinstance(item, list):
+                breach_names.extend(item)
+            elif isinstance(item, str):
+                breach_names.append(item)
 
         return BreachResult(
             email=email,
-            status="error",
+            status="found" if breach_names else "not_found",
+            breach_count=len(breach_names),
+            breaches=breach_names,
+            source=source,
+            queried_at=time.time(),
+            raw_response=payload,
+            http_status=http_status,
+        )
+
+    except urllib.error.HTTPError as exc:
+        messages = {
+            400: "Invalid request",
+            404: "No matching breach data found",
+            429: (
+                "Rate limit exceeded. Check the Retry-After header "
+                "and try again later."
+            ),
+            500: "XposedOrNot server error",
+            502: "XposedOrNot gateway error",
+            503: "XposedOrNot service unavailable",
+        }
+
+        status = "not_found" if exc.code == 404 else "error"
+
+        return BreachResult(
+            email=email,
+            status=status,
             breach_count=0,
             breaches=[],
-            source="Have I Been Pwned",
+            source=source,
             queried_at=time.time(),
+            raw_response={},
             http_status=exc.code,
-            error=messages.get(
-                exc.code,
-                f"HTTP error {exc.code}",
+            error=(
+                None if status == "not_found"
+                else messages.get(exc.code, f"HTTP error {exc.code}")
             ),
         )
 
@@ -132,8 +156,9 @@ def lookup_breaches(email: str) -> BreachResult:
             status="error",
             breach_count=0,
             breaches=[],
-            source="Have I Been Pwned",
+            source=source,
             queried_at=time.time(),
+            raw_response={},
             error=f"Network error: {exc}",
         )
 
@@ -143,13 +168,15 @@ def lookup_breaches(email: str) -> BreachResult:
             status="error",
             breach_count=0,
             breaches=[],
-            source="Have I Been Pwned",
+            source=source,
             queried_at=time.time(),
+            raw_response={},
             error=f"Response parsing error: {exc}",
         )
 
 if __name__ == "__main__":
     print("Theseus Email Breach Lookup")
+    print("Source: XposedOrNot")
     print("Enter an email address, or type 'q' to quit.\n")
 
     while True:
@@ -165,10 +192,5 @@ if __name__ == "__main__":
         if not target:
             continue
 
-        print(
-            json.dumps(
-                lookup_breaches(target).to_dict(),
-                indent=2,
-                ensure_ascii=False,
-            )
-        )
+        result = lookup_breaches(target)
+        print(json.dumps(result.to_dict(), indent=2, ensure_ascii=False))

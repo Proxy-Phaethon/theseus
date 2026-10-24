@@ -1,47 +1,26 @@
 """
 Registered-service discovery for Theseus.
 
-Provides a modular framework for collecting service-association signals.
-Each service adapter should use an authorized API or a public source.
+Coordinates email-to-service lookups through independently implemented
+adapters in tools/email/apps/.
 
 A result is a lead, not proof of current account ownership.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import time
-import urllib.error
-import urllib.request
-from dataclasses import asdict, dataclass
-from typing import Any, Callable
+from dataclasses import dataclass
+from typing import Callable
 
-@dataclass
-class ServiceResult:
-    service: str
-    category: str
-    status: str
-    url: str | None
-    evidence: dict[str, Any]
-    source: str
-    observed_at: float
-    error: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
-STATUS_VALUES = {
-    "associated",
-    "possible",
-    "not_found",
-    "unknown",
-    "error",
-    "not_checked",
-}
+from .apps.base import STATUS_VALUES, ServiceResult
+from .apps.gravatar import check_gravatar
 
 @dataclass
 class ServiceAdapter:
+    """Connect a service name and category to its lookup function."""
+
     name: str
     category: str
     check: Callable[[str], ServiceResult]
@@ -61,18 +40,19 @@ class ServiceRegistry:
         self._adapters[key] = adapter
 
     def names(self) -> list[str]:
+        """Return registered service names in alphabetical order."""
         return sorted(adapter.name for adapter in self._adapters.values())
 
     def run(
         self,
         email: str,
         selected: list[str] | None = None,
-    ) -> list[dict[str, Any]]:
+    ) -> list[dict]:
         """
-        Run registered adapters.
+        Run all registered adapters or only the selected services.
 
-        If selected is omitted, all registered adapters run.
         Unknown service names are returned as explicit errors.
+        Individual adapter failures do not interrupt other lookups.
         """
         requested = (
             [name.casefold() for name in selected]
@@ -145,141 +125,8 @@ def _not_implemented(
 
     return check
 
-def check_gravatar(email: str) -> ServiceResult:
-    """Look for a public Gravatar profile associated with an email."""
-
-    observed_at = time.time()
-    normalized = email.strip().lower()
-
-    if (
-        not normalized
-        or normalized.count("@") != 1
-        or any(char.isspace() for char in normalized)
-    ):
-        return ServiceResult(
-            service="Gravatar",
-            category="public_profile",
-            status="error",
-            url=None,
-            evidence={},
-            source="Gravatar API",
-            observed_at=observed_at,
-            error="Invalid email address",
-        )
-
-    email_hash = hashlib.sha256(
-        normalized.encode("utf-8")
-    ).hexdigest()
-
-    endpoint = f"https://api.gravatar.com/v3/profiles/{email_hash}"
-
-    request = urllib.request.Request(
-        endpoint,
-        headers={
-            "Accept": "application/json",
-            "User-Agent": "Theseus-OSINT/1.0",
-        },
-        method="GET",
-    )
-
-    try:
-        with urllib.request.urlopen(request, timeout=10) as response:
-            payload = json.loads(
-                response.read().decode("utf-8")
-            )
-
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            return ServiceResult(
-                service="Gravatar",
-                category="public_profile",
-                status="not_found",
-                url=None,
-                evidence={"email_hash": email_hash},
-                source="Gravatar API",
-                observed_at=observed_at,
-            )
-
-        if exc.code == 429:
-            error = "Gravatar rate limit reached"
-        else:
-            error = f"Gravatar returned HTTP {exc.code}"
-
-        return ServiceResult(
-            service="Gravatar",
-            category="public_profile",
-            status="error",
-            url=None,
-            evidence={},
-            source="Gravatar API",
-            observed_at=observed_at,
-            error=error,
-        )
-
-    except (urllib.error.URLError, TimeoutError) as exc:
-        return ServiceResult(
-            service="Gravatar",
-            category="public_profile",
-            status="error",
-            url=None,
-            evidence={},
-            source="Gravatar API",
-            observed_at=observed_at,
-            error=f"Network error: {exc}",
-        )
-
-    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-        return ServiceResult(
-            service="Gravatar",
-            category="public_profile",
-            status="error",
-            url=None,
-            evidence={},
-            source="Gravatar API",
-            observed_at=observed_at,
-            error=f"Invalid API response: {exc}",
-        )
-
-    profile_url = payload.get("profile_url")
-
-    if not isinstance(profile_url, str) or not profile_url.startswith(
-        "https://gravatar.com/"
-    ):
-        return ServiceResult(
-            service="Gravatar",
-            category="public_profile",
-            status="error",
-            url=None,
-            evidence={},
-            source="Gravatar API",
-            observed_at=observed_at,
-            error="API response did not contain a valid profile URL",
-        )
-
-    evidence = {
-        "display_name": payload.get("display_name"),
-        "avatar_url": payload.get("avatar_url"),
-        "email_hash": payload.get("hash", email_hash),
-    }
-
-    evidence = {
-        key: value
-        for key, value in evidence.items()
-        if value is not None
-    }
-
-    return ServiceResult(
-        service="Gravatar",
-        category="public_profile",
-        status="associated",
-        url=profile_url,
-        evidence=evidence,
-        source="Gravatar API",
-        observed_at=observed_at,
-    )
-
 def build_service_registry() -> ServiceRegistry:
-    """Build the service registry."""
+    """Build the service registry with implemented and placeholder adapters."""
 
     registry = ServiceRegistry()
 
@@ -317,7 +164,7 @@ def build_service_registry() -> ServiceRegistry:
 def discover_services(
     email: str,
     selected: list[str] | None = None,
-) -> list[dict[str, Any]]:
+) -> list[dict]:
     """Entry point for Theseus and isolated tests."""
     registry = build_service_registry()
     return registry.run(email, selected)
@@ -343,7 +190,7 @@ if __name__ == "__main__":
 
         print(
             json.dumps(
-                discover_services(target, selected=["Gravatar"]),
+                discover_services(target),
                 indent=2,
                 ensure_ascii=False,
             )

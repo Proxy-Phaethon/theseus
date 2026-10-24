@@ -1,12 +1,16 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
 from core.identifier import Command, CommandType, EntityType
+from registry.collectors import (
+    CollectorStatus,
+    get_collectors,
+    get_normalizer,
+    get_status,
+)
 from ui.panels import print_message_panel, print_panel
 from ui.status import print_status
 
@@ -50,7 +54,7 @@ class CommandHandler:
         handler(command.argument)
 
     def record_investigation(self, target: str) -> None:
-        """Record a target after its investigation has completed."""
+        """Record a target after its investigation completes."""
         target = target.strip()
 
         if target:
@@ -77,7 +81,7 @@ class CommandHandler:
             ("about", "Show information about Theseus."),
             ("clear", "Clear the terminal screen."),
             ("history", "Show completed investigation targets."),
-            ("status", "Show registered entity responders."),
+            ("status", "Show implemented investigation workflows."),
             ("q / quit / bye / exit", "Exit Theseus."),
         ]
 
@@ -93,8 +97,9 @@ class CommandHandler:
 
         self.console.print(
             Text(
-                "\nEnter an email, domain, IP address, URL, username, "
-                "or another supported target to investigate it.",
+                "\nEnter an email address to start an investigation. "
+                "Additional entity types will become available as their "
+                "new investigation workflows are implemented.",
                 style="muted",
             )
         )
@@ -117,7 +122,7 @@ class CommandHandler:
         details = {
             "help": (
                 "help [command]",
-                "Display the command list, or explain a specific command.",
+                "Display the command list or explain a specific command.",
                 "Examples: help, help history",
             ),
             "about": (
@@ -137,8 +142,8 @@ class CommandHandler:
             ),
             "status": (
                 "status",
-                "Display the entity types with registered responders.",
-                "Does not test collector availability or API health.",
+                "Display which entity types have implemented collector workflows.",
+                "Reports registry configuration, not live collector availability.",
             ),
             "quit": (
                 "q / quit / bye / exit",
@@ -180,13 +185,13 @@ class CommandHandler:
         """Display project information."""
         content = Table.grid(padding=(0, 1))
         content.add_column(style="muted", no_wrap=True)
-        content.add_column(style="text")
+        content.add_column(style="text", overflow="fold")
         content.add_row("Project", "Theseus")
         content.add_row("Version", f"v{self.version}")
         content.add_row("Purpose", "Internet exploration and OSINT investigation")
         content.add_row(
             "Approach",
-            "Orchestrates existing tools to investigate supported targets.",
+            "Investigates digital targets using its own tools and integrations.",
         )
 
         print_panel(
@@ -236,7 +241,7 @@ class CommandHandler:
         )
 
     def _status(self, _argument: str | None = None) -> None:
-        """Show which entity responders are registered."""
+        """Show which entity types have implemented collector workflows."""
         table = Table(
             show_header=True,
             header_style="heading",
@@ -244,37 +249,42 @@ class CommandHandler:
             expand=False,
         )
         table.add_column("Entity type", style="text")
-        table.add_column("Responder", style="text")
-        table.add_column("Status", style="success")
+        table.add_column("Collectors", style="text", justify="right")
+        table.add_column("Workflow status", style="text")
 
         for entity_type in EntityType:
             if entity_type == EntityType.UNKNOWN:
                 continue
 
-            responder = self.responders.get(entity_type)
+            status = get_status(entity_type)
+            collectors = get_collectors(entity_type)
+            normalizer = get_normalizer(entity_type)
 
-            if responder is None:
-                table.add_row(
-                    entity_type.value,
-                    "Not registered",
-                    "[warning]UNAVAILABLE[/warning]",
-                )
+            component_count = len(collectors)
+            if normalizer is not None:
+                component_count += 1
+
+            if status == CollectorStatus.IMPLEMENTED:
+                status_text = "[success]IMPLEMENTED[/success]"
             else:
-                table.add_row(
-                    entity_type.value,
-                    responder.__class__.__name__,
-                    "REGISTERED",
-                )
+                status_text = "[warning]NOT IMPLEMENTED[/warning]"
+
+            table.add_row(
+                entity_type.value,
+                str(component_count),
+                status_text,
+            )
 
         print_panel(
             self.console,
             table,
-            title="Responder registry",
+            title="Investigation workflows",
             expand=False,
         )
 
         self.console.print(
-            "[muted]Registration only. Collector and API health are not checked.[/muted]"
+            "[muted]Status reflects registry configuration, not live service "
+            "availability or investigation results.[/muted]"
         )
 
     def _quit(self, _argument: str | None = None) -> None:

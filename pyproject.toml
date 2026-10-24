@@ -4,14 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "theseus"
-version = "0.1.0"
-description = "OSINT investigation tool"
+version = "0.7.0"
+description = "An extensible OSINT investigation tool"
 requires-python = ">=3.10"
 
 dependencies = [
     "requests",
     "python-dotenv",
     "dnspython",
+    "rich",
+    "publicsuffix2",
 ]
 
 [project.scripts]
@@ -21,4 +23,4 @@ theseus = "main:main"
 py-modules = ["main"]
 
 [tool.setuptools.packages.find]
-include = ["core*", "tools*"]
+include = ["core*", "registry*", "tools*", "ui*"]

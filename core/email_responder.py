@@ -1,507 +1,531 @@
+"""
+Email investigation responder for Theseus.
+
+Responsibilities:
+- Format executor results into a readable terminal report.
+- Surface useful findings and meaningful warnings.
+- Hide routine negative and unimplemented service checks.
+- Preserve the original investigation data without modification.
+
+This module does not execute collectors.
+"""
+
 from __future__ import annotations
 
 from typing import Any
 
-from rich.console import Group, RenderableType
+from rich import box
+from rich.console import Console
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
-from core.identifier import Entity
+from ui.panels import print_message_panel, print_panel, print_summary_panel
+from ui.status import format_status
+from ui.theme import status_style
 
-class EmailResponder:
-    def respond(
-        self,
-        entity: Entity,
-        results: list[tuple[str, Any]],
-    ) -> RenderableType:
-        """Build a styled Rich report without changing collector result parsing."""
-        data = {
-            tool_name.lower(): result
-            for tool_name, result in results
-        }
+def _get(value: Any, key: str, default: Any = None) -> Any:
+    """Read a field from either a dictionary or an object."""
+    if isinstance(value, dict):
+        return value.get(key, default)
+    return getattr(value, key, default)
 
-        disify = self._tool(data, "disify")
-        xposedornot = self._tool(data, "xposedornot")
-        holehe = self._tool(data, "holehe")
-        user_scanner = self._tool(data, "user_scanner")
-        github = self._tool(data, "github")
+def _collector_results(investigation: Any) -> dict[str, Any]:
+    """Index collector results by their registered display names."""
+    results = {}
 
-        sections = []
+    for collector in _get(investigation, "collectors", []) or []:
+        name = _get(collector, "name", "")
+        result = _get(collector, "result")
+        results[name] = result
 
-        identity = self._identity(entity.value, disify)
-        if identity:
-            sections.append(("Email Identity", identity))
+    return results
 
-        infrastructure = self._infrastructure(disify)
-        if infrastructure:
-            sections.append(("Email Infrastructure", infrastructure))
+def _finding(
+    results: dict[str, Any],
+    collector_name: str,
+) -> Any:
+    """Get the returned data from a named collector."""
+    return results.get(collector_name)
 
-        breaches = self._breaches(xposedornot)
-        if breaches:
-            sections.append(("Breach Exposure", breaches))
+def _yes_no(value: Any) -> str:
+    if value is True:
+        return "Yes"
+    if value is False:
+        return "No"
+    return "Unknown"
 
-        accounts = self._accounts(user_scanner, holehe)
-        if accounts:
-            sections.append(("Account Discovery", accounts))
+def _status_label(value: Any) -> str:
+    """Make internal status strings readable."""
+    if not value:
+        return "Unknown"
+    return str(value).replace("_", " ").capitalize()
 
-        footprint = self._github(github)
-        if footprint:
-            sections.append(("Public Code Footprint", footprint))
+def _compact(value: Any, limit: int = 100) -> str:
+    """Make a potentially long value suitable for a compact report."""
+    if value is None:
+        return "Not available"
 
-        if not sections:
-            return Text(
-                "No email findings were available from the returned collector results.",
-                style="muted",
-            )
+    text = " ".join(str(value).split())
 
-        panels = [
-            Panel(
-                self._render_lines(lines),
-                title=Text(heading, style="heading"),
-                title_align="left",
-                border_style="border",
-                padding=(0, 1),
-                expand=True,
-            )
-            for heading, lines in sections
-        ]
-        return Group(*panels)
+    if len(text) > limit:
+        return text[: limit - 1] + "…"
 
-    @staticmethod
-    def _tool(data: dict[str, Any], name: str) -> Any:
-        normalized_name = "".join(
-            char for char in name.lower() if char.isalnum()
+    return text
+
+def _print_table(
+    console: Console,
+    title: str,
+    columns: list[str],
+    rows: list[list[str]],
+    *,
+    border_style: str = "border",
+) -> None:
+    """Print a consistently styled table inside a panel."""
+    table = Table(
+        box=box.SIMPLE,
+        show_header=True,
+        header_style="heading",
+        border_style=border_style,
+        expand=True,
+        padding=(0, 1),
+    )
+
+    for column in columns:
+        table.add_column(column, overflow="fold")
+
+    for row in rows:
+        table.add_row(*row)
+
+    print_panel(
+        console,
+        table,
+        title=title,
+        border_style=border_style,
+        padding=(0, 1),
+    )
+
+def _print_overview(
+    console: Console,
+    investigation: Any,
+    normalized: Any,
+    syntax: Any,
+    domain: Any,
+) -> None:
+    target = _get(investigation, "normalized_target")
+    if not target:
+        target = _get(investigation, "original_target", "Unknown")
+
+    lines = [
+        ("Email", str(target)),
+        (
+            "Syntax",
+            "Valid" if _get(syntax, "valid") is True
+            else "Invalid" if _get(syntax, "valid") is False
+            else "Not verified",
+        ),
+    ]
+
+    domain_name = _get(domain, "registrable_domain")
+    if domain_name:
+        lines.append(("Registered domain", str(domain_name)))
+
+    role_based = _get(normalized, "role_based")
+    disposable = _get(normalized, "disposable_looking")
+    special_use = _get(normalized, "special_use_domain")
+
+    if role_based:
+        lines.append(("Address type", "Role-based mailbox"))
+
+    if disposable:
+        lines.append(("Address warning", "Disposable-looking domain"))
+
+    if special_use:
+        lines.append(("Domain warning", "Special-use domain"))
+
+    transformations = _get(normalized, "transformations", []) or []
+    if transformations:
+        lines.append(
+            ("Normalization", "; ".join(str(x) for x in transformations))
         )
 
-        for tool_name, result in data.items():
-            normalized_tool_name = "".join(
-                char for char in tool_name.lower() if char.isalnum()
-            )
+    normalization_errors = _get(normalized, "errors", []) or []
+    if normalization_errors:
+        lines.append(
+            ("Normalization notes", "; ".join(str(x) for x in normalization_errors))
+        )
 
-            if normalized_name in normalized_tool_name:
-                return result
+    print_summary_panel(
+        console,
+        "Email Overview",
+        lines,
+        status="success" if _get(syntax, "valid") is True else "info",
+    )
 
-        return {}
+def _print_infrastructure(console: Console, mx: Any) -> None:
+    if not mx:
+        print_message_panel(
+            console,
+            "MX lookup returned no result.",
+            title="Mail Infrastructure",
+            status="warning",
+        )
+        return
 
-    @staticmethod
-    def _render_lines(lines: list[str]) -> Group:
-        """Render field labels and evidence as safe, wrapping Rich text."""
-        rendered = []
+    mx_status = _get(mx, "status", "unknown")
+    servers = _get(mx, "mail_servers", []) or []
+    accepts_email = _get(mx, "accepts_email")
 
-        for line in lines:
-            value = line.strip()
-            text = Text()
+    summary = [
+        ("MX lookup", _status_label(mx_status)),
+        ("Accepts email", _yes_no(accepts_email)),
+        ("Mail servers", str(len(servers))),
+    ]
 
-            if not value:
-                rendered.append(text)
-                continue
+    print_summary_panel(
+        console,
+        "Mail Infrastructure",
+        summary,
+        status="success" if mx_status == "found" else "warning",
+    )
 
-            if ":" in value:
-                label, remainder = value.split(":", 1)
-                if label and len(label) <= 42 and not label.startswith(("http", "[")):
-                    text.append(f"{label}: ", style="muted")
-                    text.append(remainder.lstrip(), style="text")
-                else:
-                    text.append(value, style="text")
-            else:
-                text.append(value, style="text")
+    if not servers:
+        return
 
-            rendered.append(text)
+    rows = []
+    for server in sorted(
+        servers,
+        key=lambda item: _get(item, "priority", 9999),
+    ):
+        hostname = str(_get(server, "hostname", "Unknown"))
+        priority = str(_get(server, "priority", "—"))
 
-        return Group(*rendered)
+        ipv4 = _get(server, "ipv4", []) or []
+        ipv6 = _get(server, "ipv6", []) or []
 
-    @staticmethod
-    def _identity(email: str, data: Any) -> list[str]:
-        if not isinstance(data, dict):
-            data = {}
+        addresses = [str(address) for address in ipv4 + ipv6]
+        address_summary = ", ".join(addresses) if addresses else "No addresses returned"
 
-        lines = [f"Address: {email}"]
+        rows.append([priority, hostname, address_summary])
 
-        domain = data.get("domain")
-        if domain:
-            lines.append(f"Domain: {domain}")
+    _print_table(
+        console,
+        "Mail Exchange Records",
+        ["Priority", "Hostname", "Resolved addresses"],
+        rows,
+    )
 
-        tld = data.get("tld")
-        if not tld and isinstance(domain, str) and "." in domain:
-            tld = "." + domain.rsplit(".", 1)[-1]
+def _print_email_security(console: Console, security: Any) -> None:
+    if not security:
+        print_message_panel(
+            console,
+            "Email security checks returned no result.",
+            title="Email Security",
+            status="warning",
+        )
+        return
 
-        if tld:
-            lines.append(f"TLD: {tld}")
+    rows = []
 
-        fields = [
-            (
-                "format",
-                "Format",
-                lambda v: "Valid" if v is True else "Invalid" if v is False else str(v),
-            ),
-            (
-                "disposable",
-                "Disposable",
-                lambda v: "Yes" if v is True else "No" if v is False else str(v),
-            ),
-            (
-                "role",
-                "Role Account",
-                lambda v: "Yes" if v is True else "No" if v is False else str(v),
-            ),
-            (
-                "free",
-                "Free Provider",
-                lambda v: "Yes" if v is True else "No" if v is False else str(v),
-            ),
-            (
-                "dns",
-                "DNS",
-                lambda v: "Available" if v is True else "Unavailable" if v is False else str(v),
-            ),
-        ]
+    for key, label in (
+        ("spf", "SPF"),
+        ("dmarc", "DMARC"),
+        ("mta_sts", "MTA-STS"),
+        ("tls_rpt", "TLS reporting"),
+    ):
+        item = _get(security, key, {}) or {}
+        status = _get(item, "status", "unknown")
+        record = _get(item, "record")
 
-        for key, label, formatter in fields:
-            value = data.get(key)
-            if value is not None:
-                lines.append(f"{label}: {formatter(value)}")
-
-        return lines
-
-    @staticmethod
-    def _infrastructure(data: Any) -> list[str]:
-        if not isinstance(data, dict):
-            return []
-
-        mx_info = data.get("mx_info")
-        if not mx_info:
-            return []
-
-        if isinstance(mx_info, dict):
-            records = mx_info.get("records", mx_info.get("mx", []))
+        if record:
+            detail = _compact(record, 110)
         else:
-            records = mx_info
+            detail = _status_label(status)
 
-        if isinstance(records, str):
-            records = [records]
+        rows.append([label, _status_label(status), detail])
 
-        if not isinstance(records, (list, tuple)):
-            return []
+    _print_table(
+        console,
+        "Email Security",
+        ["Control", "Status", "Finding"],
+        rows,
+    )
 
-        hosts = []
+    dmarc = _get(security, "dmarc", {}) or {}
+    policy = _get(dmarc, "policy")
 
-        for record in records:
-            if isinstance(record, str):
-                host = record
-            elif isinstance(record, dict):
-                host = (
-                    record.get("exchange")
-                    or record.get("host")
-                    or record.get("hostname")
-                    or record.get("target")
-                    or record.get("name")
-                )
-            else:
-                host = None
+    if policy:
+        policy_note = (
+            f"DMARC policy: {policy}. "
+            "This describes the domain's published policy, "
+            "not whether a particular message passed authentication."
+        )
+        print_message_panel(
+            console,
+            policy_note,
+            title="DMARC Policy",
+            status="info",
+        )
 
-            if host and str(host) not in hosts:
-                hosts.append(str(host))
+    dnssec = _get(security, "dnssec", {}) or {}
+    dnssec_rows = []
 
-        if not hosts:
-            return []
+    for key, label in (("dnskey", "DNSKEY"), ("ds", "DS")):
+        item = _get(dnssec, key, {}) or {}
+        status = _get(item, "status", "unknown")
+        records = _get(item, "records", []) or []
 
-        return [
-            f"MX Records: {len(hosts)}",
-            *(f"  {host}" for host in hosts),
+        dnssec_rows.append(
+            [label, _status_label(status), str(len(records))]
+        )
+
+    if dnssec_rows:
+        _print_table(
+            console,
+            "DNSSEC Record Observations",
+            ["Record type", "Lookup status", "Records returned"],
+            dnssec_rows,
+        )
+
+def _print_breach_results(console: Console, breach: Any) -> None:
+    if not breach:
+        print_message_panel(
+            console,
+            "Breach lookup returned no result.",
+            title="Breach Exposure",
+            status="warning",
+        )
+        return
+
+    status = _get(breach, "status", "unknown")
+    source = _get(breach, "source", "Unknown source")
+    count = _get(breach, "breach_count")
+    breaches = _get(breach, "breaches", []) or []
+
+    if status == "not_found":
+        message = (
+            f"No breach was returned by {source}. "
+            "This does not prove that the address has never been exposed."
+        )
+        print_message_panel(
+            console,
+            message,
+            title="Breach Exposure",
+            status="info",
+        )
+        return
+
+    if status in {"found", "breaches_found"} or breaches:
+        lines = [
+            ("Source", str(source)),
+            ("Breaches reported", str(count if count is not None else len(breaches))),
         ]
 
-    @staticmethod
-    def _breaches(data: Any) -> list[str]:
-        if not isinstance(data, dict):
-            return []
+        print_summary_panel(
+            console,
+            "Breach Exposure",
+            lines,
+            status="warning",
+        )
 
-        breaches = data.get("breaches", [])
-        names = []
+        if breaches:
+            rows = []
+            for item in breaches:
+                if isinstance(item, dict):
+                    name = item.get("name") or item.get("title") or item.get("breach") or str(item)
+                    date_value = item.get("date") or item.get("breach_date") or "Unknown"
+                else:
+                    name = str(item)
+                    date_value = "Unknown"
 
-        def collect(value: Any) -> None:
-            if isinstance(value, str):
-                if value not in names:
-                    names.append(value)
-            elif isinstance(value, dict):
-                name = value.get("name") or value.get("Name")
-                if name and name not in names:
-                    names.append(str(name))
-            elif isinstance(value, (list, tuple)):
-                for item in value:
-                    collect(item)
+                rows.append([str(name), str(date_value)])
 
-        collect(breaches)
+            _print_table(
+                console,
+                "Reported Breaches",
+                ["Breach", "Date"],
+                rows,
+            )
+        return
 
-        if not names:
-            return []
+    if status == "error":
+        message = _get(breach, "error") or "The source reported an error."
+        print_message_panel(
+            console,
+            f"{source}: {message}",
+            title="Breach Exposure",
+            status="error",
+        )
+        return
 
-        return [
-            f"Breaches Found: {len(names)}",
-            *(f"Breach: {name}" for name in names),
-        ]
+    print_summary_panel(
+        console,
+        "Breach Exposure",
+        [
+            ("Source", str(source)),
+            ("Result", _status_label(status)),
+        ],
+        status="info",
+    )
 
-    @classmethod
-    def _accounts(
-        cls,
-        user_scanner: Any,
-        holehe: Any,
-    ) -> list[str]:
-        accounts: dict[str, dict[str, Any]] = {}
+def _print_associated_services(console: Console, services: Any) -> None:
+    services = services or []
 
-        def normalize_name(value: Any) -> str:
-            name = str(value or "").strip().lower()
+    # Only show useful leads in the main report. The original executor
+    # result retains all negative and unimplemented service checks.
+    visible = [
+        service
+        for service in services
+        if _get(service, "status") in {"associated", "possible"}
+    ]
 
-            aliases = {
-                "x (twitter)": "x",
-                "twitter": "x",
-                "x.com": "x",
-                "office365.com": "office365",
-                "office.com": "office365",
-                "microsoft 365": "office365",
-            }
+    if not visible:
+        print_message_panel(
+            console,
+            "No associated service profiles were identified by the implemented checks.",
+            title="Associated Services",
+            status="info",
+        )
+        return
 
-            return aliases.get(name, name)
+    rows = []
 
-        def get_account(name: Any) -> dict[str, Any] | None:
-            if not name:
-                return None
+    for service in visible:
+        name = str(_get(service, "service", "Unknown service"))
+        status = _status_label(_get(service, "status"))
+        url = _get(service, "url")
+        evidence = _get(service, "evidence", {}) or {}
 
-            normalized = normalize_name(name)
-            if not normalized:
-                return None
+        rows.append([name, status, str(url or "No profile URL returned")])
 
-            if normalized not in accounts:
-                accounts[normalized] = {
-                    "name": str(name).strip(),
-                    "sources": [],
-                    "metadata": {},
-                    "status": None,
-                }
+        display_name = evidence.get("display_name")
+        if display_name:
+            rows.append(["", f"Display name: {display_name}", ""])
 
-            return accounts[normalized]
+    _print_table(
+        console,
+        "Associated Services",
+        ["Service", "Status / Evidence", "Profile"],
+        rows,
+        border_style="success",
+    )
 
-        scanner_records = user_scanner if isinstance(user_scanner, list) else []
+    # Show useful evidence without dumping every metadata field.
+    for service in visible:
+        name = _get(service, "service", "Unknown service")
+        evidence = _get(service, "evidence", {}) or {}
 
-        skipped_count = 0
-        error_count = 0
+        details = []
+        for key, label in (
+            ("display_name", "Display name"),
+            ("avatar_url", "Avatar"),
+        ):
+            value = evidence.get(key)
+            if value:
+                details.append((label, str(value)))
 
-        for result in scanner_records:
-            if not isinstance(result, dict):
-                continue
-
-            status = str(result.get("status") or "").strip().lower()
-
-            if status == "skipped":
-                skipped_count += 1
-                continue
-
-            if status == "error":
-                error_count += 1
-                continue
-
-            if status != "registered":
-                continue
-
-            name = result.get("site_name")
-            account = get_account(name)
-            if account is None:
-                continue
-
-            if "User Scanner" not in account["sources"]:
-                account["sources"].append("User Scanner")
-
-            account["status"] = "Registered"
-
-            for key in ("category", "url"):
-                value = result.get(key)
-                if value and key not in account["metadata"]:
-                    account["metadata"][key] = value
-
-            extra = result.get("extra")
-            if isinstance(extra, dict):
-                for key in (
-                    "login",
-                    "user_id",
-                    "profile",
-                    "account_type",
-                    "matched_by",
-                ):
-                    value = extra.get(key)
-                    if value is not None and value != "":
-                        account["metadata"].setdefault(key, value)
-
-            media = result.get("media")
-            if isinstance(media, dict):
-                avatar = media.get("avatar")
-                if avatar:
-                    account["metadata"].setdefault("avatar", avatar)
-
-        holehe_records = holehe if isinstance(holehe, list) else []
-
-        for result in holehe_records:
-            if not isinstance(result, dict):
-                continue
-
-            if result.get("exists") is not True:
-                continue
-
-            name = result.get("name") or result.get("domain")
-            account = get_account(name)
-            if account is None:
-                continue
-
-            if "Holehe" not in account["sources"]:
-                account["sources"].append("Holehe")
-
-            account["status"] = account["status"] or "Positive"
-
-        lines = []
-
-        if accounts:
-            ordered_accounts = sorted(
-                accounts.values(),
-                key=lambda item: item["name"].lower(),
+        if details:
+            print_summary_panel(
+                console,
+                f"{name} Evidence",
+                details,
+                status="success",
             )
 
-            lines.append(f"Services Found: {len(ordered_accounts)}")
+def _print_investigation_metadata(console: Console, investigation: Any) -> None:
+    status = _get(investigation, "status", "unknown")
+    duration = _get(investigation, "duration_seconds", 0)
+    completed = _get(investigation, "completed_count", 0)
+    failed = _get(investigation, "failed_count", 0)
+    errors = _get(investigation, "errors", []) or []
 
-            for account in ordered_accounts:
-                metadata = account["metadata"]
-                lines.append("")
-                lines.append(account["name"])
+    lines = [
+        ("Execution status", _status_label(status)),
+        ("Collectors completed", str(completed)),
+        ("Collector errors", str(failed)),
+        ("Elapsed", f"{duration:.2f} seconds" if isinstance(duration, (int, float)) else str(duration)),
+    ]
 
-                category = metadata.get("category")
-                if category:
-                    lines.append(f"  Category: {category}")
+    print_summary_panel(
+        console,
+        "Investigation Summary",
+        lines,
+        status=(
+            "success" if status == "success"
+            else "warning" if status == "partial"
+            else "error" if status == "error"
+            else "info"
+        ),
+    )
 
-                login = metadata.get("login")
-                if login:
-                    lines.append(f"  Username: {login}")
+    if errors:
+        # Errors remain visible because they may affect interpretation.
+        error_text = Text()
+        for index, error in enumerate(errors):
+            if index:
+                error_text.append("\n")
+            error_text.append("• ", style="warning")
+            error_text.append(str(error), style="text")
 
-                profile = metadata.get("profile")
-                if profile:
-                    lines.append(f"  Profile: {profile}")
-                elif metadata.get("url"):
-                    lines.append(f"  Website: {metadata['url']}")
+        print_panel(
+            console,
+            error_text,
+            title="Execution Notes",
+            border_style="warning",
+            padding=(0, 1),
+        )
 
-                user_id = metadata.get("user_id")
-                if user_id is not None:
-                    lines.append(f"  User ID: {user_id}")
-
-                account_type = metadata.get("account_type")
-                if account_type:
-                    lines.append(f"  Account Type: {account_type}")
-
-                matched_by = metadata.get("matched_by")
-                if matched_by:
-                    lines.append(f"  Evidence: {matched_by}")
-
-                avatar = metadata.get("avatar")
-                if avatar:
-                    lines.append(f"  Avatar: {avatar}")
-
-        if skipped_count or error_count:
-            if lines:
-                lines.append("")
-            lines.append("Inconclusive Checks")
-
-            if skipped_count:
-                lines.append(f"User Scanner Skipped: {skipped_count}")
-
-            if error_count:
-                lines.append(f"User Scanner Errors: {error_count}")
-
-        if holehe_records:
-            rate_limited = sum(
-                1
-                for result in holehe_records
-                if isinstance(result, dict)
-                and (
-                    result.get("rateLimit") is True
-                    or result.get("frequent_rate_limit") is True
-                )
-            )
-
-            if rate_limited:
-                if lines:
-                    lines.append("")
-                lines.append(
-                    f"Holehe Rate-Limited Checks: {rate_limited} "
-                    "(results may be inconclusive)"
-                )
-
-        return lines
+class EmailResponder:
+    """Format an email InvestigationResult for terminal display."""
 
     @staticmethod
-    def _github(data: Any) -> list[str]:
-        if not isinstance(data, dict):
-            return []
+    def respond(investigation: Any, console: Console) -> None:
+        """Print the readable email investigation report."""
+        entity_type = _get(investigation, "entity_type")
 
-        items = data.get("items", [])
-        total_count = data.get("total_count")
-        lines = []
+        if entity_type != "email":
+            print_message_panel(
+                console,
+                f"EmailResponder received entity type: {entity_type!r}",
+                title="Responder Error",
+                status="error",
+            )
+            return
 
-        if isinstance(total_count, int):
-            lines.append(f"Matching Commits: {total_count}")
+        results = _collector_results(investigation)
 
-        users = []
-        identities = []
+        normalizer_component = _get(investigation, "normalizer")
+        normalized = _get(normalizer_component, "result")
 
-        if isinstance(items, list):
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
+        syntax = _finding(results, "Email syntax")
+        domain = _finding(results, "Email domain analysis")
+        mx = _finding(results, "MX lookup")
+        security = _finding(results, "Email security")
+        breach = _finding(results, "Breach lookup")
+        services = _finding(results, "Service discovery")
 
-                account = item.get("author")
-                if isinstance(account, dict):
-                    login = account.get("login")
-                    url = account.get("html_url")
+        target = _get(investigation, "normalized_target") or _get(
+            investigation, "original_target", "Unknown"
+        )
 
-                    if (
-                        login
-                        and not login.lower().endswith("[bot]")
-                        and login.lower() not in {"web-flow"}
-                    ):
-                        entry = (login, url)
-                        if entry not in users:
-                            users.append(entry)
+        console.print()
+        console.print(
+            Panel(
+                Text(str(target), style="bold text", justify="center"),
+                title="[heading]EMAIL INVESTIGATION[/heading]",
+                subtitle="[muted]THESEUS[/muted]",
+                border_style="border",
+                padding=(1, 2),
+                expand=False,
+            )
+        )
+        console.print()
 
-                commit = item.get("commit", {})
-                if not isinstance(commit, dict):
-                    continue
+        _print_overview(console, investigation, normalized, syntax, domain)
+        _print_infrastructure(console, mx)
+        _print_email_security(console, security)
+        _print_breach_results(console, breach)
+        _print_associated_services(console, services)
+        _print_investigation_metadata(console, investigation)
 
-                for key in ("author", "committer"):
-                    person = commit.get(key)
-                    if not isinstance(person, dict):
-                        continue
-
-                    name = person.get("name")
-                    email = person.get("email")
-
-                    if not name or not email:
-                        continue
-
-                    if (
-                        name.lower() == "github"
-                        or email.lower().endswith("@users.noreply.github.com")
-                        or email.lower() == "noreply@github.com"
-                    ):
-                        continue
-
-                    identity = (name, email)
-                    if identity not in identities:
-                        identities.append(identity)
-
-        if users:
-            lines.append(f"GitHub Accounts Found: {len(users)}")
-            for login, url in users:
-                lines.append(
-                    f"GitHub User: {login}" + (f" ({url})" if url else "")
-                )
-
-        if identities:
-            lines.append(f"Commit Identities Found: {len(identities)}")
-            for name, email in identities:
-                lines.append(f"{name} ({email})")
-
-        return lines
+        console.print()

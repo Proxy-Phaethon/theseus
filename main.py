@@ -11,13 +11,8 @@ from rich.spinner import Spinner
 from rich.text import Text
 
 from core.identifier import Identifier, EntityType
-from core.ip_responder import IPResponder
-from core.domain_responder import DomainResponder
 from core.email_responder import EmailResponder
-from core.url_responder import URLResponder
-from core.username_responder import UsernameResponder
-
-from registry.collectors import build_collectors
+from registry.executor import execute_entity
 
 from ui.banner import render_banner
 from ui.commands import CommandHandler
@@ -45,7 +40,6 @@ INVESTIGATION_MESSAGES = [
     "Sorting signal from noise...",
     "Making the internet explain itself...",
     "Consulting the archives...",
-    "Trying not to get distracted by unrelated domains...",
     "Counting the breadcrumbs...",
     "Having a word with the registry...",
     "Checking the other side of the rabbit hole...",
@@ -57,16 +51,7 @@ INVESTIGATION_MESSAGES = [
 ]
 
 def build_identifier() -> Identifier:
-    return Identifier(tools=build_collectors())
-
-def build_responders():
-    return {
-        EntityType.IP_ADDRESS: IPResponder(),
-        EntityType.DOMAIN: DomainResponder(),
-        EntityType.EMAIL: EmailResponder(),
-        EntityType.URL: URLResponder(),
-        EntityType.USERNAME: UsernameResponder(),
-    }
+    return Identifier()
 
 def investigate(
     identifier: Identifier,
@@ -75,10 +60,21 @@ def investigate(
     *,
     animate: bool = True,
 ):
-    """Run an investigation with a spinner and rotating commentary."""
+    """Execute an investigation with an optional spinner."""
+
+    def run_investigation():
+        entity = identifier.identify(target)
+
+        if entity.type != EntityType.EMAIL:
+            raise ValueError(
+                f"Investigation for {entity.type.value} is not implemented yet. "
+                "The current collector pipeline supports email targets only."
+            )
+
+        return entity, execute_entity(entity)
 
     if not animate:
-        return identifier.process(target)
+        return run_investigation()
 
     started = time.monotonic()
     stop_event = threading.Event()
@@ -87,8 +83,8 @@ def investigate(
 
     def worker() -> None:
         try:
-            result.append(identifier.process(target))
-        except BaseException as exc:
+            result.append(run_investigation())
+        except Exception as exc:
             errors.append(exc)
         finally:
             stop_event.set()
@@ -110,12 +106,14 @@ def investigate(
             while not stop_event.is_set():
                 elapsed = time.monotonic() - started
 
-                display = Group(
-                    spinner,
-                    Text(f"  └─ {message}", style="muted"),
-                    Text(f"     Elapsed: {elapsed:.1f}s", style="dim"),
+                live.update(
+                    Group(
+                        spinner,
+                        Text(f"  └─ {message}", style="muted"),
+                        Text(f"     Elapsed: {elapsed:.1f}s", style="dim"),
+                    ),
+                    refresh=True,
                 )
-                live.update(display, refresh=True)
 
                 if stop_event.wait(2.5):
                     break
@@ -136,51 +134,9 @@ def investigate(
         raise errors[0]
 
     if not result:
-        raise RuntimeError(
-            "Investigation finished without returning results."
-        )
+        raise RuntimeError("Investigation finished without returning results.")
 
     return result[0]
-
-def print_all_subdomains(responder, console: Console) -> None:
-    """Optionally print the complete subdomain list from a domain report."""
-    subdomains = getattr(responder, "subdomains", [])
-
-    if not subdomains:
-        return
-
-    try:
-        answer = input(
-            f"\nPrint all {len(subdomains)} discovered subdomains? [y/n]: "
-        ).strip().lower()
-    except (EOFError, KeyboardInterrupt):
-        console.print()
-        return
-
-    if answer not in {"y", "yes"}:
-        return
-
-    console.print("\n[heading]All discovered subdomains[/heading]")
-
-    for item in subdomains:
-        if isinstance(item, dict):
-            hostname = item.get("hostname")
-            sources = item.get("sources", [])
-
-            if not hostname:
-                continue
-
-            source_text = ", ".join(
-                str(source) for source in sources if source
-            )
-            suffix = (
-                f" [muted][{source_text}][/muted]"
-                if source_text
-                else ""
-            )
-            console.print(f"  {hostname}{suffix}")
-        else:
-            console.print(f"  {item}")
 
 def main() -> None:
     terminal = detect_terminal()
@@ -189,7 +145,9 @@ def main() -> None:
     render_banner(console, version=VERSION)
 
     identifier = build_identifier()
-    responders = build_responders()
+    responders = {
+        EntityType.EMAIL: EmailResponder(),
+    }
 
     commands = CommandHandler(
         console,
@@ -207,16 +165,14 @@ def main() -> None:
         if not target:
             continue
 
-        # Helper commands are handled before entity identification.
         command = identifier.identify_command(target)
 
         if command is not None:
             commands.execute(command)
             continue
 
-        # Everything else enters the existing investigation pipeline.
         try:
-            entity, results = investigate(
+            entity, investigation = investigate(
                 identifier,
                 target,
                 console,
@@ -224,21 +180,12 @@ def main() -> None:
             )
         except KeyboardInterrupt:
             console.print()
-            print_status(
-                console,
-                "warning",
-                "Investigation interrupted.",
-            )
+            print_status(console, "warning", "Investigation interrupted.")
             continue
         except Exception as exc:
-            print_status(
-                console,
-                "error",
-                f"Investigation failed: {exc}",
-            )
+            print_status(console, "error", f"Investigation failed: {exc}")
             continue
 
-        # Record successful pipeline completion, even if there are no findings.
         commands.record_investigation(target)
 
         console.print()
@@ -257,36 +204,12 @@ def main() -> None:
             continue
 
         try:
-            response = responder.respond(entity, results)
+            responder.respond(investigation, console)
         except KeyboardInterrupt:
             console.print()
-            print_status(
-                console,
-                "warning",
-                "Report generation interrupted.",
-            )
-            continue
+            print_status(console, "warning", "Report generation interrupted.")
         except Exception as exc:
-            print_status(
-                console,
-                "error",
-                f"Responder failed: {exc}",
-            )
-            continue
-
-        if response:
-            console.print()
-            console.print(response, soft_wrap=True)
-        else:
-            print_message_panel(
-                console,
-                "No reportable findings returned by the available collectors.",
-                title="No findings",
-                status="info",
-            )
-
-        if entity.type == EntityType.DOMAIN:
-            print_all_subdomains(responder, console)
+            print_status(console, "error", f"Responder failed: {exc}")
 
 if __name__ == "__main__":
     main()

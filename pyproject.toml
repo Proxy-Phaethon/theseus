@@ -21,6 +21,10 @@ theseus = "main:main"
 
 [tool.setuptools]
 py-modules = ["main"]
+include-package-data = true
 
 [tool.setuptools.packages.find]
 include = ["core*", "registry*", "tools*", "ui*"]
+
+[tool.setuptools.package-data]
+ui = ["assets/*.txt"]

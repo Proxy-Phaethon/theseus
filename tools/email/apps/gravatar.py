@@ -12,23 +12,8 @@ import json
 import time
 import urllib.error
 import urllib.request
-from dataclasses import asdict, dataclass
-from typing import Any
 
-@dataclass
-class ServiceResult:
-    service: str
-    category: str
-    status: str
-    url: str | None
-    evidence: dict[str, Any]
-    source: str
-    observed_at: float
-    error: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
-
+from .base import ServiceResult
 
 def check_gravatar(email: str) -> ServiceResult:
     """Check whether an email resolves to a public Gravatar profile."""
@@ -165,6 +150,8 @@ def check_gravatar(email: str) -> ServiceResult:
     )
 
 if __name__ == "__main__":
+    import json
+
     print("Theseus Gravatar Lookup")
     print("Enter an email address, or type 'q' to quit.\n")
 

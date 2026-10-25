@@ -3,3 +3,4 @@ python-dotenv
 dnspython
 rich
 publicsuffix2
+cryptography

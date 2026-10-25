@@ -59,12 +59,141 @@ def _component(
 ENTITY_COLLECTORS: dict[EntityType, EntityCollectorSpec] = {
     EntityType.IP_ADDRESS: EntityCollectorSpec(
         entity_type=EntityType.IP_ADDRESS,
-        normalizer=None,
+        normalizer=_component(
+            "IP normalizer",
+            "tools.ip.normalize",
+            "normalize_ip",
+            "Validates and canonicalizes an IPv4 or IPv6 address.",
+        ),
+        collectors=(
+            _component(
+                "IP classification",
+                "tools.ip.classification",
+                "run",
+                "Classifies the target IP address.",
+            ),
+            _component(
+                "RDAP lookup",
+                "tools.ip.rdap",
+                "run",
+                "Retrieves IP allocation and registration information.",
+            ),
+            _component(
+                "ASN lookup",
+                "tools.ip.asn",
+                "run",
+                "Identifies the announced ASN and network prefix.",
+            ),
+            _component(
+                "BGP intelligence",
+                "tools.ip.bgp",
+                "run",
+                "Collects routing and BGP observations.",
+            ),
+            _component(
+                "Geolocation",
+                "tools.ip.geolocation",
+                "run",
+                "Retrieves estimated IP geolocation and network details.",
+            ),
+            _component(
+                "Reverse DNS",
+                "tools.ip.reverse_dns",
+                "run",
+                "Looks up PTR records for the target IP.",
+            ),
+            _component(
+                "Port scanner",
+                "tools.ip.ports",
+                "run",
+                "Checks common TCP ports.",
+            ),
+            _component(
+                "Service detection",
+                "tools.ip.services",
+                "run",
+                "Identifies services through protocol probes.",
+            ),
+            _component(
+                "TLS intelligence",
+                "tools.ip.tls",
+                "run",
+                "Inspects TLS certificates and negotiated parameters.",
+            ),
+            _component(
+                "HTTP intelligence",
+                "tools.ip.http",
+                "run",
+                "Inspects HTTP responses and security-related headers.",
+            ),
+            _component(
+                "Hosting classification",
+                "tools.ip.hosting",
+                "run",
+                "Checks hosting, VPN, Tor, and mobile classifications.",
+            ),
+            _component(
+                "IP reputation",
+                "tools.ip.reputation",
+                "run",
+                "Retrieves public IP reputation indicators.",
+            ),
+            _component(
+                "Threat intelligence",
+                "tools.ip.threat_intel",
+                "run",
+                "Checks public threat-intelligence feeds.",
+            ),
+            _component(
+                "Passive DNS",
+                "tools.ip.passive_dns",
+                "run",
+                "Retrieves historical DNS observations.",
+            ),
+            _component(
+                "Mail infrastructure",
+                "tools.ip.mail",
+                "run",
+                "Inspects SMTP responses and advertised capabilities.",
+            ),
+            _component(
+                "Vulnerability intelligence",
+                "tools.ip.vulnerabilities",
+                "run",
+                "Checks available product evidence against vulnerability sources.",
+            ),
+            _component(
+                "Historical intelligence",
+                "tools.ip.history",
+                "run",
+                "Collects public routing and certificate history.",
+            ),
+            _component(
+                "Relationship analysis",
+                "tools.ip.relationships",
+                "run",
+                "Builds an evidence-based relationship graph.",
+            ),
+            _component(
+                "Reachability",
+                "tools.ip.reachability",
+                "run",
+                "Checks ICMP and TCP responsiveness.",
+            ),
+            _component(
+                "Context aggregation",
+                "tools.ip.context",
+                "run",
+                "Aggregates contextual observations from other collectors.",
+            ),
+        ),
     ),
+
     EntityType.DOMAIN: EntityCollectorSpec(
         entity_type=EntityType.DOMAIN,
         normalizer=None,
     ),
+
     EntityType.EMAIL: EntityCollectorSpec(
         entity_type=EntityType.EMAIL,
         normalizer=_component(
@@ -112,54 +241,67 @@ ENTITY_COLLECTORS: dict[EntityType, EntityCollectorSpec] = {
             ),
         ),
     ),
+
     EntityType.USERNAME: EntityCollectorSpec(
         entity_type=EntityType.USERNAME,
         normalizer=None,
     ),
+
     EntityType.URL: EntityCollectorSpec(
         entity_type=EntityType.URL,
         normalizer=None,
     ),
+
     EntityType.NAME: EntityCollectorSpec(
         entity_type=EntityType.NAME,
         normalizer=None,
     ),
+
     EntityType.PHONE_NUMBER: EntityCollectorSpec(
         entity_type=EntityType.PHONE_NUMBER,
         normalizer=None,
     ),
+
     EntityType.MEDIA: EntityCollectorSpec(
         entity_type=EntityType.MEDIA,
         normalizer=None,
     ),
+
     EntityType.DOCUMENT: EntityCollectorSpec(
         entity_type=EntityType.DOCUMENT,
         normalizer=None,
     ),
+
     EntityType.FILE_HASH: EntityCollectorSpec(
         entity_type=EntityType.FILE_HASH,
         normalizer=None,
     ),
+
     EntityType.PACKAGE: EntityCollectorSpec(
         entity_type=EntityType.PACKAGE,
         normalizer=None,
     ),
+
     EntityType.APPLICATION: EntityCollectorSpec(
         entity_type=EntityType.APPLICATION,
         normalizer=None,
     ),
+
     EntityType.VULNERABILITY: EntityCollectorSpec(
         entity_type=EntityType.VULNERABILITY,
         normalizer=None,
     ),
+
     EntityType.CRYPTO_WALLET: EntityCollectorSpec(
         entity_type=EntityType.CRYPTO_WALLET,
         normalizer=None,
     ),
+
     EntityType.REPORT: EntityCollectorSpec(
         entity_type=EntityType.REPORT,
         normalizer=None,
     ),
+    
     EntityType.UNKNOWN: EntityCollectorSpec(
         entity_type=EntityType.UNKNOWN,
         normalizer=None,

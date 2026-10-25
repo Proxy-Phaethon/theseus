@@ -7,3 +7,8 @@ data/*
 !data/wmn-data.json
 
 temp/
+
+# Python packaging/build artifacts
+build/
+dist/
+*.egg-info/

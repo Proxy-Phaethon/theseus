@@ -12,6 +12,7 @@ from rich.text import Text
 
 from core.identifier import Identifier, EntityType
 from core.email_responder import EmailResponder
+from core.ip_responder import IPResponder
 from registry.executor import execute_entity
 
 from ui.banner import render_banner
@@ -65,10 +66,13 @@ def investigate(
     def run_investigation():
         entity = identifier.identify(target)
 
-        if entity.type != EntityType.EMAIL:
+        if entity.type not in {
+            EntityType.EMAIL,
+            EntityType.IP_ADDRESS,
+        }:
             raise ValueError(
                 f"Investigation for {entity.type.value} is not implemented yet. "
-                "The current collector pipeline supports email targets only."
+                "The current collector pipeline supports email and IP targets only."
             )
 
         return entity, execute_entity(entity)
@@ -147,6 +151,7 @@ def main() -> None:
     identifier = build_identifier()
     responders = {
         EntityType.EMAIL: EmailResponder(),
+        EntityType.IP_ADDRESS: IPResponder(),
     }
 
     commands = CommandHandler(

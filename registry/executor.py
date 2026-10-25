@@ -159,14 +159,14 @@ def _invoke(
         )
 
 def _resolve_normalized_target(result: Any) -> str | None:
-    """Extract the normalized address from a normalizer result."""
-    if result is None:
+    """Extract the canonical target from a normalizer result."""
+    if not isinstance(result, dict):
         return None
 
-    if isinstance(result, dict):
-        value = result.get("address")
-    else:
-        value = getattr(result, "address", None)
+    if result.get("status") != "success":
+        return None
+
+    value = result.get("canonical_address")
 
     if not isinstance(value, str):
         return None

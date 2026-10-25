@@ -199,44 +199,19 @@ def run(target: str) -> dict[str, Any]:
                 "raw_records": records,
             }
 
-        asn_names = {}
-
-        for item in parsed_records:
-            asn = item["asn"]
-
-            if asn in asn_names:
-                continue
-
-            try:
-                name_query = f"{asn[2:]}.asn.cymru.com"
-                name_records = _dns_txt_query(name_query)
-
-                if name_records:
-                    name_fields = [
-                        field.strip()
-                        for field in name_records[0].split("|")
-                    ]
-                    if len(name_fields) >= 5:
-                        item["as_name"] = name_fields[4]
-                        item["as_description_country"] = name_fields[2]
-                    else:
-                        item["as_name"] = None
-                else:
-                    item["as_name"] = None
-
-            except (OSError, ValueError, socket.timeout) as exc:
-                item["as_name"] = None
-                item["as_name_error"] = str(exc)
-
-            asn_names[asn] = item.get("as_name")
-
         return {
             "module": "asn",
             "target": str(address),
             "status": "success",
             "source": "Team Cymru DNS",
             "observed_at": time.time(),
-            "records": parsed_records,
+            "records": [
+                {
+                    **record,
+                    "as_name": None,
+                }
+                for record in parsed_records
+            ],
         }
 
     except (OSError, ValueError, socket.timeout) as exc:

@@ -1,305 +1,282 @@
-"""Historical IP observations using the Shodan host history API.
+"""Historical IP intelligence using public, unauthenticated sources.
 
-Retrieves historical service banners and observed ports for an IP address.
-Requires SHODAN_API_KEY in the environment.
+Sources:
+- RIPEstat routing-history: historical BGP announcement timelines.
+- crt.sh: publicly logged TLS certificates matching the IP address.
 
-Historical observations describe what Shodan saw at a particular time.
-They do not prove that a service is still present or that an IP had the
-same operator throughout the observation period.
+No API keys or third-party Python packages are required.
+
+Important:
+- BGP history describes routing observations, not service availability.
+- Certificate records do not prove a certificate was actively deployed.
+- Empty results do not prove that no historical records exist.
 """
 
 from __future__ import annotations
 
 import ipaddress
 import json
-import os
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from typing import Any
 
-MODULE_NAME = "history"
-SOURCE_NAME = "Shodan"
-API_BASE = "https://api.shodan.io/shodan/host"
+RIPESTAT_URL = (
+    "https://stat.ripe.net/data/routing-history/data.json"
+)
+CRT_SH_URL = "https://crt.sh/"
 
-TIMEOUT = 20
-MAX_RESPONSE_BYTES = 8 * 1024 * 1024
-MAX_RECORDS = 100
+TIMEOUT = 15
+MAX_RESPONSE_BYTES = 5 * 1024 * 1024
+MAX_ROUTING_RECORDS = 100
+MAX_CERTIFICATES = 100
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+USER_AGENT = "Theseus-OSINT/1.0"
 
-def _error(
-    message: str,
-    target: str | None = None,
-    status: str = "error",
-) -> dict:
-    result = {
-        "module": MODULE_NAME,
-        "status": status,
-        "source": SOURCE_NAME,
-        "error": message,
-        "observed_at": _now(),
-    }
-
-    if target is not None:
-        result["target"] = target
-
-    return result
-
-def _timestamp(value) -> str | None:
-    """Validate and normalize a Shodan observation timestamp."""
-    if not isinstance(value, str) or not value:
-        return None
-
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-
-        return parsed.astimezone(timezone.utc).isoformat()
-    except (ValueError, OverflowError):
-        return None
-
-def _normalize_banner(record: dict) -> dict:
-    """Keep useful historical service evidence without huge raw payloads."""
-
-    data = record.get("data")
-    if isinstance(data, str):
-        data = data[:2000]
-    else:
-        data = None
-
-    http_data = record.get("http")
-    http_summary = None
-
-    if isinstance(http_data, dict):
-        http_summary = {
-            "status": http_data.get("status"),
-            "title": http_data.get("title"),
-            "server": http_data.get("server"),
-            "host": http_data.get("host"),
-        }
-
-    ssl_data = record.get("ssl")
-    ssl_summary = None
-
-    if isinstance(ssl_data, dict):
-        cert = ssl_data.get("cert")
-
-        ssl_summary = {
-            "version": ssl_data.get("version"),
-            "cipher": ssl_data.get("cipher"),
-            "certificate": None,
-        }
-
-        if isinstance(cert, dict):
-            ssl_summary["certificate"] = {
-                "subject": cert.get("subject"),
-                "issuer": cert.get("issuer"),
-                "issued": cert.get("issued"),
-                "expires": cert.get("expires"),
-                "fingerprint": cert.get("fingerprint"),
-            }
-
-    return {
-        "observed_at": _timestamp(record.get("timestamp")),
-        "timestamp_raw": record.get("timestamp"),
-        "port": record.get("port"),
-        "transport": record.get("transport"),
-        "product": record.get("product"),
-        "version": record.get("version"),
-        "module": record.get("module"),
-        "cpe": record.get("cpe"),
-        "banner": data,
-        "http": http_summary,
-        "ssl": ssl_summary,
-    }
-
-def run(target: str) -> dict:
-    """Retrieve historical Shodan observations for a public IP."""
-
-    try:
-        address = ipaddress.ip_address(str(target).strip())
-    except ValueError:
-        return _error("Invalid IPv4 or IPv6 address.", str(target))
-
-    normalized_ip = str(address)
-
-    if not address.is_global:
-        return {
-            "module": MODULE_NAME,
-            "status": "not_checked",
-            "target": normalized_ip,
-            "source": SOURCE_NAME,
-            "reason": "Non-global IP addresses are not queried.",
-            "observed_at": _now(),
-            "observations": [],
-        }
-
-    api_key = os.environ.get("SHODAN_API_KEY", "").strip()
-
-    if not api_key:
-        return {
-            "module": MODULE_NAME,
-            "status": "not_checked",
-            "target": normalized_ip,
-            "source": SOURCE_NAME,
-            "reason": (
-                "SHODAN_API_KEY is not configured in the environment."
-            ),
-            "observed_at": _now(),
-            "observations": [],
-        }
-
-    query = urlencode({
-        "key": api_key,
-        "history": "true",
-        "minify": "false",
-    })
-    url = f"{API_BASE}/{normalized_ip}?{query}"
-
-    request = Request(
+def _request_json(url: str) -> Any:
+    """Fetch JSON from a public endpoint with bounded response size."""
+    request = urllib.request.Request(
         url,
         headers={
+            "User-Agent": USER_AGENT,
             "Accept": "application/json",
-            "User-Agent": "Theseus-OSINT/0.7",
         },
-        method="GET",
+    )
+
+    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
+        body = response.read(MAX_RESPONSE_BYTES + 1)
+
+    if len(body) > MAX_RESPONSE_BYTES:
+        raise ValueError("Response exceeded the configured size limit")
+
+    return json.loads(body.decode("utf-8"))
+
+def _error_message(exc: Exception) -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        return f"HTTP {exc.code}: {exc.reason}"
+    if isinstance(exc, urllib.error.URLError):
+        return f"Connection failed: {exc.reason}"
+    if isinstance(exc, TimeoutError):
+        return "Request timed out"
+    if isinstance(exc, json.JSONDecodeError):
+        return "Source returned invalid JSON"
+    return str(exc)
+
+def _get_routing_history(ip: str) -> dict[str, Any]:
+    """Retrieve historical BGP announcements for an IP address."""
+    url = (
+        f"{RIPESTAT_URL}?"
+        + urllib.parse.urlencode(
+            {
+                "resource": ip,
+                "max_rows": MAX_ROUTING_RECORDS,
+            }
+        )
     )
 
     try:
-        with urlopen(request, timeout=TIMEOUT) as response:
-            body = response.read(MAX_RESPONSE_BYTES + 1)
+        payload = _request_json(url)
 
-            if len(body) > MAX_RESPONSE_BYTES:
-                return _error(
-                    "Response exceeded the configured size limit.",
-                    normalized_ip,
-                )
+        if payload.get("status") != "ok":
+            return {
+                "status": "error",
+                "source": "RIPEstat",
+                "source_url": url,
+                "error": payload.get("message", "Source query failed"),
+                "records": [],
+            }
 
-            payload = json.loads(body.decode("utf-8"))
-            http_status = response.status
+        data = payload.get("data") or {}
+        records = []
+        truncated = False
 
-    except HTTPError as exc:
-        if exc.code == 401:
-            message = "Shodan rejected the API key."
-        elif exc.code == 403:
-            message = (
-                "Shodan denied access. The account may not have "
-                "permission to retrieve this data."
+        for origin_entry in data.get("by_origin", []) or []:
+            origin = origin_entry.get("origin")
+            prefixes = origin_entry.get("prefixes", []) or []
+
+            for prefix_entry in prefixes:
+                prefix = prefix_entry.get("prefix")
+
+                for timeline in prefix_entry.get("timelines", []) or []:
+                    if len(records) >= MAX_ROUTING_RECORDS:
+                        truncated = True
+                        break
+
+                    records.append(
+                        {
+                            "origin": origin,
+                            "prefix": prefix,
+                            "start_time": timeline.get("starttime"),
+                            "end_time": timeline.get("endtime"),
+                            "full_peers_seeing": timeline.get(
+                                "full_peers_seeing"
+                            ),
+                            "visibility": timeline.get("visibility"),
+                        }
+                    )
+
+                if truncated:
+                    break
+
+            if truncated:
+                break
+
+        return {
+            "status": "success",
+            "source": "RIPEstat",
+            "source_url": url,
+            "record_count": len(records),
+            "records_truncated": truncated,
+            "records": records,
+        }
+
+    except Exception as exc:
+        return {
+            "status": "error",
+            "source": "RIPEstat",
+            "source_url": url,
+            "error": _error_message(exc),
+            "records": [],
+        }
+
+def _get_certificate_history(ip: str) -> dict[str, Any]:
+    """Search public Certificate Transparency records for an IP."""
+    url = CRT_SH_URL + "?" + urllib.parse.urlencode(
+        {
+            "q": ip,
+            "output": "json",
+            "limit": MAX_CERTIFICATES,
+        }
+    )
+
+    try:
+        payload = _request_json(url)
+
+        if not isinstance(payload, list):
+            raise ValueError("Unexpected certificate search response")
+
+        records = []
+        seen = set()
+
+        for certificate in payload:
+            if not isinstance(certificate, dict):
+                continue
+
+            # crt.sh may return multiple rows associated with the same
+            # certificate. Deduplicate by certificate ID where possible.
+            certificate_id = certificate.get("id")
+            identity = (
+                str(certificate_id)
+                if certificate_id is not None
+                else json.dumps(certificate, sort_keys=True)
             )
-        elif exc.code == 429:
-            message = "Shodan rate limit or query allowance reached."
-        else:
-            message = f"Shodan returned HTTP {exc.code}."
 
-        return _error(message, normalized_ip)
+            if identity in seen:
+                continue
+            seen.add(identity)
 
-    except (URLError, TimeoutError, OSError) as exc:
-        return _error(
-            f"Shodan connection failed: {exc}",
-            normalized_ip,
-        )
-
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        return _error(
-            "Shodan returned invalid JSON.",
-            normalized_ip,
-        )
-
-    if not isinstance(payload, dict):
-        return _error(
-            "Shodan returned an unexpected response format.",
-            normalized_ip,
-        )
-
-    if payload.get("error"):
-        return _error(
-            f"Shodan reported an error: {payload['error']}",
-            normalized_ip,
-        )
-
-    returned_ip = payload.get("ip_str")
-
-    if returned_ip:
-        try:
-            if ipaddress.ip_address(returned_ip) != address:
-                return _error(
-                    "Shodan response IP did not match the requested IP.",
-                    normalized_ip,
-                )
-        except ValueError:
-            return _error(
-                "Shodan returned an invalid IP address.",
-                normalized_ip,
+            records.append(
+                {
+                    "certificate_id": certificate_id,
+                    "common_name": certificate.get("common_name"),
+                    "names": certificate.get("name_value"),
+                    "issuer": certificate.get("issuer_name"),
+                    "not_before": certificate.get("not_before"),
+                    "not_after": certificate.get("not_after"),
+                    "serial_number": certificate.get("serial_number"),
+                    "logged_at": certificate.get("entry_timestamp"),
+                }
             )
 
-    raw_data = payload.get("data", [])
+            if len(records) >= MAX_CERTIFICATES:
+                break
 
-    if not isinstance(raw_data, list):
-        return _error(
-            "Shodan returned an unexpected history format.",
-            normalized_ip,
-        )
+        return {
+            "status": "success",
+            "source": "crt.sh",
+            "source_url": url,
+            "record_count": len(records),
+            "records_truncated": len(payload) >= MAX_CERTIFICATES,
+            "records": records,
+        }
 
-    observations = [
-        _normalize_banner(record)
-        for record in raw_data[:MAX_RECORDS]
-        if isinstance(record, dict)
-    ]
+    except Exception as exc:
+        return {
+            "status": "error",
+            "source": "crt.sh",
+            "source_url": url,
+            "error": _error_message(exc),
+            "records": [],
+        }
 
-    observed_ports = sorted({
-        item["port"]
-        for item in observations
-        if isinstance(item.get("port"), int)
-    })
+def run(target: str) -> dict[str, Any]:
+    """Collect historical public observations for an IP address."""
+    try:
+        address = ipaddress.ip_address(str(target).strip())
+    except ValueError:
+        return {
+            "status": "error",
+            "target": str(target),
+            "error": "Invalid IP address",
+        }
 
-    timestamps = [
-        item["observed_at"]
-        for item in observations
-        if item.get("observed_at")
-    ]
+    ip = str(address)
+
+    if not address.is_global:
+        return {
+            "status": "not_checked",
+            "target": ip,
+            "reason": "Historical lookups are skipped for non-global IPs",
+            "sources": {},
+        }
+
+    routing = _get_routing_history(ip)
+    certificates = _get_certificate_history(ip)
+
+    sources = {
+        "routing_history": routing,
+        "certificate_transparency": certificates,
+    }
+
+    successful = sum(
+        source["status"] == "success"
+        for source in sources.values()
+    )
+
+    if successful == len(sources):
+        status = "success"
+    elif successful:
+        status = "partial"
+    else:
+        status = "error"
 
     return {
-        "module": MODULE_NAME,
-        "status": "success",
-        "target": normalized_ip,
-        "source": SOURCE_NAME,
-        "source_url": (
-            f"https://www.shodan.io/host/{normalized_ip}"
-        ),
-        "http_status": http_status,
-        "observed_at": _now(),
-        "organization": payload.get("org"),
-        "asn": payload.get("asn"),
-        "operating_system": payload.get("os"),
-        "country": payload.get("country_name"),
-        "total_observations_returned": len(raw_data),
-        "observations_included": len(observations),
-        "truncated": len(raw_data) > MAX_RECORDS,
-        "observed_ports": observed_ports,
-        "earliest_observation_in_sample": min(timestamps) if timestamps else None,
-        "latest_observation_in_sample": max(timestamps) if timestamps else None,
-        "observations": observations,
+        "status": status,
+        "target": ip,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "source_count": len(sources),
+        "successful_sources": successful,
+        "summary": {
+            "routing_observations": routing.get("record_count", 0),
+            "certificate_records": certificates.get("record_count", 0),
+        },
+        "sources": sources,
         "limitations": [
-            "History reflects Shodan's own scanning and observation coverage.",
-            "Absence of a historical banner does not prove a service was absent.",
-            "An observation does not establish current service availability.",
-            "IP ownership and assignments may change over time.",
-            "Only a bounded sample of returned banners is retained.",
+            "BGP history describes routing observations, not service availability.",
+            "Historical routing does not establish who controlled an IP at a given time.",
+            "Certificate records do not prove a certificate was deployed on this IP.",
+            "Public-source coverage is incomplete; no results do not mean no history exists.",
         ],
     }
 
 if __name__ == "__main__":
     import argparse
-    from pprint import pprint
 
     parser = argparse.ArgumentParser(
-        description="Retrieve historical IP observations from Shodan."
+        description="Collect public historical IP observations"
     )
-    parser.add_argument("ip", help="IPv4 or IPv6 address to investigate")
+    parser.add_argument("target", help="IPv4 or IPv6 address")
     args = parser.parse_args()
 
-    pprint(run(args.ip), sort_dicts=False)
+    print(json.dumps(run(args.target), indent=2))

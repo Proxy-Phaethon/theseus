@@ -1,5 +1,0 @@
-core
-main
-registry
-tools
-ui

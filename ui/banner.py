@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from rich.align import Align
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.text import Text
@@ -13,11 +14,11 @@ def load_minotaur() -> str:
 
 def render_banner(
     console: Console,
-    version: str = "0.7.0",
+    version: str = "0.8.0",
     *,
-    subtitle: str = "INTERNET EXPLORER  /  OSINT INVESTIGATION TOOL",
+    subtitle: str = "INTERNET EXPLORER / OSINT INVESTIGATION TOOL",
 ) -> None:
-    """Render the Theseus startup banner."""
+    """Render the Theseus startup banner with centered contents."""
 
     emblem = Text(load_minotaur(), style="primary", no_wrap=True)
 
@@ -28,19 +29,22 @@ def render_banner(
     tagline = Text(subtitle, style="dim")
 
     content = Group(
-        emblem,
+        Align.center(emblem),
         Text(),
-        identity,
-        tagline,
+        Align.center(identity),
+        Align.center(tagline),
     )
 
     console.print()
     console.print(
-        Panel(
-            content,
-            border_style="border",
-            padding=(1, 2),
-            expand=False,
+        Align.center(
+            Panel(
+                content,
+                border_style="border",
+                padding=(1, 2),
+                expand=False,
+            ),
+            vertical="top",
         )
     )
     console.print()

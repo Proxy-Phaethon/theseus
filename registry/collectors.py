@@ -60,10 +60,10 @@ ENTITY_COLLECTORS: dict[EntityType, EntityCollectorSpec] = {
     EntityType.IP_ADDRESS: EntityCollectorSpec(
         entity_type=EntityType.IP_ADDRESS,
         normalizer=_component(
-            "IP normalizer",
-            "tools.ip.normalize",
-            "normalize_ip",
-            "Validates and canonicalizes an IPv4 or IPv6 address.",
+            "IP classification and normalization",
+            "tools.ip.classification",
+            "run",
+            "Validates, canonicalizes, and classifies an IPv4 or IPv6 address.",
         ),
         collectors=(
             _component(

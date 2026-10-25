@@ -20,6 +20,7 @@ from urllib.request import Request, urlopen
 BASE_URL = "https://stat.ripe.net/data"
 TIMEOUT = 15
 USER_AGENT = "Theseus-OSINT/0.1"
+MAX_OBSERVATIONS = 5
 
 def _fetch(endpoint: str, resource: str) -> dict[str, Any]:
     """Fetch one RIPEstat JSON response."""
@@ -153,7 +154,8 @@ def run(target: str) -> dict[str, Any]:
         result["routing"] = {
             "visible": bool(observations),
             "observation_count": len(observations),
-            "observations": observations,
+            "observations": observations[:MAX_OBSERVATIONS],
+            "observations_truncated": len(observations) > MAX_OBSERVATIONS,
             "latest_time": bgp_data.get("latest_time"),
             "query_time": bgp_data.get("query_time"),
         }

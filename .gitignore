@@ -1,14 +1,21 @@
-.venv/
+# Python
 __pycache__/
 *.py[cod]
+*.egg-info/
+.venv/
+venv/
 
 .env
-data/*
-!data/wmn-data.json
+.env.*
 
-temp/
+!.env.example
 
-# Python packaging/build artifacts
-build/
-dist/
-*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+.DS_Store
+.idea/
+.vscode/

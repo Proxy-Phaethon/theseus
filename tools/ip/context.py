@@ -25,6 +25,10 @@ SUPPORTED_MODULES = (
     "hosting",
     "reputation",
     "reachability",
+    "passive_dns",
+    "tls",
+    "http",
+    "history",
 )
 
 SUCCESS_STATUSES = {"success", "partial"}
@@ -89,6 +93,41 @@ def _collect_fields(
 
     return extracted
 
+def _nested_fields(
+    data: dict[str, Any],
+    fields: dict[str, tuple[str, ...]],
+) -> dict[str, Any]:
+    """Extract concise fields from one already-validated nested mapping."""
+    extracted = {}
+
+    for output_key, input_keys in fields.items():
+        value = _first(data, *input_keys)
+        if value is not None:
+            extracted[output_key] = value
+
+    return extracted
+
+def _true_keys(value: Any) -> list[str]:
+    """Return only source-reported positive boolean indicators."""
+    if not isinstance(value, dict):
+        return []
+
+    return sorted(str(key) for key, item in value.items() if item is True)
+
+def _source_outcomes(observations: dict[str, Any]) -> list[dict[str, str]]:
+    """Keep lightweight provenance for supplied collector results."""
+    outcomes = []
+
+    for module_name in SUPPORTED_MODULES:
+        result = observations.get(module_name)
+        if isinstance(result, dict) and isinstance(result.get("status"), str):
+            outcomes.append({
+                "module": module_name,
+                "raw_status": result["status"],
+            })
+
+    return outcomes
+
 def run(
     target: str,
     observations: dict[str, Any] | None = None,
@@ -123,6 +162,10 @@ def run(
     hosting = _module_data(observations, "hosting")
     reputation = _module_data(observations, "reputation")
     reachability = _module_data(observations, "reachability")
+    passive_dns = _module_data(observations, "passive_dns")
+    tls = _module_data(observations, "tls")
+    http = _module_data(observations, "http")
+    history = _module_data(observations, "history")
 
     # Address-level classification comes directly from Python's
     # standard-library parser, regardless of whether a collector ran.
@@ -145,9 +188,8 @@ def run(
             "primary_classification",
         )
 
-    registration_context = _collect_fields(
-        observations,
-        "rdap",
+    registration_context = _nested_fields(
+        rdap.get("registration", {}) if isinstance(rdap, dict) else {},
         {
             "network_name": ("name", "network_name"),
             "network_handle": ("handle", "network_handle"),
@@ -156,6 +198,7 @@ def run(
             "network_start": ("start_address", "start"),
             "network_end": ("end_address", "end"),
             "parent_network": ("parent_handle", "parent"),
+            "cidr_prefixes": ("cidr_prefixes",),
         },
     )
 
@@ -243,15 +286,92 @@ def run(
         },
     )
 
-    reputation_context = _collect_fields(
-        observations,
-        "reputation",
+    reputation_context = {
+        **_nested_fields(
+            reputation.get("assessment", {}) if isinstance(reputation, dict) else {},
+            {
+                "source_assessment": ("summary",),
+                "positive_indicators": ("positive_indicators",),
+                "positive_indicator_count": ("indicator_count",),
+            },
+        ),
+        **{
+            f"network_{key}": value
+            for key, value in _nested_fields(
+                reputation.get("network", {}) if isinstance(reputation, dict) else {},
+                {
+                    "reverse_dns": ("reverse_dns",),
+                    "asn": ("asn",),
+                    "asn_name": ("asn_name",),
+                    "country": ("country",),
+                    "country_code": ("country_code",),
+                },
+            ).items()
+        },
+    }
+
+    usage_indicators = _true_keys(reputation.get("usage"))
+    source_indicators = _true_keys(reputation.get("reputation"))
+    if usage_indicators:
+        reputation_context["source_reported_usage_indicators"] = usage_indicators
+    if source_indicators:
+        reputation_context["source_reported_reputation_indicators"] = source_indicators
+
+    passive_dns_context = _nested_fields(
+        passive_dns,
         {
-            "classification": ("classification", "category"),
-            "risk": ("risk", "risk_score"),
-            "recommendation": ("recommendation",),
+            "returned_record_count": ("result_count",),
+            "source_record_count": ("source_count",),
+            "output_truncated": ("truncated",),
         },
     )
+    if passive_dns.get("hostnames"):
+        passive_dns_context["historical_hostname_count"] = len(
+            passive_dns["hostnames"]
+        )
+
+    tls_context = _nested_fields(
+        tls,
+        {"certificates_observed": ("certificates_observed",)},
+    )
+    if isinstance(tls.get("summary"), dict):
+        tls_context["probe_outcomes"] = {
+            str(key): value
+            for key, value in tls["summary"].items()
+            if isinstance(value, int)
+        }
+
+    http_context = _nested_fields(
+        http,
+        {},
+    )
+    responding_endpoints = http.get("responding_endpoints", [])
+    if isinstance(responding_endpoints, list):
+        http_context["responding_endpoint_count"] = len(responding_endpoints)
+        http_context["response_statuses"] = [
+            {
+                "port": item.get("port"),
+                "scheme": item.get("scheme"),
+                "http_status": item.get("http_status"),
+            }
+            for item in responding_endpoints[:10]
+            if isinstance(item, dict)
+        ]
+
+    historical_context = _nested_fields(
+        history,
+        {
+            "successful_sources": ("successful_sources",),
+            "source_count": ("source_count",),
+        },
+    )
+    historical_context.update(_nested_fields(
+        history.get("summary", {}) if isinstance(history, dict) else {},
+        {
+            "routing_observations": ("routing_observations",),
+            "certificate_records": ("certificate_records",),
+        },
+    ))
 
     reachability_context = _collect_fields(
         observations,
@@ -287,6 +407,25 @@ def run(
         "hosting": hosting_context,
         "reputation": reputation_context,
         "reachability": reachability_context,
+        "passive_dns": passive_dns_context,
+        "tls": tls_context,
+        "http": http_context,
+        "historical": historical_context,
+    }
+
+    section_sources = {
+        "address": ["stdlib.ipaddress (derived)"],
+        "registration": ["rdap"],
+        "routing": ["bgp", "asn"],
+        "geolocation": ["geolocation"],
+        "reverse_dns": ["reverse_dns"],
+        "hosting": ["hosting"],
+        "reputation": ["reputation"],
+        "reachability": ["reachability"],
+        "passive_dns": ["passive_dns"],
+        "tls": ["tls"],
+        "http": ["http"],
+        "historical": ["history"],
     }
 
     # Remove empty fields and empty sections without altering false or
@@ -320,6 +459,12 @@ def run(
             "context_sections": list(sections.keys()),
             "successful_modules": sorted(set(successful_modules)),
             "sections_populated": len(sections),
+            "derived_sections": ["address"],
+            "section_sources": {
+                name: section_sources[name]
+                for name in sections
+            },
+            "source_outcomes": _source_outcomes(observations),
         },
         "context": sections,
         "limitations": [

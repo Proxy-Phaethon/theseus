@@ -30,9 +30,11 @@ from registry.collectors import (
 
 SUCCESS_STATUSES = {"success", "ok"}
 PARTIAL_STATUSES = {"partial"}
+NO_RESULT_STATUSES = {"not_found", "unknown", "no_result"}
 SKIPPED_STATUSES = {"skipped", "skip"}
 NOT_CHECKED_STATUSES = {"not_checked", "not checked"}
-ERROR_STATUSES = {"error", "failed", "failure", "timeout"}
+TIMEOUT_STATUSES = {"timeout"}
+ERROR_STATUSES = {"error", "failed", "failure"}
 
 COLLECTOR_STAGE = "collector"
 ANALYSIS_STAGE = "analysis"
@@ -77,16 +79,19 @@ class InvestigationResult:
 
     @property
     def completed_count(self) -> int:
-        """Count collectors that returned usable or partial results."""
+        """Count collectors that completed, including no-result lookups."""
         return sum(
-            item.status in {"success", "partial"}
+            item.status in {"success", "partial", "no_result"}
             for item in self.collectors
         )
 
     @property
     def failed_count(self) -> int:
-        """Count collectors that failed or returned an error status."""
-        return sum(item.status == "error" for item in self.collectors)
+        """Count collectors that failed, including timed-out collection."""
+        return sum(
+            item.status in {"error", "timeout"}
+            for item in self.collectors
+        )
 
     @property
     def skipped_count(self) -> int:
@@ -106,6 +111,11 @@ class InvestigationResult:
         """Count collectors that returned incomplete results."""
         return sum(item.status == "partial" for item in self.collectors)
 
+    @property
+    def no_result_count(self) -> int:
+        """Count completed lookups that returned no source result."""
+        return sum(item.status == "no_result" for item in self.collectors)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "original_target": self.original_target,
@@ -119,6 +129,7 @@ class InvestigationResult:
             "completed_count": self.completed_count,
             "failed_count": self.failed_count,
             "partial_count": self.partial_count,
+            "no_result_count": self.no_result_count,
             "skipped_count": self.skipped_count,
             "not_checked_count": self.not_checked_count,
             "started_at": self.started_at,
@@ -156,7 +167,16 @@ def serialise(value: Any) -> Any:
     return repr(value)
 
 def _normalise_status(value: Any) -> str | None:
-    """Map recognized result statuses to executor status names."""
+    """Map known collector statuses without changing their raw payload values.
+
+    ``success`` means collection completed with usable observations;
+    ``partial`` means some requested collection completed; ``no_result``
+    means a source was queried but returned no matching observation;
+    ``not_checked`` and ``skipped`` are intentional non-collection;
+    ``timeout`` is a distinct collection timeout; ``error`` is another
+    collection failure. Unknown status
+    strings remain unclassified rather than being silently recast as errors.
+    """
     if isinstance(value, Enum):
         value = value.value
 
@@ -171,11 +191,17 @@ def _normalise_status(value: Any) -> str | None:
     if value in PARTIAL_STATUSES:
         return "partial"
 
+    if value in NO_RESULT_STATUSES:
+        return "no_result"
+
     if value in SKIPPED_STATUSES:
         return "skipped"
 
     if value in NOT_CHECKED_STATUSES:
         return "not_checked"
+
+    if value in TIMEOUT_STATUSES:
+        return "timeout"
 
     if value in ERROR_STATUSES:
         return "error"
@@ -183,11 +209,22 @@ def _normalise_status(value: Any) -> str | None:
     return None
 
 def _result_status(result: Any) -> str:
-    """Determine execution status from a component's returned payload."""
+    """Determine component status while retaining the raw result unchanged.
+
+    A payload that declares an unrecognized status is marked ``partial``:
+    the component returned a payload, but the executor cannot safely claim
+    a successful or failed collection. Payloads with no declared status
+    retain the historical ``success`` default. Raw statuses are never
+    rewritten, and known no-result statuses are explicitly ``no_result``.
+    """
     if isinstance(result, dict):
         status = _normalise_status(result.get("status"))
         if status is not None:
             return status
+
+        raw_status = result.get("status")
+        if isinstance(raw_status, str) and raw_status.strip():
+            return "partial"
 
     return "success"
 
@@ -239,9 +276,9 @@ def _invoke(
         status = _result_status(result)
         error = None
 
-        if status == "error":
+        if status in {"error", "timeout"}:
             error = _result_error(result) or (
-                "Component returned an error status"
+                f"Component returned a {status} status"
             )
 
         return ComponentResult(
@@ -337,13 +374,15 @@ def _overall_status(results: list[ComponentResult]) -> str:
 
     statuses = [item.status for item in results]
 
-    if all(status == "success" for status in statuses):
+    completed_statuses = {"success", "no_result"}
+
+    if all(status in completed_statuses for status in statuses):
         return "success"
 
-    if all(status == "error" for status in statuses):
+    if all(status in {"error", "timeout"} for status in statuses):
         return "error"
 
-    if any(status in {"success", "partial"} for status in statuses):
+    if any(status in {"success", "partial", "no_result"} for status in statuses):
         return "partial"
 
     if any(status in {"skipped", "not_checked"} for status in statuses):
@@ -451,7 +490,7 @@ def execute_entity(entity: Entity) -> InvestigationResult:
         result = _invoke(component, normalized_target)
         collector_results.append(result)
 
-        if result.status == "error":
+        if result.status in {"error", "timeout"}:
             errors.append(f"{component.name}: {result.error}")
 
     observations = _observations_as_mapping(collector_results)
@@ -464,7 +503,7 @@ def execute_entity(entity: Entity) -> InvestigationResult:
         )
         collector_results.append(result)
 
-        if result.status == "error":
+        if result.status in {"error", "timeout"}:
             errors.append(f"{component.name}: {result.error}")
 
     status = _overall_status(collector_results)

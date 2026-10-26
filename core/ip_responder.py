@@ -26,6 +26,9 @@ from ui.panels import (
     print_summary_panel,
 )
 
+SLOW_COLLECTOR_SECONDS = 2.0
+SLOWEST_COLLECTOR_LIMIT = 3
+
 def _get(value: Any, key: str, default: Any = None) -> Any:
     """Read a field from either a dictionary or an object."""
     if isinstance(value, dict):
@@ -62,8 +65,15 @@ def _text(value: Any, default: str = "Not available") -> str:
     if isinstance(value, bool):
         return "Yes" if value else "No"
 
-    if isinstance(value, (dict, list, tuple, set)):
-        return str(value) if value else default
+    if isinstance(value, dict):
+        return "Structured data available" if value else default
+
+    if isinstance(value, (list, tuple, set)):
+        if not value:
+            return default
+        if all(not isinstance(item, (dict, list, tuple, set)) for item in value):
+            return ", ".join(_text(item) for item in value)
+        return "Multiple observations available"
 
     rendered = " ".join(str(value).split())
     return rendered or default
@@ -75,6 +85,42 @@ def _compact(value: Any, limit: int = 110) -> str:
         return rendered[: limit - 1] + "…"
 
     return rendered
+
+def _join_scalars(value: Any, *, limit: int | None = None) -> str | None:
+    """Render a scalar or scalar collection without exposing Python reprs."""
+    if value is None:
+        return None
+    if isinstance(value, (list, tuple, set)):
+        values = [str(item) for item in value if item is not None and item != ""]
+        if not values:
+            return None
+        rendered = ", ".join(values)
+    elif isinstance(value, dict):
+        return None
+    else:
+        rendered = str(value)
+    return _compact(rendered, limit) if limit else rendered
+
+def _distinguished_name(value: Any) -> str | None:
+    """Render the TLS collector's structured X.509 name fields."""
+    if not isinstance(value, list):
+        return None
+    values = [
+        str(item.get("value"))
+        for item in value
+        if isinstance(item, dict) and item.get("value")
+    ]
+    return ", ".join(values) if values else None
+
+def _field_pairs(value: Any) -> str | None:
+    """Render source-reported boolean/scalar indicators readably."""
+    if not isinstance(value, dict):
+        return _join_scalars(value)
+    pairs = []
+    for key, item in value.items():
+        if isinstance(item, (str, int, float, bool)):
+            pairs.append(f"{key}: {_text(item)}")
+    return ", ".join(pairs) if pairs else None
 
 def _status_label(value: Any) -> str:
     if not value:
@@ -246,22 +292,47 @@ def _print_registration_and_routing(
     asn = results.get("ASN lookup")
     bgp = results.get("BGP intelligence")
 
-    _print_observations(
-        console,
-        "IP Registration / RDAP",
-        rdap,
-        [
-            ("Network name", ("name", "network_name")),
-            ("Network handle", ("handle", "network_handle")),
-            ("Network type", ("type", "network_type")),
-            ("Country", ("country",)),
-            ("Start address", ("start_address", "start")),
-            ("End address", ("end_address", "end")),
-            ("CIDR", ("cidr", "cidrs")),
-            ("Parent network", ("parent",)),
-            ("Status", ("status",)),
-        ],
-    )
+    registration = _get(rdap, "registration", {})
+    if isinstance(registration, dict):
+        rows = []
+        for label, value in [
+            ("Network name", registration.get("name")),
+            ("Network handle", registration.get("handle")),
+            ("Network type", registration.get("type")),
+            ("Country", registration.get("country")),
+            ("Start address", registration.get("start_address")),
+            ("End address", registration.get("end_address")),
+            ("CIDR prefixes", _join_scalars(registration.get("cidr_prefixes"))),
+            ("Parent handle", registration.get("parent_handle")),
+            ("Registration status", _join_scalars(registration.get("status"))),
+        ]:
+            rendered = _join_scalars(value)
+            if rendered:
+                rows.append([label, rendered])
+        _print_table(console, "IP Registration / RDAP", ["Field", "Observation"], rows)
+
+        events = registration.get("events", [])
+        if isinstance(events, list) and events:
+            _print_table(
+                console,
+                "RDAP Registration Events",
+                ["Action", "Date"],
+                [[_text(_get(event, "action")), _text(_get(event, "date"))]
+                 for event in events if isinstance(event, dict)],
+            )
+
+        contacts = registration.get("contacts", [])
+        if isinstance(contacts, list) and contacts:
+            _print_table(
+                console,
+                "RDAP Contacts",
+                ["Role", "Name", "Organization"],
+                [[
+                    _join_scalars(_get(contact, "roles")) or "Not available",
+                    _text(_get(contact, "name")),
+                    _text(_get(contact, "organization")),
+                ] for contact in contacts if isinstance(contact, dict)],
+            )
 
     _print_observations(
         console,
@@ -339,6 +410,11 @@ def _print_geolocation_and_hosting(
         hostnames = _value(rdns, "hostnames", "hostnames_found", default=[])
         if isinstance(hostnames, str):
             hostnames = [hostnames]
+        hostnames = [
+            hostname for hostname in hostnames
+            if isinstance(hostname, str)
+            and not hostname.rstrip(".").lower().endswith((".in-addr.arpa", ".ip6.arpa"))
+        ]
 
         if hostnames:
             rows = [[_compact(hostname, 180)] for hostname in hostnames]
@@ -347,6 +423,13 @@ def _print_geolocation_and_hosting(
                 "Reverse DNS Names",
                 ["Hostname"],
                 rows,
+            )
+        elif rdns.get("status") == "not_found":
+            print_message_panel(
+                console,
+                "The resolver returned no PTR record. This is an absence of a reverse-DNS observation, not a safety assessment.",
+                title="Reverse DNS",
+                status="info",
             )
 
 def _print_network_exposure(
@@ -407,13 +490,7 @@ def _print_network_exposure(
             )
 
     if isinstance(services, dict):
-        service_items = _value(
-            services,
-            "services",
-            "identified_services",
-            "results",
-            default=[],
-        ) or []
+        service_items = services.get("identified_services", []) or []
 
         if isinstance(service_items, list) and service_items:
             rows = []
@@ -424,80 +501,90 @@ def _print_network_exposure(
 
                 rows.append([
                     _text(_value(item, "port")),
-                    _text(_value(item, "service", "protocol", "name")),
-                    _text(_value(item, "status")),
-                    _compact(_value(item, "banner", "evidence", "product")),
+                    _text(_value(item, "protocol", "service_guess")),
+                    _text(_value(item, "service_guess")),
+                    _compact(_value(item, "evidence")),
                 ])
 
             _print_table(
                 console,
                 "Service Detection",
-                ["Port", "Service", "Status", "Evidence"],
+                ["Port", "Protocol", "Service guess", "Evidence"],
                 rows,
             )
-        elif _has_content(services):
-            _print_observations(
+
+        probe_failures = [
+            item for item in services.get("results", []) or []
+            if isinstance(item, dict) and item.get("status") not in {
+                "identified", "connected_unidentified"
+            }
+        ]
+        if probe_failures:
+            _print_table(
                 console,
-                "Service Detection",
-                services,
-                [
-                    ("Identified services", ("identified_services", "services")),
-                    ("Ports checked", ("ports_checked",)),
-                    ("Summary", ("summary",)),
-                ],
+                "Service Probe Outcomes",
+                ["Port", "Service guess", "Probe status", "Detail"],
+                [[
+                    _text(item.get("port")),
+                    _text(item.get("service_guess")),
+                    _status_label(item.get("status")),
+                    _compact(_value(item, "error", "reason")),
+                ] for item in probe_failures],
+                border_style="warning",
             )
 
     if isinstance(tls, dict):
-        certificates = _value(
-            tls,
-            "certificates",
-            "results",
-            "observations",
-            default=[],
-        ) or []
+        certificates = tls.get("certificates", []) or []
 
         if isinstance(certificates, list) and certificates:
             rows = []
 
-            for cert in certificates:
+            for item in certificates:
+                if not isinstance(item, dict):
+                    continue
+                cert = item.get("certificate", {})
                 if not isinstance(cert, dict):
                     continue
+                validity = cert.get("validity", {})
+                verification = item.get("certificate_verification", {})
+                fingerprints = cert.get("fingerprints", {})
 
                 rows.append([
-                    _text(_value(cert, "port")),
-                    _compact(_value(cert, "subject", "common_name")),
-                    _compact(_value(cert, "issuer")),
-                    _text(_value(cert, "not_after", "valid_to", "expires")),
-                    _text(_value(cert, "verification", "verified")),
+                    _text(item.get("port")),
+                    _compact(_join_scalars(cert.get("subject_common_names")) or _distinguished_name(cert.get("subject"))),
+                    _compact(_distinguished_name(cert.get("issuer"))),
+                    _text(_get(validity, "not_after")),
+                    _text(_get(validity, "days_until_expiry")),
+                    _compact(_get(fingerprints, "sha256"), 22),
+                    _status_label(_get(verification, "status")),
                 ])
 
             _print_table(
                 console,
                 "TLS Certificates",
-                ["Port", "Subject", "Issuer", "Expires", "Verification"],
+                ["Port", "Subject", "Issuer", "Expires", "Days", "SHA-256", "Verification"],
                 rows,
             )
-        elif _has_content(tls):
-            _print_observations(
+        tls_failures = [
+            item for item in tls.get("results", []) or []
+            if isinstance(item, dict) and item.get("status") != "success"
+        ]
+        if tls_failures:
+            _print_table(
                 console,
-                "TLS Intelligence",
-                tls,
-                [
-                    ("Ports checked", ("ports_checked",)),
-                    ("Certificates found", ("certificate_count",)),
-                    ("TLS version", ("tls_version", "version")),
-                    ("Cipher", ("cipher",)),
-                ],
+                "TLS Probe Outcomes",
+                ["Port", "Service guess", "Probe status", "Detail"],
+                [[
+                    _text(item.get("port")),
+                    _text(item.get("service_guess")),
+                    _status_label(item.get("status")),
+                    _compact(_get(item.get("error"), "message") or item.get("error")),
+                ] for item in tls_failures],
+                border_style="warning",
             )
 
     if isinstance(http, dict):
-        http_items = _value(
-            http,
-            "responses",
-            "results",
-            "observations",
-            default=[],
-        ) or []
+        http_items = http.get("responding_endpoints", []) or []
 
         if isinstance(http_items, list) and http_items:
             rows = []
@@ -507,29 +594,48 @@ def _print_network_exposure(
                     continue
 
                 rows.append([
-                    _text(_value(item, "port")),
-                    _text(_value(item, "status_code", "status")),
-                    _compact(_value(item, "server", "technology")),
-                    _compact(_value(item, "title", "location", "url")),
+                    _text(item.get("port")),
+                    _text(item.get("scheme")),
+                    _text(item.get("http_status")),
+                    _compact(_get(item.get("headers"), "server")),
+                    _compact(_get(item.get("redirect"), "location")),
                 ])
 
             _print_table(
                 console,
                 "HTTP Responses",
-                ["Port", "HTTP status", "Server / Technology", "Details"],
+                ["Port", "Scheme", "HTTP status", "Server", "Redirect"],
                 rows,
             )
-        elif _has_content(http):
-            _print_observations(
+        for item in http.get("results", []) or []:
+            if not isinstance(item, dict) or item.get("status") != "success":
+                continue
+            security = item.get("security_headers", {})
+            present = _get(security, "present", {})
+            technology = item.get("technology_indicators", [])
+            detail_rows = []
+            if isinstance(present, dict) and present:
+                detail_rows.append(["Security headers observed", _join_scalars(list(present)) or "Not available"])
+            if isinstance(technology, list) and technology:
+                detail_rows.append(["Technology indicators", _join_scalars([
+                    _get(indicator, "value") for indicator in technology if isinstance(indicator, dict)
+                ]) or "Not available"])
+            if detail_rows:
+                _print_table(console, f"HTTP Details: port {item.get('port')}", ["Observation", "Value"], detail_rows)
+        http_failures = [
+            item for item in http.get("results", []) or []
+            if isinstance(item, dict) and item.get("status") != "success"
+        ]
+        if http_failures:
+            _print_table(
                 console,
-                "HTTP Intelligence",
-                http,
-                [
-                    ("Ports checked", ("ports_checked",)),
-                    ("Responses", ("response_count",)),
-                    ("Technologies", ("technologies",)),
-                    ("Security headers", ("security_headers",)),
-                ],
+                "HTTP Probe Outcomes",
+                ["Port", "Scheme", "Probe status", "Detail"],
+                [[
+                    _text(item.get("port")), _text(item.get("scheme")),
+                    _status_label(item.get("status")),
+                    _compact(_get(item.get("error"), "message") or item.get("error")),
+                ] for item in http_failures], border_style="warning",
             )
 
     if isinstance(mail, dict):
@@ -600,20 +706,26 @@ def _print_reputation_and_threats(
     reputation = results.get("IP reputation")
     threat = results.get("Threat intelligence")
 
-    _print_observations(
-        console,
-        "IP Reputation",
-        reputation,
-        [
-            ("Assessment", ("assessment", "reputation")),
-            ("Score", ("score", "reputation_score")),
-            ("Usage", ("usage",)),
-            ("Recommendation", ("recommendation", "recommendations")),
-            ("Network", ("network", "network_range")),
-            ("Organization", ("organization",)),
-        ],
-        border_style="warning",
-    )
+    if isinstance(reputation, dict):
+        assessment = reputation.get("assessment", {})
+        network = reputation.get("network", {})
+        rows = []
+        for label, value in [
+            ("Assessment", _get(assessment, "summary")),
+            ("Positive indicators", _join_scalars(_get(assessment, "positive_indicators"))),
+            ("Indicator count", _get(assessment, "indicator_count")),
+            ("Reverse DNS", _get(network, "reverse_dns")),
+            ("ASN", _get(network, "asn")),
+            ("ASN name", _get(network, "asn_name")),
+            ("Country", _get(network, "country")),
+            ("Usage", _field_pairs(reputation.get("usage"))),
+            ("Source indicators", _field_pairs(reputation.get("reputation"))),
+            ("Source recommendations", _field_pairs(reputation.get("source_recommendations"))),
+        ]:
+            rendered = _join_scalars(value)
+            if rendered:
+                rows.append([label, rendered])
+        _print_table(console, "IP Reputation", ["Field", "Source observation"], rows, border_style="warning")
 
     if isinstance(threat, dict):
         _print_observations(
@@ -715,7 +827,7 @@ def _print_dns_and_history(
         if isinstance(records, list) and records:
             rows = []
 
-            for item in records:
+            for item in records[:10]:
                 if not isinstance(item, dict):
                     continue
 
@@ -723,25 +835,35 @@ def _print_dns_and_history(
                     _text(_value(item, "query", "hostname", "name")),
                     _text(_value(item, "type", "record_type")),
                     _compact(_value(item, "answer", "value", "rdata")),
-                    _text(_value(item, "timestamp", "last_seen", "time")),
+                    _text(_value(item, "first_seen", "timestamp", "time")),
+                    _text(_value(item, "last_seen")),
                 ])
 
             _print_table(
                 console,
                 "Passive DNS Records",
-                ["Query / Hostname", "Type", "Answer", "Observed"],
+                ["Query / Hostname", "Type", "Answer", "First seen", "Last seen"],
                 rows,
             )
 
-        if not records and _has_content(passive_dns):
+        if _has_content(passive_dns):
             _print_observations(
                 console,
                 "Passive DNS",
                 passive_dns,
                 [
-                    ("Record count", ("record_count", "total")),
-                    ("Hostnames", ("hostnames", "candidate_hostnames")),
+                    ("Returned records", ("result_count",)),
+                    ("Source record count", ("source_count",)),
+                    ("Output truncated", ("truncated",)),
                 ],
+            )
+
+        if records:
+            print_message_panel(
+                console,
+                "Passive DNS entries are historical source observations. They do not establish current resolution, ownership, or maliciousness.",
+                title="Passive DNS Note",
+                status="info",
             )
 
     if isinstance(history, dict):
@@ -772,6 +894,25 @@ def _print_dns_and_history(
                 rows,
             )
 
+            for name, item in sources.items():
+                if not isinstance(item, dict) or item.get("status") != "success":
+                    continue
+                source_records = item.get("records", [])
+                if not isinstance(source_records, list) or not source_records:
+                    continue
+                if name == "routing_history":
+                    rows = [[
+                        _text(record.get("origin")), _text(record.get("prefix")),
+                        _text(record.get("start_time")), _text(record.get("end_time")),
+                    ] for record in source_records[:10] if isinstance(record, dict)]
+                    _print_table(console, "Historical Routing Observations", ["Origin", "Prefix", "Start", "End"], rows)
+                elif name == "certificate_transparency":
+                    rows = [[
+                        _text(record.get("common_name")), _compact(record.get("issuer")),
+                        _text(record.get("not_after")),
+                    ] for record in source_records[:10] if isinstance(record, dict)]
+                    _print_table(console, "Historical Certificate Transparency", ["Common name", "Issuer", "Expires"], rows)
+
         records = _value(history, "records", "observations", default=[])
         if isinstance(records, list) and records:
             rows = []
@@ -801,47 +942,49 @@ def _print_analysis(
     context = results.get("Context aggregation")
 
     if isinstance(vulnerabilities, dict):
-        findings = _value(
-            vulnerabilities,
-            "findings",
-            "vulnerabilities",
-            "matches",
-            default=[],
-        ) or []
+        candidates = vulnerabilities.get("software_candidates", []) or []
+        if candidates:
+            _print_table(console, "Observed Software Candidates", ["Product", "Version", "Evidence source", "Evidence"], [
+                [_text(item.get("product")), _text(item.get("version")), _text(item.get("evidence_source")), _compact(item.get("evidence_value"))]
+                for item in candidates if isinstance(item, dict)
+            ])
 
-        if isinstance(findings, list) and findings:
-            rows = []
+        kev_matches = vulnerabilities.get("kev_matches", []) or []
+        if kev_matches:
+            _print_table(console, "Potential KEV Product-Level Correlations", ["CVE", "Product", "Name", "Added"], [
+                [_text(item.get("cve_id")), _text(item.get("product")), _compact(item.get("name")), _text(item.get("date_added"))]
+                for item in kev_matches if isinstance(item, dict)
+            ], border_style="warning")
 
-            for item in findings:
-                if isinstance(item, dict):
-                    rows.append([
-                        _text(_value(item, "cve", "cve_id", "id", "name")),
-                        _compact(_value(item, "product", "package")),
-                        _text(_value(item, "version", "affected_version")),
-                        _compact(_value(item, "severity", "kev_status", "status")),
-                    ])
-                else:
-                    rows.append([_compact(item), "Unknown", "Unknown", "Unknown"])
+        nvd = _get(vulnerabilities.get("sources", {}), "nvd", []) or []
+        if isinstance(nvd, list):
+            _print_table(console, "Potential NVD Keyword Matches", ["Query", "Source status", "Candidates", "Note"], [
+                [_text(item.get("query")), _status_label(item.get("status")), _text(len(item.get("vulnerabilities", []) or [])), _compact(item.get("error"))]
+                for item in nvd if isinstance(item, dict)
+            ], border_style="warning")
 
-            _print_table(
+        evidence = vulnerabilities.get("evidence", []) or []
+        if evidence:
+            _print_table(console, "Vulnerability Correlation Evidence", ["Source", "Field", "Observed value"], [
+                [_text(item.get("source")), _text(item.get("field")), _compact(item.get("value"))]
+                for item in evidence if isinstance(item, dict)
+            ])
+
+        limitations = _join_scalars(vulnerabilities.get("limitations"))
+        if limitations:
+            print_message_panel(
                 console,
-                "Vulnerability Intelligence",
-                ["Identifier", "Product", "Version", "Assessment"],
-                rows,
-                border_style="warning",
+                limitations,
+                title="Vulnerability Correlation Limitations",
+                status="info",
             )
-        else:
-            _print_observations(
-                console,
-                "Vulnerability Intelligence",
-                vulnerabilities,
-                [
-                    ("Status", ("status",)),
-                    ("Products examined", ("products_checked", "candidate_count")),
-                    ("Findings", ("finding_count", "match_count")),
-                    ("Limitations", ("limitations",)),
-                ],
-            )
+
+        print_message_panel(
+            console,
+            "These are software candidates and source correlations, not confirmed vulnerabilities on this IP. Vendor affected-version analysis is required.",
+            title="Vulnerability Correlation Note",
+            status="info",
+        )
 
     if isinstance(relationships, dict):
         nodes = _value(relationships, "nodes", default=[]) or []
@@ -882,23 +1025,17 @@ def _print_analysis(
             )
 
     if isinstance(context, dict):
-        fields = [
-            ("Assessment", ("assessment",)),
-            ("Summary", ("summary",)),
-            ("Organization", ("organization",)),
-            ("Network", ("network", "network_range")),
-            ("ASN", ("asn",)),
-            ("Hostnames", ("hostnames",)),
-            ("Geolocation", ("geolocation",)),
-            ("Limitations", ("limitations",)),
-        ]
-
-        _print_observations(
-            console,
-            "Context Aggregation",
-            context,
-            fields,
-        )
+        sections = context.get("context", {})
+        if isinstance(sections, dict):
+            for name, section in sections.items():
+                if not isinstance(section, dict):
+                    continue
+                rows = []
+                for key, value in section.items():
+                    rendered = _field_pairs(value)
+                    if rendered:
+                        rows.append([key.replace("_", " ").capitalize(), _compact(rendered)])
+                _print_table(console, f"Context: {name.replace('_', ' ').title()}", ["Field", "Observation"], rows)
 
 def _print_collector_warnings(
     console: Console,
@@ -943,6 +1080,7 @@ def _print_collector_warnings(
             border_style="warning",
         )
 
+
 def _print_investigation_metadata(
     console: Console,
     investigation: Any,
@@ -975,6 +1113,63 @@ def _print_investigation_metadata(
         ),
     )
 
+    # Read timing metadata without modifying the original results.
+    collectors = _get(investigation, "collectors", []) or []
+    timed_components = []
+
+    for component in collectors:
+        component_duration = _get(
+            component, "duration_seconds", None
+        )
+
+        if (
+            isinstance(component_duration, (int, float))
+            and not isinstance(component_duration, bool)
+            and component_duration >= 0
+        ):
+            timed_components.append(
+                (
+                    float(component_duration),
+                    str(_get(component, "name", "Unknown component")),
+                    str(_get(component, "status", "unknown")),
+                )
+            )
+
+    timed_components.sort(key=lambda item: item[0], reverse=True)
+
+    if timed_components:
+        performance_text = Table(
+            box=None,
+            show_header=True,
+            header_style="heading",
+            expand=True,
+        )
+        performance_text.add_column("Component", ratio=3)
+        performance_text.add_column(
+            "Duration", justify="right", ratio=1
+        )
+        performance_text.add_column("Status", ratio=1)
+
+        for component_duration, name, component_status in (
+            timed_components[:5]
+        ):
+            performance_text.add_row(
+                name,
+                f"{component_duration:.2f} s",
+                _status_label(component_status),
+            )
+
+        print_panel(
+            console,
+            performance_text,
+            title=(
+                "Slowest Components "
+                f"({len(timed_components)} timed)"
+            ),
+            border_style="info",
+            padding=(0, 1),
+        )
+
     if errors:
         error_text = Text()
 
@@ -991,6 +1186,57 @@ def _print_investigation_metadata(
             title="Execution Notes",
             border_style="warning",
             padding=(0, 1),
+        )
+
+def _print_collector_timing(
+    console: Console,
+    investigation: Any,
+) -> None:
+    """Show the slowest measured collector invocations when available."""
+    timings = []
+
+    for collector in _get(investigation, "collectors", []) or []:
+        duration = _get(collector, "duration_seconds")
+        if not isinstance(duration, (int, float)) or duration < 0:
+            continue
+
+        timings.append((
+            float(duration),
+            str(_get(collector, "name", "Unknown collector")),
+            _status_label(_get(collector, "status", "unknown")),
+        ))
+
+    if not timings:
+        return
+
+    timings.sort(key=lambda item: item[0], reverse=True)
+    slowest = timings[:SLOWEST_COLLECTOR_LIMIT]
+    _print_table(
+        console,
+        "Slowest Collector Operations",
+        ["Collector", "Status", "Elapsed"],
+        [[name, status, f"{duration:.2f} seconds"]
+         for duration, name, status in slowest],
+        border_style=(
+            "warning"
+            if any(duration >= SLOW_COLLECTOR_SECONDS for duration, _, _ in slowest)
+            else "border"
+        ),
+    )
+
+    unusually_slow = [
+        f"{name} ({duration:.2f}s)"
+        for duration, name, _ in timings
+        if duration >= SLOW_COLLECTOR_SECONDS
+    ]
+    if unusually_slow:
+        print_message_panel(
+            console,
+            "Measured collector duration exceeded "
+            f"{SLOW_COLLECTOR_SECONDS:.0f} seconds: "
+            + ", ".join(unusually_slow),
+            title="Slow Operations",
+            status="warning",
         )
 
 class IPResponder:
@@ -1042,6 +1288,7 @@ class IPResponder:
         _print_dns_and_history(console, results)
         _print_analysis(console, results)
         _print_collector_warnings(console, investigation)
+        _print_collector_timing(console, investigation)
         _print_investigation_metadata(console, investigation)
 
         console.print()

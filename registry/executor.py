@@ -4,7 +4,8 @@ Registry-driven execution engine for Theseus.
 Responsibilities:
 - Resolve registered components dynamically.
 - Normalize targets before running collectors.
-- Execute each collector independently.
+- Run ordinary collectors before analysis components.
+- Pass raw collector observations to analysis components.
 - Preserve raw results, statuses, timing, and errors.
 - Return structured results for entity responders.
 
@@ -32,6 +33,9 @@ PARTIAL_STATUSES = {"partial"}
 SKIPPED_STATUSES = {"skipped", "skip"}
 NOT_CHECKED_STATUSES = {"not_checked", "not checked"}
 ERROR_STATUSES = {"error", "failed", "failure", "timeout"}
+
+COLLECTOR_STAGE = "collector"
+ANALYSIS_STAGE = "analysis"
 
 @dataclass
 class ComponentResult:
@@ -203,6 +207,7 @@ def _result_error(result: Any) -> str | None:
 def _invoke(
     component: ComponentSpec,
     target: str,
+    observations: dict[str, Any] | None = None,
 ) -> ComponentResult:
     """Import and invoke one registered component."""
     started = time.perf_counter()
@@ -216,7 +221,21 @@ def _invoke(
                 f"{component.module}.{component.function} is not callable"
             )
 
-        result = function(target)
+        if component.stage == ANALYSIS_STAGE:
+            if component.observation_mode == "list":
+                component_observations = _observations_as_list(
+                    observations or {}
+                )
+            else:
+                component_observations = observations or {}
+
+            result = function(
+                target,
+                observations=component_observations,
+            )
+        else:
+            result = function(target)
+
         status = _result_status(result)
         error = None
 
@@ -248,6 +267,49 @@ def _invoke(
             ),
             error=f"{type(exc).__name__}: {exc}",
         )
+
+def _observations_as_mapping(
+    results: list[ComponentResult],
+) -> dict[str, Any]:
+    """
+    Build a mapping from stable module identifiers to raw results.
+
+    For example, tools.ip.reverse_dns becomes the key "reverse_dns".
+    Results are not filtered by status: analysis modules need to be able
+    to distinguish failed, skipped, and not-checked observations.
+    """
+    observations: dict[str, Any] = {}
+
+    for item in results:
+        if item.result is None:
+            continue
+
+        module_name = item.module.rsplit(".", 1)[-1]
+        observations[module_name] = item.result
+
+    return observations
+
+def _observations_as_list(
+    observations: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """
+    Convert raw observations into a list for analyzers that expect one.
+
+    A module identifier is added to a shallow copy of dictionary results
+    so evidence can retain its originating collector. Original results
+    stored in ComponentResult are left unchanged.
+    """
+    items: list[dict[str, Any]] = []
+
+    for module_name, result in observations.items():
+        if not isinstance(result, dict):
+            continue
+
+        item = dict(result)
+        item.setdefault("module", module_name)
+        items.append(item)
+
+    return items
 
 def _resolve_normalized_target(result: Any) -> str | None:
     """Extract the canonical target from a normalizer result."""
@@ -291,11 +353,11 @@ def _overall_status(results: list[ComponentResult]) -> str:
 
 def execute_entity(entity: Entity) -> InvestigationResult:
     """
-    Execute the registered normalizer and collectors for an entity.
+    Execute the registered normalizer, collectors, and analysis components.
 
-    Each collector receives the normalized target as a string.
-    Collector failures are recorded without preventing other collectors
-    from running.
+    Ordinary collectors run first. Their raw results are then passed to
+    analysis components through each component's declared observation mode.
+    Component failures are recorded without preventing subsequent execution.
     """
     started_clock = time.perf_counter()
     started_at = _make_timestamp()
@@ -374,14 +436,36 @@ def execute_entity(entity: Entity) -> InvestigationResult:
 
     collector_results: list[ComponentResult] = []
 
-    for component in spec.collectors:
+    ordinary_components = [
+        component
+        for component in spec.collectors
+        if component.stage == COLLECTOR_STAGE
+    ]
+    analysis_components = [
+        component
+        for component in spec.collectors
+        if component.stage == ANALYSIS_STAGE
+    ]
+
+    for component in ordinary_components:
         result = _invoke(component, normalized_target)
         collector_results.append(result)
 
         if result.status == "error":
-            errors.append(
-                f"{component.name}: {result.error}"
-            )
+            errors.append(f"{component.name}: {result.error}")
+
+    observations = _observations_as_mapping(collector_results)
+
+    for component in analysis_components:
+        result = _invoke(
+            component,
+            normalized_target,
+            observations=observations,
+        )
+        collector_results.append(result)
+
+        if result.status == "error":
+            errors.append(f"{component.name}: {result.error}")
 
     status = _overall_status(collector_results)
 

@@ -25,6 +25,8 @@ class ComponentSpec:
     module: str
     function: str
     description: str = ""
+    stage: str = "collector"
+    observation_mode: str = "mapping"
 
 @dataclass(frozen=True)
 class EntityCollectorSpec:
@@ -46,16 +48,20 @@ def _component(
     module: str,
     function: str,
     description: str = "",
+    *,
+    stage: str = "collector",
+    observation_mode: str = "mapping",
 ) -> ComponentSpec:
+    """Create a registry component with its execution-stage metadata."""
     return ComponentSpec(
         name=name,
         module=module,
         function=function,
         description=description,
+        stage=stage,
+        observation_mode=observation_mode,
     )
 
-# Each entity type has an explicit entry, including types whose
-# investigation pipelines have not been implemented yet.
 ENTITY_COLLECTORS: dict[EntityType, EntityCollectorSpec] = {
     EntityType.IP_ADDRESS: EntityCollectorSpec(
         entity_type=EntityType.IP_ADDRESS,
@@ -161,6 +167,8 @@ ENTITY_COLLECTORS: dict[EntityType, EntityCollectorSpec] = {
                 "tools.ip.vulnerabilities",
                 "run",
                 "Checks available product evidence against vulnerability sources.",
+                stage="analysis",
+                observation_mode="list",
             ),
             _component(
                 "Historical intelligence",
@@ -173,6 +181,8 @@ ENTITY_COLLECTORS: dict[EntityType, EntityCollectorSpec] = {
                 "tools.ip.relationships",
                 "run",
                 "Builds an evidence-based relationship graph.",
+                stage="analysis",
+                observation_mode="mapping",
             ),
             _component(
                 "Reachability",
@@ -185,6 +195,8 @@ ENTITY_COLLECTORS: dict[EntityType, EntityCollectorSpec] = {
                 "tools.ip.context",
                 "run",
                 "Aggregates contextual observations from other collectors.",
+                stage="analysis",
+                observation_mode="mapping",
             ),
         ),
     ),
@@ -301,7 +313,7 @@ ENTITY_COLLECTORS: dict[EntityType, EntityCollectorSpec] = {
         entity_type=EntityType.REPORT,
         normalizer=None,
     ),
-    
+
     EntityType.UNKNOWN: EntityCollectorSpec(
         entity_type=EntityType.UNKNOWN,
         normalizer=None,
@@ -312,7 +324,6 @@ def get_entity_spec(
     entity_type: EntityType,
 ) -> EntityCollectorSpec:
     """Return the registered investigation specification."""
-
     return ENTITY_COLLECTORS.get(
         entity_type,
         EntityCollectorSpec(
@@ -325,26 +336,22 @@ def get_collectors(
     entity_type: EntityType,
 ) -> tuple[ComponentSpec, ...]:
     """Return the collector components registered for an entity."""
-
     return get_entity_spec(entity_type).collectors
 
 def get_normalizer(
     entity_type: EntityType,
 ) -> ComponentSpec | None:
     """Return the normalizer registered for an entity."""
-
     return get_entity_spec(entity_type).normalizer
 
 def get_status(
     entity_type: EntityType,
 ) -> CollectorStatus:
     """Return whether an entity currently has a registered pipeline."""
-
     return get_entity_spec(entity_type).status
 
 def list_entities() -> list[dict[str, Any]]:
     """Return a summary of registered entity pipelines."""
-
     return [
         {
             "entity_type": entity_type.value,

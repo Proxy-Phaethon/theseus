@@ -128,6 +128,55 @@ def _source_outcomes(observations: dict[str, Any]) -> list[dict[str, str]]:
 
     return outcomes
 
+def _is_reverse_query_name(hostname: Any) -> bool:
+    """Identify reverse-DNS query names, not resolved hostnames."""
+    if not isinstance(hostname, str):
+        return False
+
+    normalized = hostname.strip().rstrip(".").lower()
+
+    return (
+        normalized.endswith(".in-addr.arpa")
+        or normalized.endswith(".ip6.arpa")
+    )
+
+def _clean_hostnames(hostnames: Any) -> list[str]:
+    """Filter reverse-query names and deduplicate hostnames."""
+    if isinstance(hostnames, str):
+        hostnames = [hostnames]
+
+    if not isinstance(hostnames, list):
+        return []
+
+    cleaned = []
+    seen = set()
+
+    for item in hostnames:
+        if isinstance(item, str):
+            hostname = item
+        elif isinstance(item, dict):
+            hostname = _first(item, "hostname", "name", "value")
+        else:
+            continue
+
+        if not isinstance(hostname, str):
+            continue
+
+        hostname = hostname.strip().rstrip(".")
+
+        if not hostname or _is_reverse_query_name(hostname):
+            continue
+
+        key = hostname.lower()
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        cleaned.append(hostname)
+
+    return cleaned
+
 def run(
     target: str,
     observations: dict[str, Any] | None = None,
@@ -167,8 +216,6 @@ def run(
     http = _module_data(observations, "http")
     history = _module_data(observations, "history")
 
-    # Address-level classification comes directly from Python's
-    # standard-library parser, regardless of whether a collector ran.
     address_context = {
         "ip_address": ip,
         "version": address.version,
@@ -250,27 +297,9 @@ def run(
         or []
     )
 
-    if isinstance(hostnames, str):
-        hostnames = [hostnames]
-
-    if not isinstance(hostnames, list):
-        hostnames = []
-
     hostname_context = {
-        "hostnames": [
-            item if isinstance(item, str) else _first(
-                item, "hostname", "name", "value"
-            )
-            for item in hostnames
-            if isinstance(item, (str, dict))
-        ]
+        "hostnames": _clean_hostnames(hostnames),
     }
-
-    hostname_context["hostnames"] = [
-        hostname
-        for hostname in hostname_context["hostnames"]
-        if hostname
-    ]
 
     hosting_context = _collect_fields(
         observations,
@@ -312,8 +341,10 @@ def run(
 
     usage_indicators = _true_keys(reputation.get("usage"))
     source_indicators = _true_keys(reputation.get("reputation"))
+
     if usage_indicators:
         reputation_context["source_reported_usage_indicators"] = usage_indicators
+
     if source_indicators:
         reputation_context["source_reported_reputation_indicators"] = source_indicators
 
@@ -325,6 +356,7 @@ def run(
             "output_truncated": ("truncated",),
         },
     )
+
     if passive_dns.get("hostnames"):
         passive_dns_context["historical_hostname_count"] = len(
             passive_dns["hostnames"]
@@ -334,6 +366,7 @@ def run(
         tls,
         {"certificates_observed": ("certificates_observed",)},
     )
+
     if isinstance(tls.get("summary"), dict):
         tls_context["probe_outcomes"] = {
             str(key): value
@@ -345,7 +378,9 @@ def run(
         http,
         {},
     )
+
     responding_endpoints = http.get("responding_endpoints", [])
+
     if isinstance(responding_endpoints, list):
         http_context["responding_endpoint_count"] = len(responding_endpoints)
         http_context["response_statuses"] = [
@@ -365,6 +400,7 @@ def run(
             "source_count": ("source_count",),
         },
     )
+
     historical_context.update(_nested_fields(
         history.get("summary", {}) if isinstance(history, dict) else {},
         {
@@ -428,8 +464,6 @@ def run(
         "historical": ["history"],
     }
 
-    # Remove empty fields and empty sections without altering false or
-    # zero values, both of which may be meaningful observations.
     for section_name, section in sections.items():
         sections[section_name] = {
             key: value

@@ -91,6 +91,10 @@ def _canonical_domain(value: Any) -> str | None:
 
     value = value.rstrip(".").lower()
 
+    # Reverse-DNS query names are not ordinary hostnames/domains.
+    if value.endswith((".in-addr.arpa", ".ip6.arpa")):
+        return None
+
     # Do not treat URLs, email addresses, or arbitrary text as domains.
     if "://" in value or "/" in value or "@" in value:
         return None
@@ -495,36 +499,54 @@ def run(
     certificates = tls.get("certificates", [])
     if isinstance(certificates, dict):
         certificates = [certificates]
-
     if not isinstance(certificates, list):
         certificates = []
 
-    if not certificates and (
-        tls.get("fingerprint_sha256")
-        or tls.get("sha256_fingerprint")
-    ):
-        certificates = [tls]
-
-    for certificate in certificates:
-        if not isinstance(certificate, dict):
+    # The TLS collector wraps each certificate's X.509 details in
+    # item["certificate"]. Accept both that schema and the older flat form.
+    for certificate_record in certificates:
+        if not isinstance(certificate_record, dict):
             continue
 
+        certificate = certificate_record.get("certificate")
+        if not isinstance(certificate, dict):
+            certificate = certificate_record
+
+        fingerprints = certificate.get("fingerprints")
+        if not isinstance(fingerprints, dict):
+            fingerprints = {}
+
         fingerprint = (
-            certificate.get("fingerprint_sha256")
+            fingerprints.get("sha256")
+            or certificate.get("fingerprint_sha256")
             or certificate.get("sha256_fingerprint")
             or certificate.get("sha256")
         )
+        port = certificate_record.get("port", certificate.get("port"))
+        service_guess = certificate_record.get(
+            "service_guess", certificate.get("service_guess")
+        )
+
+        validity = certificate.get("validity")
+        if not isinstance(validity, dict):
+            validity = {}
 
         if fingerprint:
+            fingerprint_value = str(fingerprint).lower()
             certificate_id = add_node(
                 "certificate",
-                str(fingerprint).lower(),
-                label="SHA-256 " + str(fingerprint)[:20],
+                fingerprint_value,
+                label="SHA-256 " + fingerprint_value[:20],
                 attributes={
                     "issuer": certificate.get("issuer"),
                     "subject": certificate.get("subject"),
-                    "not_before": certificate.get("not_before"),
-                    "not_after": certificate.get("not_after"),
+                    "not_before": validity.get("not_before")
+                    or certificate.get("not_before"),
+                    "not_after": validity.get("not_after")
+                    or certificate.get("not_after"),
+                    "validity_status": validity.get("status"),
+                    "port": port,
+                    "service_guess": service_guess,
                 },
             )
 
@@ -536,36 +558,50 @@ def run(
                     source=tls_source,
                     relation="tls_certificate_observed",
                     evidence={
-                        "fingerprint_sha256": fingerprint,
-                        "port": certificate.get("port"),
+                        "fingerprint_sha256": fingerprint_value,
+                        "port": port,
+                        "service_guess": service_guess,
+                        "certificate_verification": certificate_record.get(
+                            "certificate_verification"
+                        ),
                     },
+                    observed_at=tls.get("timestamp"),
                 ),
             )
 
-        sans = (
+        # The TLS collector groups SANs by type, e.g. dns_names and
+        # ip_addresses. Continue to accept older flat SAN lists as well.
+        san_data = (
             certificate.get("subject_alt_names")
             or certificate.get("san")
             or []
         )
+        if isinstance(san_data, dict):
+            sans = list(san_data.get("dns_names") or [])
+        elif isinstance(san_data, str):
+            sans = [san_data]
+        elif isinstance(san_data, list):
+            sans = san_data
+        else:
+            sans = []
 
-        if isinstance(sans, str):
-            sans = [sans]
+        for name in sans:
+            if isinstance(name, dict):
+                name = name.get("value") or name.get("name")
 
-        if isinstance(sans, list):
-            for name in sans:
-                if isinstance(name, dict):
-                    name = name.get("value") or name.get("name")
-
-                link_value(
-                    "domain",
-                    name,
-                    "certificate_name",
-                    tls_source,
-                    evidence_value={
-                        "certificate_fingerprint": fingerprint,
-                        "san": name,
-                    },
-                )
+            link_value(
+                "domain",
+                name,
+                "certificate_name",
+                tls_source,
+                evidence_value={
+                    "certificate_fingerprint": fingerprint,
+                    "port": port,
+                    "san": name,
+                    "validity": validity,
+                },
+                observed_at=validity.get("not_after") or tls.get("timestamp"),
+            )
 
     # Hosting classification: provider/organization is a reported
     # classification, not proof of ownership or physical location.

@@ -14,20 +14,24 @@ This module does not format terminal output.
 from __future__ import annotations
 
 import importlib
-import inspect
 import time
-import traceback
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import date, datetime
 from enum import Enum
 from typing import Any
 
-from core.identifier import Entity, EntityType
+from core.identifier import Entity
 from registry.collectors import (
     ComponentSpec,
     EntityCollectorSpec,
     get_entity_spec,
 )
+
+SUCCESS_STATUSES = {"success", "ok"}
+PARTIAL_STATUSES = {"partial"}
+SKIPPED_STATUSES = {"skipped", "skip"}
+NOT_CHECKED_STATUSES = {"not_checked", "not checked"}
+ERROR_STATUSES = {"error", "failed", "failure", "timeout"}
 
 @dataclass
 class ComponentResult:
@@ -69,11 +73,34 @@ class InvestigationResult:
 
     @property
     def completed_count(self) -> int:
-        return sum(item.status == "success" for item in self.collectors)
+        """Count collectors that returned usable or partial results."""
+        return sum(
+            item.status in {"success", "partial"}
+            for item in self.collectors
+        )
 
     @property
     def failed_count(self) -> int:
+        """Count collectors that failed or returned an error status."""
         return sum(item.status == "error" for item in self.collectors)
+
+    @property
+    def skipped_count(self) -> int:
+        """Count collectors deliberately skipped."""
+        return sum(item.status == "skipped" for item in self.collectors)
+
+    @property
+    def not_checked_count(self) -> int:
+        """Count collectors that could not make an assessment."""
+        return sum(
+            item.status == "not_checked"
+            for item in self.collectors
+        )
+
+    @property
+    def partial_count(self) -> int:
+        """Count collectors that returned incomplete results."""
+        return sum(item.status == "partial" for item in self.collectors)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -87,6 +114,9 @@ class InvestigationResult:
             "collectors": [item.to_dict() for item in self.collectors],
             "completed_count": self.completed_count,
             "failed_count": self.failed_count,
+            "partial_count": self.partial_count,
+            "skipped_count": self.skipped_count,
+            "not_checked_count": self.not_checked_count,
             "started_at": self.started_at,
             "finished_at": self.finished_at,
             "duration_seconds": self.duration_seconds,
@@ -121,6 +151,55 @@ def serialise(value: Any) -> Any:
 
     return repr(value)
 
+def _normalise_status(value: Any) -> str | None:
+    """Map recognized result statuses to executor status names."""
+    if isinstance(value, Enum):
+        value = value.value
+
+    if not isinstance(value, str):
+        return None
+
+    value = value.strip().lower().replace("-", "_")
+
+    if value in SUCCESS_STATUSES:
+        return "success"
+
+    if value in PARTIAL_STATUSES:
+        return "partial"
+
+    if value in SKIPPED_STATUSES:
+        return "skipped"
+
+    if value in NOT_CHECKED_STATUSES:
+        return "not_checked"
+
+    if value in ERROR_STATUSES:
+        return "error"
+
+    return None
+
+def _result_status(result: Any) -> str:
+    """Determine execution status from a component's returned payload."""
+    if isinstance(result, dict):
+        status = _normalise_status(result.get("status"))
+        if status is not None:
+            return status
+
+    return "success"
+
+def _result_error(result: Any) -> str | None:
+    """Extract a useful error message from a returned error payload."""
+    if not isinstance(result, dict):
+        return None
+
+    for key in ("error", "message", "detail", "reason"):
+        value = result.get(key)
+
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    return None
+
 def _invoke(
     component: ComponentSpec,
     target: str,
@@ -138,14 +217,24 @@ def _invoke(
             )
 
         result = function(target)
+        status = _result_status(result)
+        error = None
+
+        if status == "error":
+            error = _result_error(result) or (
+                "Component returned an error status"
+            )
 
         return ComponentResult(
             name=component.name,
             module=component.module,
             function=component.function,
-            status="success",
-            duration_seconds=round(time.perf_counter() - started, 4),
+            status=status,
+            duration_seconds=round(
+                time.perf_counter() - started, 4
+            ),
             result=result,
+            error=error,
         )
 
     except Exception as exc:
@@ -154,7 +243,9 @@ def _invoke(
             module=component.module,
             function=component.function,
             status="error",
-            duration_seconds=round(time.perf_counter() - started, 4),
+            duration_seconds=round(
+                time.perf_counter() - started, 4
+            ),
             error=f"{type(exc).__name__}: {exc}",
         )
 
@@ -176,6 +267,27 @@ def _resolve_normalized_target(result: Any) -> str | None:
 
 def _make_timestamp() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
+
+def _overall_status(results: list[ComponentResult]) -> str:
+    """Determine investigation status from collector outcomes."""
+    if not results:
+        return "error"
+
+    statuses = [item.status for item in results]
+
+    if all(status == "success" for status in statuses):
+        return "success"
+
+    if all(status == "error" for status in statuses):
+        return "error"
+
+    if any(status in {"success", "partial"} for status in statuses):
+        return "partial"
+
+    if any(status in {"skipped", "not_checked"} for status in statuses):
+        return "partial"
+
+    return "error"
 
 def execute_entity(entity: Entity) -> InvestigationResult:
     """
@@ -230,9 +342,13 @@ def execute_entity(entity: Entity) -> InvestigationResult:
         normalizer_result.result
     )
 
-    if normalizer_result.status != "success":
+    if normalizer_result.status == "error":
         errors.append(
             f"Normalizer failed: {normalizer_result.error}"
+        )
+    elif normalizer_result.status != "success":
+        errors.append(
+            f"Normalizer returned status: {normalizer_result.status}"
         )
 
     if normalized_target is None:
@@ -263,19 +379,11 @@ def execute_entity(entity: Entity) -> InvestigationResult:
         collector_results.append(result)
 
         if result.status == "error":
-            errors.append(f"{component.name}: {result.error}")
+            errors.append(
+                f"{component.name}: {result.error}"
+            )
 
-    successful = sum(
-        result.status == "success" for result in collector_results
-    )
-    failed = len(collector_results) - successful
-
-    if successful == len(collector_results):
-        status = "success"
-    elif successful > 0:
-        status = "partial"
-    else:
-        status = "error"
+    status = _overall_status(collector_results)
 
     return InvestigationResult(
         original_target=entity.value,
@@ -313,14 +421,13 @@ if __name__ == "__main__":
         if not target:
             continue
 
-        # This test entry point deliberately tests the email pipeline only.
-        from core.identifier import Identifier
+        from core.identifier import Identifier, EntityType
 
         entity = Identifier().identify(target)
 
         if entity.type != EntityType.EMAIL:
             print(
-                f"This test entry point expects an email address. "
+                "This test entry point expects an email address. "
                 f"Detected: {entity.type.value}\n"
             )
             continue

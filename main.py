@@ -1,65 +1,97 @@
 from __future__ import annotations
 
 from rich.console import Console
-from rich.text import Text
 
 from core.identifier import identify
-from ui.banner import print_banner
-from ui.commands import CommandHandler
-from ui.theme import configure_theme
+from core.registry import ExtractorRegistry
+from core.executor import Executor
+from core.responder import Responder
 
-VERSION = "1.0.0"
-APP_NAME = "THESEUS"
-DESCRIPTION = "A digital artefact extraction and intelligence platform"
+from ui.banner import render_banner
+from ui.terminal import detect_terminal, create_terminal_console
+
+
+EXIT_COMMANDS = {"exit", "quit", ":q"}
+
+def build_pipeline() -> tuple[ExtractorRegistry, Executor, Responder]:
+    """Discover extractors and assemble the Theseus processing pipeline."""
+    registry = ExtractorRegistry()
+    registry.discover()
+
+    executor = Executor(registry)
+    responder = Responder()
+
+    return registry, executor, responder
+
+def process_input(
+    user_input: str,
+    executor: Executor,
+    responder: Responder,
+) -> object:
+    """Run input through identification, extraction, and response formatting."""
+
+    # 1. Identify the artefacts present in the input.
+    identification_packet = identify(user_input)
+
+    # 2. Dispatch the identified artefacts to compatible extractors.
+    extraction_packets = executor.execute(identification_packet)
+
+    # 3. Aggregate and format the extractor responses.
+    report = responder.respond(extraction_packets)
+
+    # 4. Return the formatted report to the terminal interface.
+    return report.renderable
 
 def main() -> None:
-    """Initialise the terminal and run the interactive input loop."""
-    configure_theme()
+    """Run the Theseus interactive terminal interface."""
 
-    console = Console()
+    terminal_config = detect_terminal()
+    console: Console = create_terminal_console(terminal_config)
 
-    commands = CommandHandler(
-        console=console,
-        app_name=APP_NAME,
-        version=VERSION,
-        description=DESCRIPTION,
+    render_banner(console)
+
+    registry, executor, responder = build_pipeline()
+
+    console.print(
+        f"[dim]Loaded {len(registry)} extractors.[/dim]"
+    )
+    console.print(
+        "[dim]Enter an artefact to investigate, or type 'exit' to quit.[/dim]\n"
     )
 
-    print_banner(console)
-
-    while not commands.should_quit:
+    while True:
         try:
-            user_input = console.input(
-                Text("theseus › ", style="primary")
-            ).strip()
+            user_input = console.input("[bold cyan]theseus > [/bold cyan]").strip()
 
-        except (KeyboardInterrupt, EOFError):
+            if not user_input:
+                continue
+
+            if user_input.lower() in EXIT_COMMANDS:
+                console.print("[dim]Theseus shutting down.[/dim]")
+                break
+
+            response = process_input(
+                user_input=user_input,
+                executor=executor,
+                responder=responder,
+            )
+
             console.print()
+            console.print(response)
+            console.print()
+
+        except KeyboardInterrupt:
+            console.print("\n[dim]Theseus shutting down.[/dim]")
             break
 
-        if not user_input:
-            continue
-
-        # Helper commands are handled by the terminal UI.
-        if commands.execute(user_input):
-            continue
-
-        # Everything else is passed to the identifier.
-        try:
-            result = identify(user_input)
-
-            if result is not None:
-                console.print(result)
+        except EOFError:
+            console.print("\n[dim]Input stream closed.[/dim]")
+            break
 
         except Exception as exc:
             console.print(
-                Text(
-                    f"Unable to process input: {exc}",
-                    style="error",
-                )
+                f"[bold red]Pipeline error:[/bold red] {exc}"
             )
-
-    console.print(Text("Session ended.", style="muted"))
 
 if __name__ == "__main__":
     main()

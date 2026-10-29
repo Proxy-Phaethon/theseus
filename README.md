@@ -88,6 +88,33 @@ Extracted information is normalised into consistent entity types, including:
 
 Theseus identifies entities regardless of which supported artefact reveals them, allowing the same entity to be recognised across different sources and formats.
 
+flowchart TD
+    A["main.py<br/>Receive user input"] --> B["core/packets.py<br/>Create initial packet"]
+    B --> C["core/identifier.py<br/>Identify and classify artefacts"]
+    C --> D["core/registry.py<br/>Access registered extractors"]
+    D --> E["core/executor.py<br/>Scope tasks and route inputs"]
+
+    E --> F["Create child task packets<br/>Shared request_id, unique task_id"]
+    
+    F --> G["Select relevant extractors"]
+    G --> H1["extractors/webandbrowser/"]
+    G --> H2["extractors/emailandmessages/"]
+    G --> H3["extractors/networkandinfrastructure/"]
+    G --> H4["Other extractor categories"]
+
+    H1 --> I["Return standard result packets"]
+    H2 --> I
+    H3 --> I
+    H4 --> I
+
+    I --> J["core/responder.py<br/>Aggregate and correlate results"]
+    J --> K["Process shared envelope fields"]
+    K --> L["Interpret extractor-specific data"]
+    L --> M["Build final investigation response"]
+    M --> N["main.py<br/>Display through existing UI"]
+
+    J -. "Discoveries may create new tasks" .-> E
+
 **Theseus v1.0.0 establishes the artefact extractor as the foundation of the platform, with entity investigation and relationship discovery built around the information it uncovers.**
 
 ## Version

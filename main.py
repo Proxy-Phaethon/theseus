@@ -10,8 +10,7 @@ from core.responder import Responder
 from ui.banner import render_banner
 from ui.terminal import detect_terminal, create_terminal_console
 
-
-EXIT_COMMANDS = {"exit", "quit", ":q"}
+EXIT_COMMANDS = {"exit", "quit", "q"}
 
 def build_pipeline() -> tuple[ExtractorRegistry, Executor, Responder]:
     """Discover extractors and assemble the Theseus processing pipeline."""

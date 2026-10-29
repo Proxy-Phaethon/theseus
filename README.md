@@ -48,9 +48,9 @@ Rather than requiring an investigator to begin with a known email address, domai
 
 **The artefact is the starting point. The entities it reveals are the leads.**
 
-## Core capabilities
+## Core Capabilities
 
-### Artefact extraction
+### Artefact Extraction
 
 Theseus processes digital artefacts across multiple formats and environments, extracting structured information from their contents and metadata.
 
@@ -59,7 +59,7 @@ Supported artefact categories include:
 - **Web and browser:** HTTP headers, HTML, cookies, browser history, local storage, redirects, web archives, and application metadata.
 - **Email and communications:** Email headers, MIME messages, attachments, SMS/MMS exports, chat records, contact cards, and call metadata.
 - **Internet infrastructure:** DNS records, TLS certificates, Certificate Transparency entries, WHOIS/RDAP data, IP allocation records, routing information, and service banners.
-- **Files and documents:** PDF, Office documents, images, audio, video, archives, file metadata, hashes, digital signatures, and embedded resources.
+- **Files and documents:** PDF and Office documents, images, audio, video, archives, file metadata, hashes, digital signatures, and embedded resources.
 - **Operating systems:** Windows Registry and event logs, macOS system artefacts, Linux logs, filesystem metadata, execution traces, and device records.
 - **Network traffic:** PCAP/PCAPNG captures, HTTP exchanges, DNS traffic, TLS handshakes, flow records, firewall logs, and network configuration.
 - **Identity and authentication:** Account identifiers, usernames, credential records, cookies, API keys, tokens, certificates, and exposed secrets.
@@ -71,35 +71,24 @@ Supported artefact categories include:
 - **Corporate and public records:** Company filings, annual reports, securities disclosures, patents, procurement records, public datasets, and organisational documents.
 - **Geospatial and multimedia:** EXIF GPS data, GPX tracks, KML/KMZ, GeoJSON, OCR text, transcripts, and media fingerprints.
 
-### Entity identification
+## Architecture
 
-Extracted information is normalised into consistent entity types, including:
-
-- People and organisations
-- Email addresses and telephone numbers
-- Usernames and online accounts
-- Domains, URLs, and IP addresses
-- Physical addresses and geographic coordinates
-- Files, hashes, certificates, and cryptographic fingerprints
-- Device and account identifiers
-- Software packages, repositories, and infrastructure resources
-- Transactions, timestamps, and other domain-specific identifiers
-- Credentials and other sensitive information requiring controlled handling
-
-Theseus identifies entities regardless of which supported artefact reveals them, allowing the same entity to be recognised across different sources and formats.
-
+```mermaid
 flowchart TD
-    A["main.py<br/>Receive user input"] --> B["core/packets.py<br/>Create initial packet"]
-    B --> C["core/identifier.py<br/>Identify and classify artefacts"]
-    C --> D["core/registry.py<br/>Access registered extractors"]
-    D --> E["core/executor.py<br/>Scope tasks and route inputs"]
+    A["main.py<br/>Receive user input"]
+    B["core/packets.py<br/>Create initial packet"]
+    C["core/identifier.py<br/>Identify and classify artefacts"]
+    D["core/registry.py<br/>Access registered extractors"]
+    E["core/executor.py<br/>Scope tasks and route inputs"]
 
-    E --> F["Create child task packets<br/>Shared request_id, unique task_id"]
-    
+    A --> B --> C --> D --> E
+
+    E --> F["Create child task packets<br/>Shared request_id<br/>Unique task_id"]
     F --> G["Select relevant extractors"]
-    G --> H1["extractors/webandbrowser/"]
-    G --> H2["extractors/emailandmessages/"]
-    G --> H3["extractors/networkandinfrastructure/"]
+
+    G --> H1["Web and browser"]
+    G --> H2["Email and messages"]
+    G --> H3["Network and infrastructure"]
     G --> H4["Other extractor categories"]
 
     H1 --> I["Return standard result packets"]
@@ -110,19 +99,55 @@ flowchart TD
     I --> J["core/responder.py<br/>Aggregate and correlate results"]
     J --> K["Process shared envelope fields"]
     K --> L["Interpret extractor-specific data"]
-    L --> M["Build final investigation response"]
+    L --> M["Build investigation response"]
     M --> N["main.py<br/>Display through existing UI"]
 
-    J -. "Discoveries may create new tasks" .-> E
+    J -.->|"Discoveries may create new tasks"| E
 
-**Theseus v1.0.0 establishes the artefact extractor as the foundation of the platform, with entity investigation and relationship discovery built around the information it uncovers.**
+    classDef core fill:#e8eefc,stroke:#4968a8,color:#172b4d
+    classDef extract fill:#e6f4ea,stroke:#4c956c,color:#193d28
+    classDef task fill:#fff0d9,stroke:#c58b35,color:#51380e
+
+    class A,B,C,D,E,J,K,L,M,N core
+    class H1,H2,H3,H4 extract
+    class F,G,I task
+```
+
+The architecture separates five principal responsibilities:
+
+1. **Identification:** Determine what kind of artefact or input has been supplied.
+2. **Registration:** Make available the extractors capable of processing relevant inputs.
+3. **Execution:** Create, scope, and route extraction tasks.
+4. **Interpretation:** Normalise and correlate the results returned by extractors.
+5. **Presentation:** Deliver the resulting investigation response through the existing interface.
+
+The registry and executor provide the foundation for extending the platform with additional extractors without restructuring the entire investigation workflow.
+
+## Investigation Workflow
+
+A typical investigation follows this sequence:
+
+1. An investigator supplies an artefact or supported input through the main interface.
+2. Theseus creates an initial packet representing the request.
+3. The identifier classifies the input and determines the relevant artefact or entity types.
+4. The registry provides access to suitable extractors.
+5. The executor creates and routes individual extraction tasks.
+6. Extractors process their assigned inputs and return structured results.
+7. The responder aggregates the results, interprets extractor-specific data, and identifies relationships between findings.
+8. Newly discovered entities can trigger additional extraction tasks.
+9. Theseus assembles the findings into an investigation response for presentation.
+
+Each task remains associated with its originating request, providing a basis for tracing findings back to the extraction operations that produced them.
 
 ## Version
 
-**Target release:** v1.0.0
+**Target release: v1.0.0**
 
-The v1.0.0 release represents the redesigned Theseus architecture, bringing artefact extraction, entity identification, provenance tracking, investigation routing, and relationship analysis together as a cohesive system.
+Theseus v1.0.0 establishes the artefact extractor as the foundation of the platform, with entity investigation and relationship discovery built around the information it uncovers.
 
+The release centres on a unified packet contract, modular extractor registration, controlled task execution, structured result aggregation, and an architecture designed to support increasingly complex investigations.
+
+---
 ## Contributing
 
 Contributions, bug reports, and suggestions are welcome. When reporting a problem, include the operating system, Python version, installation method, relevant command output, and steps needed to reproduce it. Never include private credentials or sensitive investigation data.

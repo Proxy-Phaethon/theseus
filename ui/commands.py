@@ -1,69 +1,259 @@
 from __future__ import annotations
 
+import shlex
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
+
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from core.identifier import Command, CommandType, EntityType
-from registry.collectors import (
-    CollectorStatus,
-    get_collectors,
-    get_normalizer,
-    get_status,
-)
-from ui.panels import print_message_panel, print_panel
-from ui.status import print_status
+CommandCallback = Callable[[str | None], None]
 
+@dataclass(frozen=True, slots=True)
+class CommandSpec:
+    """Definition of a terminal command."""
+
+    name: str
+    description: str
+    callback: CommandCallback
+    usage: str | None = None
+    aliases: tuple[str, ...] = ()
+
+@dataclass(slots=True)
 class CommandHandler:
-    """Execute CLI helper commands and render their output."""
+    """Reusable command registration, execution, and terminal rendering."""
 
-    def __init__(
+    console: Console
+    app_name: str = "Application"
+    version: str = "1.0.0"
+    description: str = "Interactive terminal application"
+    history_limit: int | None = None
+
+    history: list[str] = field(default_factory=list, init=False)
+    should_quit: bool = field(default=False, init=False)
+    _commands: dict[str, CommandSpec] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+    _aliases: dict[str, str] = field(
+        default_factory=dict,
+        init=False,
+        repr=False,
+    )
+
+    def __post_init__(self) -> None:
+        """Register the standard terminal commands."""
+        self.register(
+            "help",
+            "Show available commands or details about one command.",
+            self._help,
+            usage="help [command]",
+            aliases=("?",),
+        )
+        self.register(
+            "about",
+            "Show application information.",
+            self._about,
+            usage="about",
+        )
+        self.register(
+            "clear",
+            "Clear the visible terminal screen.",
+            self._clear,
+            usage="clear",
+        )
+        self.register(
+            "history",
+            "Show completed targets recorded during this session.",
+            self._history,
+            usage="history",
+        )
+        self.register(
+            "quit",
+            "Exit the interactive session.",
+            self._quit,
+            usage="quit",
+            aliases=("q", "bye", "exit"),
+        )
+
+    def register(
         self,
-        console: Console,
-        responders: dict[EntityType, object],
+        name: str,
+        description: str,
+        callback: CommandCallback,
         *,
-        version: str = "0.7.0",
+        usage: str | None = None,
+        aliases: Iterable[str] = (),
     ) -> None:
-        self.console = console
-        self.responders = responders
-        self.version = version
-        self.history: list[str] = []
-        self.should_quit = False
+        """Register a command or replace an existing command definition."""
+        name = name.strip().lower().lstrip("/")
 
-    def execute(self, command: Command) -> None:
-        """Execute a recognized command."""
-        handlers = {
-            CommandType.HELP: self._help,
-            CommandType.ABOUT: self._about,
-            CommandType.CLEAR: self._clear,
-            CommandType.HISTORY: self._history,
-            CommandType.STATUS: self._status,
-            CommandType.QUIT: self._quit,
-        }
+        if not name or any(char.isspace() for char in name):
+            raise ValueError("Command names must be non-empty single words.")
 
-        handler = handlers.get(command.type)
+        alias_names = tuple(
+            alias.strip().lower().lstrip("/")
+            for alias in aliases
+        )
 
-        if handler is None:
-            print_status(
-                self.console,
-                "warning",
-                f"Unsupported command: {command.type.value}",
+        if any(
+            not alias or any(char.isspace() for char in alias)
+            for alias in alias_names
+        ):
+            raise ValueError("Command aliases must be non-empty single words.")
+
+        if len(set(alias_names)) != len(alias_names):
+            raise ValueError(f"Duplicate aliases for command: {name}")
+
+        if name in alias_names:
+            raise ValueError("A command cannot alias itself.")
+
+        reserved_names = set(alias_names) | {name}
+
+        for registered_name in reserved_names:
+            existing_command = self._aliases.get(registered_name)
+
+            if (
+                existing_command is not None
+                and existing_command != name
+            ):
+                raise ValueError(
+                    f"'{registered_name}' is already an alias for "
+                    f"'{existing_command}'."
+                )
+
+            if (
+                registered_name in self._commands
+                and registered_name != name
+            ):
+                raise ValueError(
+                    f"'{registered_name}' is already a registered command."
+                )
+
+        # Remove the previous aliases when replacing a command.
+        previous = self._commands.get(name)
+        if previous is not None:
+            for alias in previous.aliases:
+                self._aliases.pop(alias, None)
+
+        spec = CommandSpec(
+            name=name,
+            description=description,
+            callback=callback,
+            usage=usage or name,
+            aliases=alias_names,
+        )
+
+        self._commands[name] = spec
+
+        for alias in alias_names:
+            self._aliases[alias] = name
+
+    def unregister(self, name: str) -> bool:
+        """Remove a command and its aliases. Return whether it existed."""
+        name = name.strip().lower().lstrip("/")
+        name = self._aliases.get(name, name)
+
+        spec = self._commands.pop(name, None)
+        if spec is None:
+            return False
+
+        for alias in spec.aliases:
+            self._aliases.pop(alias, None)
+
+        return True
+
+    def execute(
+        self,
+        command: str,
+        argument: str | None = None,
+    ) -> bool:
+        """Execute a command. Return False if it is not recognised.
+
+        Accepts either a complete command line or a command and argument
+        supplied separately.
+        """
+        if argument is None:
+            try:
+                parts = shlex.split(command.strip())
+            except ValueError as exc:
+                self._message(
+                    f"Invalid command syntax: {exc}",
+                    status="warning",
+                )
+                return True
+
+            if not parts:
+                return True
+
+            name = parts[0].lower().lstrip("/")
+            argument = " ".join(parts[1:]) or None
+        else:
+            name = command.strip().lower().lstrip("/")
+            argument = argument.strip() or None
+
+        name = self._aliases.get(name, name)
+        spec = self._commands.get(name)
+
+        if spec is None:
+            return False
+
+        try:
+            spec.callback(argument)
+        except Exception as exc:
+            self._message(
+                f"Command '{name}' failed: {exc}",
+                status="error",
             )
-            return
 
-        handler(command.argument)
+        return True
 
-    def record_investigation(self, target: str) -> None:
-        """Record a target after its investigation completes."""
+    def record_history(self, target: str) -> None:
+        """Record a completed target in session history."""
         target = target.strip()
 
-        if target:
-            self.history.append(target)
+        if not target:
+            return
+
+        self.history.append(target)
+
+        if self.history_limit is not None:
+            if self.history_limit < 0:
+                raise ValueError("history_limit cannot be negative.")
+
+            if self.history_limit == 0:
+                self.history.clear()
+            else:
+                del self.history[:-self.history_limit]
 
     def _help(self, argument: str | None = None) -> None:
-        """Display general help or details for a specific command."""
+        """Display the command list or details about one command."""
         if argument:
-            self._help_command(argument)
+            name = argument.strip().lower().lstrip("/")
+            name = self._aliases.get(name, name)
+            spec = self._commands.get(name)
+
+            if spec is None:
+                self._message(
+                    f"Unknown command: {argument}",
+                    status="warning",
+                )
+                return
+
+            details = Table.grid(padding=(0, 1))
+            details.add_column(style="muted", no_wrap=True)
+            details.add_column(style="text", overflow="fold")
+
+            details.add_row("Usage", spec.usage or spec.name)
+            details.add_row("Description", spec.description)
+
+            if spec.aliases:
+                details.add_row("Aliases", ", ".join(spec.aliases))
+
+            self._panel(details, title=f"Command: {spec.name}")
             return
 
         table = Table(
@@ -73,146 +263,46 @@ class CommandHandler:
             expand=False,
         )
         table.add_column("Command", style="primary", no_wrap=True)
-        table.add_column("Description", style="text")
+        table.add_column("Description", style="text", overflow="fold")
 
-        commands = [
-            ("help", "Show available commands."),
-            ("help <command>", "Show details for a specific command."),
-            ("about", "Show information about Theseus."),
-            ("clear", "Clear the terminal screen."),
-            ("history", "Show completed investigation targets."),
-            ("status", "Show implemented investigation workflows."),
-            ("q / quit / bye / exit", "Exit Theseus."),
-        ]
+        for spec in sorted(self._commands.values(), key=lambda item: item.name):
+            names = spec.name
 
-        for name, description in commands:
-            table.add_row(name, description)
+            if spec.aliases:
+                names += " (" + ", ".join(spec.aliases) + ")"
 
-        print_panel(
-            self.console,
-            table,
-            title="Helper commands",
-            expand=False,
-        )
+            table.add_row(names, spec.description)
 
+        self._panel(table, title="Available commands")
         self.console.print(
             Text(
-                "\nEnter an email address to start an investigation. "
-                "Additional entity types will become available as their "
-                "new investigation workflows are implemented.",
+                "Use 'help <command>' for more information.",
                 style="muted",
             )
         )
 
-    def _help_command(self, argument: str) -> None:
-        """Display information about one supported command."""
-        name = argument.strip().lower().lstrip("/")
-
-        aliases = {
-            "q": "quit",
-            "q.": "quit",
-            "quit.": "quit",
-            "bye": "quit",
-            "bye.": "quit",
-            "exit": "quit",
-            "exit.": "quit",
-        }
-        name = aliases.get(name, name)
-
-        details = {
-            "help": (
-                "help [command]",
-                "Display the command list or explain a specific command.",
-                "Examples: help, help history",
-            ),
-            "about": (
-                "about",
-                "Display the version and purpose of Theseus.",
-                "Does not start an investigation.",
-            ),
-            "clear": (
-                "clear",
-                "Clear the visible terminal screen.",
-                "Does not delete investigation history.",
-            ),
-            "history": (
-                "history",
-                "Display targets investigated during this session.",
-                "History is kept in memory and is not written to disk.",
-            ),
-            "status": (
-                "status",
-                "Display which entity types have implemented collector workflows.",
-                "Reports registry configuration, not live collector availability.",
-            ),
-            "quit": (
-                "q / quit / bye / exit",
-                "Exit the Theseus interactive session.",
-                "All listed aliases are accepted.",
-            ),
-        }
-
-        detail = details.get(name)
-
-        if detail is None:
-            print_status(
-                self.console,
-                "warning",
-                f"Unknown helper command: {argument}",
-            )
-            self.console.print(
-                "[muted]Use 'help' to see available commands.[/muted]"
-            )
-            return
-
-        syntax, description, note = detail
-
-        content = Table.grid(padding=(0, 1))
-        content.add_column(style="muted", no_wrap=True)
-        content.add_column(style="text", overflow="fold")
-        content.add_row("Usage", syntax)
-        content.add_row("Description", description)
-        content.add_row("Note", note)
-
-        print_panel(
-            self.console,
-            content,
-            title=f"Command: {name}",
-            expand=False,
-        )
-
     def _about(self, _argument: str | None = None) -> None:
-        """Display project information."""
+        """Display application information."""
         content = Table.grid(padding=(0, 1))
         content.add_column(style="muted", no_wrap=True)
         content.add_column(style="text", overflow="fold")
-        content.add_row("Project", "Theseus")
-        content.add_row("Version", f"v{self.version}")
-        content.add_row("Purpose", "Internet exploration and OSINT investigation")
-        content.add_row(
-            "Approach",
-            "Investigates digital targets using its own tools and integrations.",
-        )
 
-        print_panel(
-            self.console,
-            content,
-            title="About Theseus",
-            expand=False,
-        )
+        content.add_row("Application", self.app_name)
+        content.add_row("Version", f"v{self.version}")
+        content.add_row("Description", self.description)
+
+        self._panel(content, title=f"About {self.app_name}")
 
     def _clear(self, _argument: str | None = None) -> None:
-        """Clear the terminal without changing session state."""
+        """Clear the visible terminal without changing session state."""
         self.console.clear()
-        self.console.print()
 
     def _history(self, _argument: str | None = None) -> None:
-        """Display targets recorded during the current session."""
+        """Display completed targets recorded during this session."""
         if not self.history:
-            print_message_panel(
-                self.console,
-                "No completed investigations have been recorded this session.",
-                title="Investigation history",
+            self._message(
+                "No completed targets have been recorded this session.",
+                title="Session history",
                 status="info",
             )
             return
@@ -229,65 +319,58 @@ class CommandHandler:
         for index, target in enumerate(self.history, start=1):
             table.add_row(str(index), target)
 
-        print_panel(
-            self.console,
+        self._panel(
             table,
-            title=f"Investigation history ({len(self.history)})",
-            expand=False,
+            title=f"Session history ({len(self.history)})",
         )
-
         self.console.print(
-            "[muted]Session-only history. Targets are not saved to disk.[/muted]"
-        )
-
-    def _status(self, _argument: str | None = None) -> None:
-        """Show which entity types have implemented collector workflows."""
-        table = Table(
-            show_header=True,
-            header_style="heading",
-            border_style="border",
-            expand=False,
-        )
-        table.add_column("Entity type", style="text")
-        table.add_column("Collectors", style="text", justify="right")
-        table.add_column("Workflow status", style="text")
-
-        for entity_type in EntityType:
-            if entity_type == EntityType.UNKNOWN:
-                continue
-
-            status = get_status(entity_type)
-            collectors = get_collectors(entity_type)
-            normalizer = get_normalizer(entity_type)
-
-            component_count = len(collectors)
-            if normalizer is not None:
-                component_count += 1
-
-            if status == CollectorStatus.IMPLEMENTED:
-                status_text = "[success]IMPLEMENTED[/success]"
-            else:
-                status_text = "[warning]NOT IMPLEMENTED[/warning]"
-
-            table.add_row(
-                entity_type.value,
-                str(component_count),
-                status_text,
+            Text(
+                "History is held in memory and is not written to disk.",
+                style="muted",
             )
-
-        print_panel(
-            self.console,
-            table,
-            title="Investigation workflows",
-            expand=False,
-        )
-
-        self.console.print(
-            "[muted]Status reflects registry configuration, not live service "
-            "availability or investigation results.[/muted]"
         )
 
     def _quit(self, _argument: str | None = None) -> None:
-        """Signal the main input loop to exit."""
+        """Signal the application's input loop to exit."""
         self.should_quit = True
-        self.console.print("[muted]Exiting Theseus.[/muted]")
+        self.console.print(Text("Exiting.", style="muted"))
+
+    def _panel(
+        self,
+        renderable: object,
+        *,
+        title: str,
+    ) -> None:
+        """Render a consistently styled terminal panel."""
+        self.console.print(
+            Panel(
+                renderable,
+                title=title,
+                border_style="border",
+                expand=False,
+            )
+        )
+
+    def _message(
+        self,
+        message: str,
+        *,
+        title: str = "Notice",
+        status: str = "info",
+    ) -> None:
+        """Render a standard terminal message."""
+        styles = {
+            "info": "primary",
+            "success": "success",
+            "warning": "warning",
+            "error": "error",
+        }
+
+        self.console.print(
+            Panel(
+                Text(message, style="text"),
+                title=title,
+                border_style=styles.get(status, "border"),
+                expand=False,
+            )
+        )

@@ -28,167 +28,145 @@
 
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge\&logo=python\&logoColor=white)
 
+</div>
+
 # Theseus
 
-Theseus is an extensible OSINT investigation tool designed to explore publicly available information, investigate digital targets, and organize findings into structured reports.
+**A digital artefact extraction and intelligence platform.**
 
-Give Theseus a target, and it investigates the information associated with it using a growing collection of intelligence-gathering capabilities. Its own tools and integrations with existing services work together within a unified investigation environment, helping investigators move from an initial lead toward a more coherent picture.
+Theseus discovers, extracts, classifies, and correlates entities hidden within digital artefacts. It transforms raw digital information into structured, traceable intelligence that can be investigated further.
 
-Theseus is an **internet explorer, not a search engine**. It is built to investigate, not merely retrieve: examining digital footprints, uncovering connections, and organizing findings that can support further investigation.
+From email headers and browser metadata to document properties, network traffic, operating-system artefacts, and online infrastructure, Theseus provides a unified framework for extracting meaningful information from the digital world.
 
----
+## Overview
 
-## Current Status
+Digital artefacts contain more information than their visible contents suggest. An email can expose its routing infrastructure. A document can reveal its author and creation history. A website can disclose related domains, account identifiers, external services, and embedded resources. A system log can connect accounts, devices, processes, and network activity.
 
-**Current release:** v0.7.0
+Theseus is designed to extract these details systematically, identify the entities they reveal, and establish relationships between them.
 
-**Development stage:** Collector Architecture Overhaul
+Rather than requiring an investigator to begin with a known email address, domain, IP address, or username, Theseus can begin with the artefact itself.
 
-Theseus is transitioning to a registry-based architecture designed to support multiple entity types, specialized collectors, and structured investigation reports.
+**The artefact is the starting point. The entities it reveals are the leads.**
 
-The current pipeline implements **email investigation**. Other entity types are registered within the architecture but are not yet supported by the new investigation workflow.
+## Core capabilities
 
-Development is progressing toward v1.0.0, which will establish the first stable release of the email investigation workflow.
+### Artefact extraction
 
-## Installation
+Theseus processes digital artefacts across multiple formats and environments, extracting structured information from their contents and metadata.
 
-Theseus is designed to run as a command-line application. Users should be able to launch it by typing `theseus` in their terminal without manually activating a Python virtual environment.
+Supported artefact categories include:
 
-We recommend [pipx](https://pipx.pypa.io/stable/), which installs command-line applications in isolated environments while making their commands available from the terminal.
+- **Web and browser:** HTTP headers, HTML, cookies, browser history, local storage, redirects, web archives, and application metadata.
+- **Email and communications:** Email headers, MIME messages, attachments, SMS/MMS exports, chat records, contact cards, and call metadata.
+- **Internet infrastructure:** DNS records, TLS certificates, Certificate Transparency entries, WHOIS/RDAP data, IP allocation records, routing information, and service banners.
+- **Files and documents:** PDF, Office documents, images, audio, video, archives, file metadata, hashes, digital signatures, and embedded resources.
+- **Operating systems:** Windows Registry and event logs, macOS system artefacts, Linux logs, filesystem metadata, execution traces, and device records.
+- **Network traffic:** PCAP/PCAPNG captures, HTTP exchanges, DNS traffic, TLS handshakes, flow records, firewall logs, and network configuration.
+- **Identity and authentication:** Account identifiers, usernames, credential records, cookies, API keys, tokens, certificates, and exposed secrets.
+- **Social platforms:** Public profiles, posts, comments, account identifiers, linked accounts, and publicly accessible platform data.
+- **Mobile devices:** Application databases, device backups, messages, contacts, call records, media metadata, and application configuration.
+- **Software and repositories:** Git history, package manifests, dependency lockfiles, source code, build logs, API specifications, and infrastructure configuration.
+- **Databases and structured data:** JSON, XML, YAML, CSV, SQL dumps, SQLite databases, spreadsheets, and API response archives.
+- **Cloud and enterprise systems:** Audit logs, resource inventories, identity-provider records, SaaS activity, cloud configurations, and object-storage metadata.
+- **Corporate and public records:** Company filings, annual reports, securities disclosures, patents, procurement records, public datasets, and organisational documents.
+- **Geospatial and multimedia:** EXIF GPS data, GPX tracks, KML/KMZ, GeoJSON, OCR text, transcripts, and media fingerprints.
 
-### Requirements
+### Entity identification
 
-- Python 3.10 or later
-- Git
-- pipx
+Extracted information is normalised into consistent entity types, including:
 
-Install pipx if it is not already available on your system. On macOS with Homebrew:
+- People and organisations
+- Email addresses and telephone numbers
+- Usernames and online accounts
+- Domains, URLs, and IP addresses
+- Physical addresses and geographic coordinates
+- Files, hashes, certificates, and cryptographic fingerprints
+- Device and account identifiers
+- Software packages, repositories, and infrastructure resources
+- Transactions, timestamps, and other domain-specific identifiers
+- Credentials and other sensitive information requiring controlled handling
 
-```bash
-brew install pipx
-pipx ensurepath
-```
+Theseus identifies entities regardless of which supported artefact reveals them, allowing the same entity to be recognised across different sources and formats.
 
-Restart your terminal if necessary.
+### Relationship discovery
 
-### Install Theseus
+Individual findings become more useful when their relationships can be examined together.
 
-After the corrected v0.7.1 release has been published, install it with:
+Theseus connects extracted entities to their originating artefacts and records relationships such as:
 
-```bash
-pipx install "git+https://github.com/Proxy-Phaethon/theseus.git@v0.7.1"
-```
+- A document containing an email address.
+- An email referencing a domain.
+- A certificate listing several hostnames.
+- A repository referencing an external service.
+- A browser record pointing to a URL.
+- A corporate filing associating a person with an organisation.
+- A configuration file referencing an IP address or service.
+- Multiple artefacts containing the same identifier.
 
-Launch Theseus:
+Relationships retain their supporting evidence and are distinguished from assumptions or inferred associations.
 
-```bash
-theseus
-```
+### Iterative investigation
 
-No manual virtual-environment activation is required.
+Entity extraction and investigation operate as a continuous pipeline.
 
-### Update Theseus
+1. An investigator supplies a digital artefact or supported data source.
+2. Theseus identifies and parses the artefact.
+3. Extracted entities are classified, normalised, and deduplicated.
+4. Each entity is linked to its source and relevant contextual information.
+5. Appropriate investigation modules process eligible entities.
+6. New findings reveal additional entities and relationships.
+7. The process continues as new leads are discovered.
+8. Results are consolidated into a traceable body of intelligence.
 
-To install a newer release:
+This allows an investigation to expand beyond its initial input without requiring every subsequent entity to be identified manually.
 
-```bash
-pipx upgrade theseus
-```
+### Investigation and enrichment
 
-If you need to install a particular tagged version:
+Theseus integrates specialised collectors to gather additional information about discovered entities.
 
-```bash
-pipx install --force "git+https://github.com/Proxy-Phaethon/theseus.git@v0.7.1"
-```
+Collectors are selected according to entity type and investigation context. Email addresses, domains, IP addresses, URLs, usernames, and other identifiers are routed to relevant modules rather than indiscriminately submitted to every available tool.
 
-### Uninstall Theseus
+Collected results are normalised and associated with their sources, allowing findings from different tools to be compared and correlated.
 
-```bash
-pipx uninstall theseus
-```
+### Evidence provenance and sensitive-data handling
 
-This removes the pipx installation without requiring you to delete your development repository.
+Every finding retains its relationship to the artefact or source from which it originated.
 
-## Usage
+Theseus records relevant acquisition details, timestamps, source locations, extraction methods, and integrity information. Direct observations are distinguished from derived values and inferred relationships.
 
-Start Theseus:
+Sensitive findings, including exposed credentials, session cookies, API keys, and authentication tokens, are recorded through a controlled evidence-handling workflow. Raw sensitive values are protected through encryption, access controls, and appropriate retention policies. Routine output redacts secrets while preserving sufficient information to identify, track, and remediate repeated exposures.
 
-```bash
-theseus
-```
+The objective is not simply to discover information, but to preserve the context necessary to evaluate it responsibly.
 
-Enter a target at the prompt:
+## Design principles
 
-```text
-> someone@example.com
-```
+**Artefact-first discovery.** Investigations can begin with raw digital evidence rather than a predetermined entity.
 
-Theseus identifies the target type and routes it through the available investigation workflow. During execution, the terminal interface displays progress. When collection finishes, the email responder organizes the results into a structured report.
+**Extensibility.** New parsers, entity types, and collectors integrate through defined interfaces.
 
-### Available commands
+**Provenance by default.** Findings retain their source and the context in which they were discovered.
 
-At the Theseus prompt:
+**Context-aware routing.** Entities are sent only to relevant investigation modules.
 
-- `help` displays available commands.
-- `about` describes the project.
-- `status` displays implementation status for registered entity types.
-- `history` displays previous targets entered during the session.
-- `clear` clears the terminal.
-- `q` exits Theseus.
+**Separation of evidence and inference.** Direct observations, transformations, and inferred relationships remain distinguishable.
 
-### Current investigation support
+**Responsible sensitive-data handling.** Exposure findings are preserved for investigation and remediation without unnecessarily exposing secrets in routine outputs.
 
-Email addresses are currently supported by the new investigation pipeline.
+**Reproducibility.** Extraction and investigation results retain the information needed to understand how they were obtained.
 
-Other entity types may be recognized by the identifier, but recognition does not mean their investigation workflows are implemented. Theseus will report when a workflow is unavailable rather than treating an unsupported target as a completed investigation.
+## Project goal
 
-## How Theseus Works
+Theseus aims to provide a unified system for discovering entities across the digital environment, from publicly accessible online resources to local files, applications, operating systems, and network records.
 
-Theseus separates target identification, collection, execution, and report presentation.
+Its purpose is to reduce the gap between encountering a digital artefact and understanding the information, identifiers, and relationships it contains.
 
-**Identifier:** Determines the type of target supplied by the user.
+**Theseus v1.0.0 establishes the artefact extractor as the foundation of the platform, with entity investigation and relationship discovery built around the information it uncovers.**
 
-**Collector Registry:** Defines the available investigation components for each entity type.
+## Version
 
-**Executor:** Runs the applicable normalizer and collectors, records execution outcomes, and isolates individual collector failures.
+**Target release:** v1.0.0
 
-**Responders:** Organize collected observations into a structured investigation report.
-
-**Terminal Interface:** Provides the interactive CLI, progress feedback, commands, and report presentation.
-
-This separation allows investigation capabilities to grow without placing all collection and presentation logic inside the main application.
-
-## Email Investigation
-
-Email investigation is the first workflow being developed within the new architecture.
-
-Depending on the available information, the report can include:
-
-- **Email validation:** Address syntax and normalization.
-- **Domain information:** Information associated with the email domain.
-- **Mail infrastructure:** Mail exchange records.
-- **Email security:** Available DNS-based email security observations.
-- **Breach exposure:** Results returned by the configured breach lookup.
-- **Associated services:** Account-discovery findings where the relevant collectors are implemented.
-- **Execution summary:** Collector statuses, elapsed time, and errors.
-
-The information returned depends on the target, the available data, the behavior of external services, and the implementation status of individual collectors.
-
-A successful investigation execution does not mean every check returned a positive finding. Missing records, unavailable sources, inconclusive results, and collector errors must be interpreted separately.
-
-### Interpreting results
-
-Theseus organizes observations to support further investigation. Its reports should not be treated as automatic proof of identity, account ownership, compromise, or malicious activity.
-
-A missing result does not necessarily establish that information does not exist. Findings should be assessed in context and corroborated where appropriate.
-
-## Reliability and Error Handling
-
-An investigation can involve multiple independent collectors. One collector may fail while others return useful results.
-
-Theseus is designed to preserve the outcomes of individual collectors, distinguish execution failures from ordinary negative or inconclusive results, and present the findings that remain available.
-
-The objective is to make the investigation process transparent rather than allowing one failed source to invalidate the entire report.
+The v1.0.0 release represents the redesigned Theseus architecture, bringing artefact extraction, entity identification, provenance tracking, investigation routing, and relationship analysis together as a cohesive system.
 
 ## Contributing
 

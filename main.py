@@ -1,110 +1,265 @@
-"""Theseus entry point.
-
-Receives command-line input and coordinates the
-identification, extraction, and response pipeline.
-"""
+"""Theseus interactive terminal application."""
 
 from __future__ import annotations
 
-import argparse
+import shlex
 import sys
+
+from rich.text import Text
 
 from core.packets import Packet, PacketStatus
 from core.identifier import Identifier
 from core.executor import Executor
 from core.responder import Responder
 
-FLAGS = (
-    "url", "domain", "dns", "ip", "cidr", "hostname", "redirect",
-    "http", "webpage", "javascript", "css", "asn", "mac", "bssid",
-    "port", "certificate", "tls", "pcap", "flow", "file", "hash",
-    "pdf", "office", "image", "audio", "video", "archive", "binary",
-    "font", "shortcut", "directory", "email", "email_headers",
-    "message_id", "contact", "calendar", "vcf", "ics",
-    "git_repository", "git_commit", "package", "sbom", "container",
-    "api_spec", "cve", "json", "xml", "csv", "sqlite", "config",
-    "env", "registry", "log", "browser", "har",
-)
+from ui.banner import render_banner
+from ui.commands import CommandHandler
+from ui.progress import ProgressDisplay
+from ui.terminal import detect_terminal, create_terminal_console
 
-def parse_arguments() -> tuple[str | None, str | None]:
-    """Parse the command-line arguments."""
+VERSION = "1.0.0"
 
-    parser = argparse.ArgumentParser(
-        prog="theseus",
-        description="Digital artefact extraction tool.",
-    )
+DESCRIPTION = "Digital artefact extraction tool."
 
-    group = parser.add_mutually_exclusive_group()
+class Theseus:
+    """Coordinate the interactive Theseus terminal session."""
 
-    for flag in FLAGS:
-        group.add_argument(
-            f"--{flag}",
-            dest=flag,
-            nargs="?",
-            const=None,
-            default=argparse.SUPPRESS,
-            metavar="INPUT",
-            help=f"Input for the {flag} extractor.",
+    def __init__(self) -> None:
+        self.config = detect_terminal()
+        self.console = create_terminal_console(self.config)
+
+        self.identifier = Identifier()
+        self.executor = Executor()
+        self.responder = Responder()
+
+        self.commands = CommandHandler(
+            console=self.console,
+            app_name="Theseus",
+            version=VERSION,
+            description=DESCRIPTION,
         )
 
-    arguments, unknown = parser.parse_known_args()
-    supplied = vars(arguments)
+    def start(self) -> None:
+        """Launch the application and maintain the input loop."""
 
-    for flag in FLAGS:
-        if flag in supplied:
-            return f"--{flag}", supplied[flag]
+        render_banner(
+            self.console,
+            version=VERSION,
+            subtitle="DIGITAL ARTEFACT EXTRACTION TOOL",
+        )
 
-    # Pass unknown flags to the identifier so it can reject them.
-    if unknown and unknown[0].startswith("-"):
-        flag = unknown[0]
-        value = unknown[1] if len(unknown) > 1 else None
-        return flag, value
+        self.console.print(
+            Text(
+                "Enter an extraction flag followed by its input.",
+                style="muted",
+            )
+        )
+        self.console.print(
+            Text("Type 'help' to see available commands.", style="muted")
+        )
+        self.console.print()
 
-    return None, None
+        while not self.commands.should_quit:
+            try:
+                user_input = self.console.input(
+                    "[primary]theseus[/primary] [muted]>[/muted] "
+                ).strip()
+
+                if not user_input:
+                    continue
+
+                self.handle_input(user_input)
+
+            except KeyboardInterrupt:
+                self.console.print()
+                self.console.print(
+                    Text(
+                        "Use 'q' or 'quit' to exit Theseus.",
+                        style="muted",
+                    )
+                )
+
+            except EOFError:
+                self.console.print()
+                self.commands.should_quit = True
+
+        self.console.print(Text("Session terminated.", style="muted"))
+
+    def handle_input(self, user_input: str) -> None:
+        """Determine whether input is a command or extraction request."""
+
+        if self.commands.execute(user_input):
+            return
+
+        try:
+            parts = shlex.split(user_input)
+        except ValueError as exc:
+            self.console.print(
+                Text(f"Invalid input syntax: {exc}", style="error")
+            )
+            return
+
+        if not parts:
+            return
+
+        flag = parts[0]
+
+        if not flag.startswith("--"):
+            self.console.print(
+                Text(
+                    "Unrecognised command or input. Type 'help' for assistance.",
+                    style="warning",
+                )
+            )
+            return
+
+        if len(parts) < 2:
+            value = None
+        else:
+            value = " ".join(parts[1:])
+
+        self.process_request(flag, value)
+
+    def process_request(
+        self,
+        flag: str,
+        value: str | None,
+    ) -> None:
+        """Run the identification and extraction pipeline."""
+
+        packet = Packet(
+            stage="input",
+            artefact_type="unknown",
+            input=value,
+            metadata={
+                "flag": flag,
+            },
+        )
+
+        progress = ProgressDisplay(
+            console=self.console,
+            animate=self.config.animate,
+        )
+
+        progress.register(
+            "Identification",
+            "Checking input type and structure.",
+        )
+        progress.register(
+            "Extraction",
+            "Waiting for identification.",
+        )
+
+        progress.start()
+
+        try:
+            # Identification
+            progress.start_task(
+                "Identification",
+                "Validating supplied input.",
+            )
+
+            report = self.identifier.identify(packet)
+
+            if report.status != PacketStatus.SUCCESS:
+                progress.fail(
+                    "Identification",
+                    "Input was not recognised or supported.",
+                )
+                progress.skip(
+                    "Extraction",
+                    "Identification unsuccessful.",
+                )
+
+                progress.finish()
+                self.display_result(report)
+                return
+
+            progress.complete(
+                "Identification",
+                f"Recognised {report.artefact_type} input.",
+            )
+
+            # Extraction
+            progress.start_task(
+                "Extraction",
+                "Running the corresponding extractor.",
+            )
+
+            result = self.executor.execute(report)
+
+            if result.status == PacketStatus.SUCCESS:
+                progress.complete(
+                    "Extraction",
+                    "Extraction completed successfully.",
+                )
+            elif result.status == PacketStatus.PARTIAL_SUCCESS:
+                progress.partial(
+                    "Extraction",
+                    "Extraction completed with partial results.",
+                )
+            elif result.status in {
+                PacketStatus.NOT_IMPLEMENTED,
+                PacketStatus.NOT_SUPPORTED,
+            }:
+                progress.skip(
+                    "Extraction",
+                    "No available extractor for this input.",
+                )
+            else:
+                progress.fail(
+                    "Extraction",
+                    "Extraction failed.",
+                )
+
+            progress.finish()
+            self.display_result(result)
+
+            if result.status in {
+                PacketStatus.SUCCESS,
+                PacketStatus.PARTIAL_SUCCESS,
+            }:
+                self.commands.record_history(
+                    str(value)
+                )
+
+        except Exception as exc:
+            progress.finish()
+
+            self.console.print(
+                Text(
+                    f"An unexpected error occurred: {exc}",
+                    style="error",
+                )
+            )
+
+    def display_result(self, packet: Packet) -> None:
+        """Format and display an extraction result."""
+
+        response = self.responder.respond(packet)
+
+        self.console.print()
+        self.console.print(
+            response,
+            markup=False,
+            highlight=False,
+        )
+        self.console.print()
 
 def main() -> None:
-    """Run the Theseus pipeline."""
+    """Application entry point."""
 
-    flag, value = parse_arguments()
-
-    packet = Packet(
-        stage="input",
-        artefact_type="unknown",
-        input=value,
-        metadata={
-            "flag": flag,
-        },
-    )
-
-    identifier = Identifier()
-    executor = Executor()
-    responder = Responder()
-
-    # Identification
-    report = identifier.identify(packet)
-
-    if report.status != PacketStatus.SUCCESS:
-        print(responder.respond(report))
-        return
-
-    # Extraction
-    result = executor.execute(report)
-
-    # Response
-    # Supports the current Executor returning a Packet.
-    if isinstance(result, Packet):
-        response = responder.respond(result)
-    else:
-        response = result
-
-    print(response)
-
-if __name__ == "__main__":
     try:
-        main()
+        application = Theseus()
+        application.start()
+
     except KeyboardInterrupt:
-        print("\nProcess interrupted.")
+        print("\nTheseus interrupted.")
         sys.exit(130)
+
     except Exception as exc:
         print(f"Theseus encountered an unexpected error: {exc}")
         sys.exit(1)
+
+if __name__ == "__main__":
+    main()

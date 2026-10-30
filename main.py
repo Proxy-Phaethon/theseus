@@ -1,96 +1,110 @@
+"""Theseus entry point.
+
+Receives command-line input and coordinates the
+identification, extraction, and response pipeline.
+"""
+
 from __future__ import annotations
 
-from rich.console import Console
+import argparse
+import sys
 
-from core.identifier import identify
-from core.registry import ExtractorRegistry
+from core.packets import Packet, PacketStatus
+from core.identifier import Identifier
 from core.executor import Executor
 from core.responder import Responder
 
-from ui.banner import render_banner
-from ui.terminal import detect_terminal, create_terminal_console
+FLAGS = (
+    "url", "domain", "dns", "ip", "cidr", "hostname", "redirect",
+    "http", "webpage", "javascript", "css", "asn", "mac", "bssid",
+    "port", "certificate", "tls", "pcap", "flow", "file", "hash",
+    "pdf", "office", "image", "audio", "video", "archive", "binary",
+    "font", "shortcut", "directory", "email", "email_headers",
+    "message_id", "contact", "calendar", "vcf", "ics",
+    "git_repository", "git_commit", "package", "sbom", "container",
+    "api_spec", "cve", "json", "xml", "csv", "sqlite", "config",
+    "env", "registry", "log", "browser", "har",
+)
 
-EXIT_COMMANDS = {"exit", "quit", "q"}
+def parse_arguments() -> tuple[str | None, str | None]:
+    """Parse the command-line arguments."""
 
-def build_pipeline() -> tuple[ExtractorRegistry, Executor, Responder]:
-    """Discover extractors and assemble the Theseus processing pipeline."""
-    registry = ExtractorRegistry()
-    registry.discover()
+    parser = argparse.ArgumentParser(
+        prog="theseus",
+        description="Digital artefact extraction tool.",
+    )
 
-    executor = Executor(registry)
-    responder = Responder()
+    group = parser.add_mutually_exclusive_group()
 
-    return registry, executor, responder
+    for flag in FLAGS:
+        group.add_argument(
+            f"--{flag}",
+            dest=flag,
+            nargs="?",
+            const=None,
+            default=argparse.SUPPRESS,
+            metavar="INPUT",
+            help=f"Input for the {flag} extractor.",
+        )
 
-def process_input(
-    user_input: str,
-    executor: Executor,
-    responder: Responder,
-) -> object:
-    """Run input through identification, extraction, and response formatting."""
+    arguments, unknown = parser.parse_known_args()
+    supplied = vars(arguments)
 
-    # 1. Identify the artefacts present in the input.
-    identification_packet = identify(user_input)
+    for flag in FLAGS:
+        if flag in supplied:
+            return f"--{flag}", supplied[flag]
 
-    # 2. Dispatch the identified artefacts to compatible extractors.
-    extraction_packets = executor.execute(identification_packet)
+    # Pass unknown flags to the identifier so it can reject them.
+    if unknown and unknown[0].startswith("-"):
+        flag = unknown[0]
+        value = unknown[1] if len(unknown) > 1 else None
+        return flag, value
 
-    # 3. Aggregate and format the extractor responses.
-    report = responder.respond(extraction_packets)
-
-    # 4. Return the formatted report to the terminal interface.
-    return report.renderable
+    return None, None
 
 def main() -> None:
-    """Run the Theseus interactive terminal interface."""
+    """Run the Theseus pipeline."""
 
-    terminal_config = detect_terminal()
-    console: Console = create_terminal_console(terminal_config)
+    flag, value = parse_arguments()
 
-    render_banner(console)
-
-    registry, executor, responder = build_pipeline()
-
-    console.print(
-        f"[dim]Loaded {len(registry)} extractors.[/dim]"
-    )
-    console.print(
-        "[dim]Enter an artefact to investigate, or type 'exit' to quit.[/dim]\n"
+    packet = Packet(
+        stage="input",
+        artefact_type="unknown",
+        input=value,
+        metadata={
+            "flag": flag,
+        },
     )
 
-    while True:
-        try:
-            user_input = console.input("[bold cyan]theseus > [/bold cyan]").strip()
+    identifier = Identifier()
+    executor = Executor()
+    responder = Responder()
 
-            if not user_input:
-                continue
+    # Identification
+    report = identifier.identify(packet)
 
-            if user_input.lower() in EXIT_COMMANDS:
-                console.print("[dim]Theseus shutting down.[/dim]")
-                break
+    if report.status != PacketStatus.SUCCESS:
+        print(responder.respond(report))
+        return
 
-            response = process_input(
-                user_input=user_input,
-                executor=executor,
-                responder=responder,
-            )
+    # Extraction
+    result = executor.execute(report)
 
-            console.print()
-            console.print(response)
-            console.print()
+    # Response
+    # Supports the current Executor returning a Packet.
+    if isinstance(result, Packet):
+        response = responder.respond(result)
+    else:
+        response = result
 
-        except KeyboardInterrupt:
-            console.print("\n[dim]Theseus shutting down.[/dim]")
-            break
-
-        except EOFError:
-            console.print("\n[dim]Input stream closed.[/dim]")
-            break
-
-        except Exception as exc:
-            console.print(
-                f"[bold red]Pipeline error:[/bold red] {exc}"
-            )
+    print(response)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\nProcess interrupted.")
+        sys.exit(130)
+    except Exception as exc:
+        print(f"Theseus encountered an unexpected error: {exc}")
+        sys.exit(1)

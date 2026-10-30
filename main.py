@@ -239,11 +239,7 @@ class Theseus:
         response = self.responder.respond(packet)
 
         self.console.print()
-        self.console.print(
-            response,
-            markup=False,
-            highlight=False,
-        )
+        self.console.print(response)
         self.console.print()
 
 def main() -> None:

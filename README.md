@@ -32,120 +32,221 @@
 
 # Theseus
 
-**A digital artefact extraction and intelligence platform.**
+**Digital Artefact Extraction Tool**
 
-Theseus discovers, extracts, classifies, and correlates entities hidden within digital artefacts. It transforms raw digital information into structured, traceable intelligence that can be investigated further.
+Theseus is a modular command-line tool for identifying and extracting structured information from digital artefacts.
 
-From email headers and browser metadata to document properties, network traffic, operating-system artefacts, and online infrastructure, Theseus provides a unified framework for extracting meaningful information from the digital world.
+It accepts artefacts as input, identifies their type, and dispatches them to specialised extractors. Each extractor returns its results in a standardised data structure, preserving the information's provenance and any explicitly identified entities or related entities.
 
-## Overview
+The artefact is the starting point. The entities it reveals are the leads.
 
-Digital artefacts contain more information than their visible contents suggest. An email can expose its routing infrastructure. A document can reveal its author and creation history. A website can disclose related domains, account identifiers, external services, and embedded resources. A system log can connect accounts, devices, processes, and network activity.
+## Features
 
-Theseus is designed to extract these details systematically, identify the entities they reveal, and establish relationships between them.
-
-Rather than requiring an investigator to begin with a known email address, domain, IP address, or username, Theseus can begin with the artefact itself.
-
-**The artefact is the starting point. The entities it reveals are the leads.**
-
-## Core Capabilities
-
-### Artefact Extraction
-
-Theseus processes digital artefacts across multiple formats and environments, extracting structured information from their contents and metadata.
-
-Supported artefact categories include:
-
-- **Web and browser:** HTTP headers, HTML, cookies, browser history, local storage, redirects, web archives, and application metadata.
-- **Email and communications:** Email headers, MIME messages, attachments, SMS/MMS exports, chat records, contact cards, and call metadata.
-- **Internet infrastructure:** DNS records, TLS certificates, Certificate Transparency entries, WHOIS/RDAP data, IP allocation records, routing information, and service banners.
-- **Files and documents:** PDF and Office documents, images, audio, video, archives, file metadata, hashes, digital signatures, and embedded resources.
-- **Operating systems:** Windows Registry and event logs, macOS system artefacts, Linux logs, filesystem metadata, execution traces, and device records.
-- **Network traffic:** PCAP/PCAPNG captures, HTTP exchanges, DNS traffic, TLS handshakes, flow records, firewall logs, and network configuration.
-- **Identity and authentication:** Account identifiers, usernames, credential records, cookies, API keys, tokens, certificates, and exposed secrets.
-- **Social platforms:** Public profiles, posts, comments, account identifiers, linked accounts, and publicly accessible platform data.
-- **Mobile devices:** Application databases, device backups, messages, contacts, call records, media metadata, and application configuration.
-- **Software and repositories:** Git history, package manifests, dependency lockfiles, source code, build logs, API specifications, and infrastructure configuration.
-- **Databases and structured data:** JSON, XML, YAML, CSV, SQL dumps, SQLite databases, spreadsheets, and API response archives.
-- **Cloud and enterprise systems:** Audit logs, resource inventories, identity-provider records, SaaS activity, cloud configurations, and object-storage metadata.
-- **Corporate and public records:** Company filings, annual reports, securities disclosures, patents, procurement records, public datasets, and organisational documents.
-- **Geospatial and multimedia:** EXIF GPS data, GPX tracks, KML/KMZ, GeoJSON, OCR text, transcripts, and media fingerprints.
+- **Artefact identification** — Validates input and identifies the corresponding artefact type.
+- **Modular extraction** — Uses specialised extractors for different digital artefacts.
+- **Structured output** — Returns extraction results through a consistent Packet format.
+- **Entity extraction** — Records entities explicitly identified within source artefacts.
+- **Provenance tracking** — Preserves the origin and context of extracted information.
+- **Extensible architecture** — Allows individual extractors to be developed and maintained independently.
+- **Terminal interface** — Provides an interactive command-line environment with status reporting and formatted results.
 
 ## Architecture
 
+Theseus follows a sequential processing architecture. Each stage has a defined responsibility and communicates through a shared Packet structure.
+
 ```mermaid
 flowchart TD
-    A["main.py<br/>Receive user input"]
-    B["core/packets.py<br/>Create initial packet"]
-    C["core/identifier.py<br/>Identify and classify artefacts"]
-    D["core/registry.py<br/>Access registered extractors"]
-    E["core/executor.py<br/>Scope tasks and route inputs"]
+    USER([User Input])
 
-    A --> B --> C --> D --> E
+    subgraph UI["UI Layer"]
+        COMMANDS["Command Handler"]
+        TERMINAL["Terminal Interface"]
+        PROGRESS["Progress Display"]
+        PRESENTATION["Panels and Status"]
+    end
 
-    E --> F["Create child task packets<br/>Shared request_id<br/>Unique task_id"]
-    F --> G["Select relevant extractors"]
+    subgraph CORE["Core Processing"]
+        MAIN["main.py"]
+        PACKETS["core/packets.py"]
+        IDENTIFIER["core/identifier.py"]
+        EXECUTOR["core/executor.py"]
+        RESPONDER["core/responder.py"]
+    end
 
-    G --> H1["Web and browser"]
-    G --> H2["Email and messages"]
-    G --> H3["Network and infrastructure"]
-    G --> H4["Other extractor categories"]
+    subgraph EXTRACTORS["Extractors"]
+        URL["extractors/url.py"]
+        FUTURE["Additional Extractors"]
+    end
 
-    H1 --> I["Return standard result packets"]
-    H2 --> I
-    H3 --> I
-    H4 --> I
+    USER --> MAIN
+    MAIN <--> COMMANDS
+    MAIN --> PACKETS
+    PACKETS --> IDENTIFIER
 
-    I --> J["core/responder.py<br/>Aggregate and correlate results"]
-    J --> K["Process shared envelope fields"]
-    K --> L["Interpret extractor-specific data"]
-    L --> M["Build investigation response"]
-    M --> N["main.py<br/>Display through existing UI"]
+    IDENTIFIER -->|Valid input| EXECUTOR
+    IDENTIFIER -->|Invalid input| RESPONDER
 
-    J -.->|"Discoveries may create new tasks"| E
+    EXECUTOR -->|Matching extractor| URL
+    EXECUTOR -.->|Future extractors| FUTURE
 
-    classDef core fill:#e8eefc,stroke:#4968a8,color:#172b4d
-    classDef extract fill:#e6f4ea,stroke:#4c956c,color:#193d28
-    classDef task fill:#fff0d9,stroke:#c58b35,color:#51380e
+    URL --> RESPONDER
+    FUTURE -.-> RESPONDER
 
-    class A,B,C,D,E,J,K,L,M,N core
-    class H1,H2,H3,H4 extract
-    class F,G,I task
+    RESPONDER --> MAIN
+    MAIN --> TERMINAL
+    MAIN -.-> PROGRESS
+    MAIN -.-> PRESENTATION
 ```
 
-The architecture separates five principal responsibilities:
+### Processing pipeline
 
-1. **Identification:** Determine what kind of artefact or input has been supplied.
-2. **Registration:** Make available the extractors capable of processing relevant inputs.
-3. **Execution:** Create, scope, and route extraction tasks.
-4. **Interpretation:** Normalise and correlate the results returned by extractors.
-5. **Presentation:** Deliver the resulting investigation response through the existing interface.
+| Component | Responsibility |
+|---|---|
+| `main.py` | Receives input, coordinates processing, and presents results. |
+| `core/packets.py` | Defines the shared Packet structure used throughout the pipeline. |
+| `core/identifier.py` | Validates input and identifies the requested artefact type. |
+| `core/executor.py` | Dispatches the identified input to its corresponding extractor. |
+| `extractors/` | Contains specialised modules responsible for extracting artefact data. |
+| `core/responder.py` | Formats extraction results for presentation. |
+| `ui/` | Provides the terminal interface and presentation components. |
 
-The registry and executor provide the foundation for extending the platform with additional extractors without restructuring the entire investigation workflow.
+## Packet Structure
 
-## Investigation Workflow
+All processing stages communicate through a standardised Packet envelope.
 
-A typical investigation follows this sequence:
+This provides a consistent structure for requests, extraction results, and errors, regardless of the artefact being processed.
 
-1. An investigator supplies an artefact or supported input through the main interface.
-2. Theseus creates an initial packet representing the request.
-3. The identifier classifies the input and determines the relevant artefact or entity types.
-4. The registry provides access to suitable extractors.
-5. The executor creates and routes individual extraction tasks.
-6. Extractors process their assigned inputs and return structured results.
-7. The responder aggregates the results, interprets extractor-specific data, and identifies relationships between findings.
-8. Newly discovered entities can trigger additional extraction tasks.
-9. Theseus assembles the findings into an investigation response for presentation.
+Each Packet contains the following fields:
 
-Each task remains associated with its originating request, providing a basis for tracing findings back to the extraction operations that produced them.
+| Field | Description |
+|---|---|
+| `request_id` | Identifies the original request. |
+| `task_id` | Identifies the current processing task. |
+| `parent_task_id` | Identifies the parent task, where applicable. |
+| `stage` | Indicates the current processing stage. |
+| `artefact_type` | Identifies the artefact being processed. |
+| `input` | Contains the supplied input. |
+| `source` | Records the source of the artefact. |
+| `status` | Represents the processing state. |
+| `data` | Stores extracted information. |
+| `entities` | Stores entities explicitly identified in the artefact. |
+| `related_entities` | Stores explicitly identified related information. |
+| `provenance` | Records the origin and context of extracted data. |
+| `errors` | Records errors and warnings encountered during processing. |
+| `metadata` | Stores supplementary processing information. |
 
-## Version
+The Packet structure ensures that extractors can operate independently without introducing inconsistencies into the wider processing pipeline.
 
-**Target release: v1.0.0**
+## Extractor Scope
 
-Theseus v1.0.0 establishes the artefact extractor as the foundation of the platform, with entity investigation and relationship discovery built around the information it uncovers.
+Theseus is designed to support a broad range of digital artefacts, organised into specialised extraction categories.
 
-The release centres on a unified packet contract, modular extractor registration, controlled task execution, structured result aggregation, and an architecture designed to support increasingly complex investigations.
+| Category | Artefact types |
+|---|---|
+| Web and Browser | URLs, redirects, HTTP responses, webpages, JavaScript, CSS, HAR files |
+| Network and Infrastructure | IP addresses, CIDR ranges, hostnames, ASNs, MAC addresses, BSSIDs, ports, certificates, TLS, PCAP files, network flows |
+| Files and Documents | File metadata, hashes, PDFs, office documents, archives, binaries, fonts, shortcuts, directories |
+| Media | Images, audio, video |
+| Email and Communications | Email addresses, email headers, message IDs, contacts, calendars, VCF, ICS |
+| Software and Development | Git repositories, commits, packages, SBOMs, containers, API specifications, CVEs |
+| Structured Data | JSON, XML, CSV, SQLite |
+| Operating Systems | Configuration files, environment variables, registry artefacts, logs, browser artefacts |
+
+Each artefact type is handled by a dedicated extractor. This keeps extraction logic isolated and allows new capabilities to be introduced without restructuring the core pipeline.
+
+### Example
+
+```text
+theseus > --url https://github.com
+```
+
+Example extraction output:
+
+```text
+Artefact    url
+Status      SUCCESS
+
+Results
+  Url               https://github.com
+  Scheme            https
+  Hostname          github.com
+  Domain            github.com
+  Port              None
+  Path              None
+  Query Parameters  None
+  Fragment          None
+```
+
+Output fields depend on the artefact and the information available for extraction.
+
+## Design Principles
+
+**Modularity**
+
+Each extractor is responsible for one artefact type. Extraction logic remains independent of the terminal interface and other extractors.
+
+**Consistency**
+
+Every processing stage uses the shared Packet structure. Extractors return standardised results rather than defining their own output formats.
+
+**Traceability**
+
+Extracted information retains its provenance. Explicitly identified entities and related entities are recorded without inventing relationships or drawing unsupported conclusions.
+
+**Separation of Concerns**
+
+Identification, execution, extraction, response formatting, and terminal presentation are handled by separate components.
+
+**Extensibility**
+
+New extractors can be introduced independently, provided they follow the shared Packet contract.
+
+## Project Structure
+
+```text
+theseus/
+│
+├── core/
+│   ├── packets.py
+│   ├── identifier.py
+│   ├── executor.py
+│   └── responder.py
+│
+├── extractors/
+│   └── url.py
+│
+├── ui/
+│   ├── assets/
+│   ├── banner.py
+│   ├── commands.py
+│   ├── panels.py
+│   ├── progress.py
+│   ├── status.py
+│   ├── terminal.py
+│   └── theme.py
+│
+├── main.py
+└── README.md
+```
+
+Additional extractor modules are organised within the `extractors/` directory.
+
+## Development
+
+Theseus is designed around a simple extension model:
+
+1. Implement the extraction logic for an artefact type.
+2. Return the results using the shared Packet structure.
+3. Register the extractor with the executor.
+4. Add the corresponding input validation and command information.
+
+The core processing pipeline and response format remain unchanged.
+
+---
+
+**Theseus v1.0.0**
+
+Digital Artefact Extraction Tool
 
 ---
 ## Contributing

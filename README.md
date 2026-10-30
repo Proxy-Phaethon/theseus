@@ -179,28 +179,6 @@ Results
 
 Output fields depend on the artefact and the information available for extraction.
 
-## Design Principles
-
-**Modularity**
-
-Each extractor is responsible for one artefact type. Extraction logic remains independent of the terminal interface and other extractors.
-
-**Consistency**
-
-Every processing stage uses the shared Packet structure. Extractors return standardised results rather than defining their own output formats.
-
-**Traceability**
-
-Extracted information retains its provenance. Explicitly identified entities and related entities are recorded without inventing relationships or drawing unsupported conclusions.
-
-**Separation of Concerns**
-
-Identification, execution, extraction, response formatting, and terminal presentation are handled by separate components.
-
-**Extensibility**
-
-New extractors can be introduced independently, provided they follow the shared Packet contract.
-
 ## Project Structure
 
 ```text
@@ -241,12 +219,6 @@ Theseus is designed around a simple extension model:
 4. Add the corresponding input validation and command information.
 
 The core processing pipeline and response format remain unchanged.
-
----
-
-**Theseus v1.0.0**
-
-Digital Artefact Extraction Tool
 
 ---
 ## Contributing

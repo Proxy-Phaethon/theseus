@@ -1,3 +1,5 @@
+"""Command handling and help system for Theseus."""
+
 from __future__ import annotations
 
 import shlex
@@ -21,18 +23,99 @@ class CommandSpec:
     usage: str | None = None
     aliases: tuple[str, ...] = ()
 
+@dataclass(frozen=True, slots=True)
+class FlagSpec:
+    """Definition of a Theseus extraction flag."""
+
+    name: str
+    category: str
+    expected_input: str
+    description: str
+    implemented: bool = False
+
+# Extraction flag reference.
+# Only mark an extractor implemented when it actually exists and works.
+
+FLAG_CATALOG: tuple[FlagSpec, ...] = (
+    # Web and internet infrastructure
+    FlagSpec("url", "Web", "URL", "Extract URL components.", True),
+    FlagSpec("domain", "Web", "Domain name", "Extract domain information."),
+    FlagSpec("dns", "Web", "Domain name", "Extract DNS records."),
+    FlagSpec("ip", "Network", "IP address", "Extract IP address information."),
+    FlagSpec("cidr", "Network", "CIDR range", "Extract network range information."),
+    FlagSpec("hostname", "Network", "Hostname", "Extract hostname information."),
+    FlagSpec("redirect", "Web", "URL", "Extract redirect information."),
+    FlagSpec("http", "Web", "HTTP response or headers", "Extract HTTP metadata."),
+    FlagSpec("webpage", "Web", "HTML source or webpage", "Extract webpage information."),
+    FlagSpec("javascript", "Web", "JavaScript source", "Extract JavaScript artefacts."),
+    FlagSpec("css", "Web", "CSS source", "Extract CSS information."),
+    FlagSpec("asn", "Network", "ASN", "Extract autonomous system information."),
+    FlagSpec("mac", "Network", "MAC address", "Extract MAC address information."),
+    FlagSpec("bssid", "Network", "BSSID", "Extract wireless network identifiers."),
+    FlagSpec("port", "Network", "Port or scan result", "Extract port information."),
+    FlagSpec("certificate", "Network", "Certificate data", "Extract certificate fields."),
+    FlagSpec("tls", "Network", "TLS data", "Extract TLS information."),
+    FlagSpec("pcap", "Network", "PCAP file", "Extract packet capture data."),
+    FlagSpec("flow", "Network", "Network flow data", "Extract network flow information."),
+
+    # Files and digital media
+    FlagSpec("file", "Files", "File path or file data", "Extract general file metadata."),
+    FlagSpec("hash", "Files", "File hash", "Extract hash information."),
+    FlagSpec("pdf", "Files", "PDF file", "Extract PDF metadata and contents."),
+    FlagSpec("office", "Files", "Office document", "Extract Office document metadata."),
+    FlagSpec("image", "Media", "Image file", "Extract image metadata."),
+    FlagSpec("audio", "Media", "Audio file", "Extract audio metadata."),
+    FlagSpec("video", "Media", "Video file", "Extract video metadata."),
+    FlagSpec("archive", "Files", "Archive file", "Extract archive contents and metadata."),
+    FlagSpec("binary", "Files", "Binary file", "Extract binary file information."),
+    FlagSpec("font", "Files", "Font file", "Extract font metadata."),
+    FlagSpec("shortcut", "Files", "Shortcut file", "Extract shortcut information."),
+    FlagSpec("directory", "Files", "Directory path", "Extract directory information."),
+
+    # Email and communications
+    FlagSpec("email", "Communications", "Email message", "Extract email information."),
+    FlagSpec("email_headers", "Communications", "Email headers", "Extract email header fields."),
+    FlagSpec("message_id", "Communications", "Message-ID", "Extract message identifier information."),
+    FlagSpec("contact", "Communications", "Contact data", "Extract contact information."),
+    FlagSpec("calendar", "Communications", "Calendar data", "Extract calendar information."),
+    FlagSpec("vcf", "Communications", "VCF file", "Extract vCard contact records."),
+    FlagSpec("ics", "Communications", "ICS file", "Extract calendar records."),
+
+    # Development and software
+    FlagSpec("git_repository", "Software", "Git repository", "Extract repository metadata."),
+    FlagSpec("git_commit", "Software", "Git commit", "Extract commit information."),
+    FlagSpec("package", "Software", "Package metadata", "Extract software package information."),
+    FlagSpec("sbom", "Software", "SBOM document", "Extract software bill of materials."),
+    FlagSpec("container", "Software", "Container image or metadata", "Extract container information."),
+    FlagSpec("api_spec", "Software", "API specification", "Extract API specification details."),
+    FlagSpec("cve", "Software", "CVE identifier or record", "Extract vulnerability record fields."),
+
+    # Structured data and system artefacts
+    FlagSpec("json", "Structured Data", "JSON data", "Extract JSON structure and values."),
+    FlagSpec("xml", "Structured Data", "XML data", "Extract XML structure and values."),
+    FlagSpec("csv", "Structured Data", "CSV file or data", "Extract CSV records."),
+    FlagSpec("sqlite", "Structured Data", "SQLite database", "Extract database structure and records."),
+    FlagSpec("config", "System", "Configuration file", "Extract configuration data."),
+    FlagSpec("env", "System", "Environment file", "Extract environment variables."),
+    FlagSpec("registry", "System", "Registry data", "Extract registry information."),
+    FlagSpec("log", "System", "Log file or data", "Extract log entries."),
+    FlagSpec("browser", "System", "Browser artefacts", "Extract browser information."),
+    FlagSpec("har", "Web", "HAR file", "Extract HTTP archive information."),
+)
+
 @dataclass(slots=True)
 class CommandHandler:
-    """Reusable command registration, execution, and terminal rendering."""
+    """Register, execute, and display terminal commands."""
 
     console: Console
-    app_name: str = "Application"
+    app_name: str = "Theseus"
     version: str = "1.0.0"
-    description: str = "Interactive terminal application"
+    description: str = "Digital artefact extraction tool."
     history_limit: int | None = None
 
     history: list[str] = field(default_factory=list, init=False)
     should_quit: bool = field(default=False, init=False)
+
     _commands: dict[str, CommandSpec] = field(
         default_factory=dict,
         init=False,
@@ -45,13 +128,20 @@ class CommandHandler:
     )
 
     def __post_init__(self) -> None:
-        """Register the standard terminal commands."""
+        """Register built-in terminal commands."""
+
         self.register(
             "help",
-            "Show available commands or details about one command.",
+            "Show available commands and extraction flags.",
             self._help,
-            usage="help [command]",
+            usage="help [command | --flag]",
             aliases=("?",),
+        )
+        self.register(
+            "flags",
+            "List available extraction flags.",
+            self._flags,
+            usage="flags [category]",
         )
         self.register(
             "about",
@@ -67,7 +157,7 @@ class CommandHandler:
         )
         self.register(
             "history",
-            "Show completed targets recorded during this session.",
+            "Show completed extraction inputs.",
             self._history,
             usage="history",
         )
@@ -88,22 +178,22 @@ class CommandHandler:
         usage: str | None = None,
         aliases: Iterable[str] = (),
     ) -> None:
-        """Register a command or replace an existing command definition."""
+        """Register or replace a terminal command."""
+
         name = name.strip().lower().lstrip("/")
-
-        if not name or any(char.isspace() for char in name):
-            raise ValueError("Command names must be non-empty single words.")
-
         alias_names = tuple(
             alias.strip().lower().lstrip("/")
             for alias in aliases
         )
 
+        if not name or any(char.isspace() for char in name):
+            raise ValueError("Command names must be single words.")
+
         if any(
             not alias or any(char.isspace() for char in alias)
             for alias in alias_names
         ):
-            raise ValueError("Command aliases must be non-empty single words.")
+            raise ValueError("Command aliases must be single words.")
 
         if len(set(alias_names)) != len(alias_names):
             raise ValueError(f"Duplicate aliases for command: {name}")
@@ -111,18 +201,12 @@ class CommandHandler:
         if name in alias_names:
             raise ValueError("A command cannot alias itself.")
 
-        reserved_names = set(alias_names) | {name}
+        for registered_name in {name, *alias_names}:
+            existing = self._aliases.get(registered_name)
 
-        for registered_name in reserved_names:
-            existing_command = self._aliases.get(registered_name)
-
-            if (
-                existing_command is not None
-                and existing_command != name
-            ):
+            if existing is not None and existing != name:
                 raise ValueError(
-                    f"'{registered_name}' is already an alias for "
-                    f"'{existing_command}'."
+                    f"'{registered_name}' is already an alias for '{existing}'."
                 )
 
             if (
@@ -133,9 +217,9 @@ class CommandHandler:
                     f"'{registered_name}' is already a registered command."
                 )
 
-        # Remove the previous aliases when replacing a command.
         previous = self._commands.get(name)
-        if previous is not None:
+
+        if previous:
             for alias in previous.aliases:
                 self._aliases.pop(alias, None)
 
@@ -153,11 +237,13 @@ class CommandHandler:
             self._aliases[alias] = name
 
     def unregister(self, name: str) -> bool:
-        """Remove a command and its aliases. Return whether it existed."""
+        """Remove a command and its aliases."""
+
         name = name.strip().lower().lstrip("/")
         name = self._aliases.get(name, name)
 
         spec = self._commands.pop(name, None)
+
         if spec is None:
             return False
 
@@ -171,11 +257,8 @@ class CommandHandler:
         command: str,
         argument: str | None = None,
     ) -> bool:
-        """Execute a command. Return False if it is not recognised.
+        """Execute a command. Return False if it is unrecognised."""
 
-        Accepts either a complete command line or a command and argument
-        supplied separately.
-        """
         if argument is None:
             try:
                 parts = shlex.split(command.strip())
@@ -212,7 +295,8 @@ class CommandHandler:
         return True
 
     def record_history(self, target: str) -> None:
-        """Record a completed target in session history."""
+        """Record a completed extraction input."""
+
         target = target.strip()
 
         if not target:
@@ -230,9 +314,15 @@ class CommandHandler:
                 del self.history[:-self.history_limit]
 
     def _help(self, argument: str | None = None) -> None:
-        """Display the command list or details about one command."""
+        """Display command help or extraction flag details."""
+
         if argument:
-            name = argument.strip().lower().lstrip("/")
+            name = argument.strip().lower()
+
+            if name.startswith("--"):
+                self._flag_details(name[2:])
+                return
+
             name = self._aliases.get(name, name)
             spec = self._commands.get(name)
 
@@ -256,6 +346,7 @@ class CommandHandler:
             self._panel(details, title=f"Command: {spec.name}")
             return
 
+        # Terminal commands
         table = Table(
             show_header=True,
             header_style="heading",
@@ -265,7 +356,10 @@ class CommandHandler:
         table.add_column("Command", style="primary", no_wrap=True)
         table.add_column("Description", style="text", overflow="fold")
 
-        for spec in sorted(self._commands.values(), key=lambda item: item.name):
+        for spec in sorted(
+            self._commands.values(),
+            key=lambda item: item.name,
+        ):
             names = spec.name
 
             if spec.aliases:
@@ -273,16 +367,124 @@ class CommandHandler:
 
             table.add_row(names, spec.description)
 
-        self._panel(table, title="Available commands")
+        self._panel(table, title="Terminal commands")
+
+        # Extraction flags
+        self._display_flags()
+
         self.console.print(
             Text(
-                "Use 'help <command>' for more information.",
+                "Use 'help <command>' or 'help --<flag>' for details.",
                 style="muted",
             )
         )
 
+    def _flags(self, argument: str | None = None) -> None:
+        """List extraction flags, optionally filtered by category."""
+
+        self._display_flags(category=argument)
+
+    def _display_flags(self, category: str | None = None) -> None:
+        """Render the extraction flag catalogue."""
+
+        category_filter = category.strip().lower() if category else None
+
+        flags = [
+            flag
+            for flag in FLAG_CATALOG
+            if category_filter is None
+            or flag.category.lower() == category_filter
+        ]
+
+        if not flags:
+            self._message(
+                f"No extraction flags found for category '{category}'.",
+                status="warning",
+            )
+            return
+
+        table = Table(
+            show_header=True,
+            header_style="heading",
+            border_style="border",
+            expand=False,
+        )
+
+        table.add_column("Flag", style="primary", no_wrap=True)
+        table.add_column("Category", style="muted")
+        table.add_column("Expected input", style="text", overflow="fold")
+        table.add_column("Status", no_wrap=True)
+
+        for flag in flags:
+            status = (
+                Text("IMPLEMENTED", style="success")
+                if flag.implemented
+                else Text("PENDING", style="warning")
+            )
+
+            table.add_row(
+                f"--{flag.name}",
+                flag.category,
+                flag.expected_input,
+                status,
+            )
+
+        title = "Extraction flags"
+
+        if category_filter:
+            title += f" / {category_filter}"
+
+        self._panel(table, title=title)
+
+        implemented = sum(flag.implemented for flag in flags)
+
+        self.console.print(
+            Text(
+                f"{len(flags)} recognised flags | "
+                f"{implemented} implemented | "
+                f"{len(flags) - implemented} pending",
+                style="muted",
+            )
+        )
+
+    def _flag_details(self, name: str) -> None:
+        """Display information about one extraction flag."""
+
+        flag = next(
+            (
+                item
+                for item in FLAG_CATALOG
+                if item.name == name
+            ),
+            None,
+        )
+
+        if flag is None:
+            self._message(
+                f"Unknown extraction flag: --{name}",
+                status="warning",
+            )
+            return
+
+        details = Table.grid(padding=(0, 1))
+        details.add_column(style="muted", no_wrap=True)
+        details.add_column(style="text", overflow="fold")
+
+        details.add_row("Flag", f"--{flag.name}")
+        details.add_row("Category", flag.category)
+        details.add_row("Expected input", flag.expected_input)
+        details.add_row("Description", flag.description)
+        details.add_row(
+            "Status",
+            "Implemented" if flag.implemented else "Not yet implemented",
+        )
+        details.add_row("Usage", f"--{flag.name} <input>")
+
+        self._panel(details, title=f"Extractor: {flag.name}")
+
     def _about(self, _argument: str | None = None) -> None:
         """Display application information."""
+
         content = Table.grid(padding=(0, 1))
         content.add_column(style="muted", no_wrap=True)
         content.add_column(style="text", overflow="fold")
@@ -294,16 +496,17 @@ class CommandHandler:
         self._panel(content, title=f"About {self.app_name}")
 
     def _clear(self, _argument: str | None = None) -> None:
-        """Clear the visible terminal without changing session state."""
+        """Clear the terminal screen."""
+
         self.console.clear()
 
     def _history(self, _argument: str | None = None) -> None:
-        """Display completed targets recorded during this session."""
+        """Display completed extraction inputs."""
+
         if not self.history:
             self._message(
-                "No completed targets have been recorded this session.",
+                "No completed extractions have been recorded this session.",
                 title="Session history",
-                status="info",
             )
             return
 
@@ -314,7 +517,7 @@ class CommandHandler:
             expand=False,
         )
         table.add_column("#", style="muted", justify="right", no_wrap=True)
-        table.add_column("Target", style="text", overflow="fold")
+        table.add_column("Input", style="text", overflow="fold")
 
         for index, target in enumerate(self.history, start=1):
             table.add_row(str(index), target)
@@ -323,6 +526,7 @@ class CommandHandler:
             table,
             title=f"Session history ({len(self.history)})",
         )
+
         self.console.print(
             Text(
                 "History is held in memory and is not written to disk.",
@@ -331,7 +535,8 @@ class CommandHandler:
         )
 
     def _quit(self, _argument: str | None = None) -> None:
-        """Signal the application's input loop to exit."""
+        """Signal the interactive session to exit."""
+
         self.should_quit = True
         self.console.print(Text("Exiting.", style="muted"))
 
@@ -341,12 +546,15 @@ class CommandHandler:
         *,
         title: str,
     ) -> None:
-        """Render a consistently styled terminal panel."""
+        """Display a standard Theseus panel."""
+
         self.console.print(
             Panel(
                 renderable,
                 title=title,
+                title_align="left",
                 border_style="border",
+                padding=(1, 2),
                 expand=False,
             )
         )
@@ -358,7 +566,8 @@ class CommandHandler:
         title: str = "Notice",
         status: str = "info",
     ) -> None:
-        """Render a standard terminal message."""
+        """Display a standard terminal message."""
+
         styles = {
             "info": "primary",
             "success": "success",

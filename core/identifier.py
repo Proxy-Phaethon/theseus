@@ -112,12 +112,22 @@ def _hash(value: Any) -> bool:
         value.strip(),
     ))
 
-def _email(value: Any) -> bool:
-    if not _text(value):
+def _email(value):
+    if not isinstance(value, str) or not value.strip():
         return False
 
-    _, address = parseaddr(value.strip())
-    return bool(address and re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", address))
+    candidate = value.strip()
+
+    # Raw email source
+    if "\n" in candidate or "\r" in candidate:
+        return (
+            "From:" in candidate
+            or "Received:" in candidate
+            or "Message-ID:" in candidate
+        )
+
+    # Email file
+    return _has_extension(".eml", ".mbox")(candidate)
 
 def _file_input(value: Any) -> bool:
     if isinstance(value, bytes):

@@ -16,6 +16,7 @@ from extractors.domain import domainextract
 from extractors.dns import dnsextract
 from extractors.ip import ipextract
 from extractors.cidr import cidrextract
+from extractors.hostname import hostnameextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -24,6 +25,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--dns": dnsextract,
     "--ip": ipextract,
     "--cidr": cidrextract,
+    "--hostname": hostnameextract,
 }
 
 class Executor:

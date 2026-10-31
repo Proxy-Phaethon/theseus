@@ -12,3 +12,6 @@ openpyxl
 python-pptx
 Pillow
 mutagen
+
+# external
+ffmpeg

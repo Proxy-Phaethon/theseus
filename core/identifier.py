@@ -129,6 +129,32 @@ def _email(value):
     # Email file
     return _has_extension(".eml", ".mbox")(candidate)
 
+def _email_headers(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    candidate = value.strip()
+
+    # Raw email/header source.
+    if "\n" in candidate or "\r" in candidate:
+        header_names = (
+            "From:",
+            "To:",
+            "Subject:",
+            "Date:",
+            "Received:",
+            "Message-ID:",
+            "Return-Path:",
+        )
+
+        return any(
+            line.lower().startswith(tuple(name.lower() for name in header_names))
+            for line in candidate.splitlines()
+        )
+
+    # File-based input.
+    return _has_extension(".eml")(candidate)
+
 def _file_input(value: Any) -> bool:
     if isinstance(value, bytes):
         return bool(value)
@@ -303,7 +329,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     ),
     "directory": _directory,
     "email": _email,
-    "email_headers": _structured,
+    "email-headers": _email_headers,
     "message_id": lambda value: (
         _text(value) and bool(re.fullmatch(r"<[^<>\s]+@[^<>\s]+>", value.strip()))
     ),

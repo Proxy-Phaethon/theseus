@@ -43,6 +43,7 @@ from extractors.font import fontextract
 from extractors.shortcut import shortcutextract
 from extractors.directory import directoryextract
 from extractors.email import emailextract
+from extractors.email_headers import emailheadersextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -78,6 +79,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--shortcut": shortcutextract,
     "--directory": directoryextract,
     "--email": emailextract,
+    "--email-headers": emailheadersextract,
 }
 
 class Executor:

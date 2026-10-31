@@ -14,12 +14,14 @@ from core.packets import Packet, PacketStatus
 from extractors.url import urlextract
 from extractors.domain import domainextract
 from extractors.dns import dnsextract
+from extractors.ip import ipextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--url": urlextract,
     "--domain": domainextract,
     "--dns": dnsextract,
+    "--ip": ipextract,
 }
 
 class Executor:

@@ -45,18 +45,37 @@ def _domain(value: Any) -> bool:
     if not _text(value):
         return False
 
-    value = value.strip().rstrip(".")
+    try:
+        hostname = value.strip().rstrip(".").lower()
 
-    if len(value) > 253 or "." not in value:
+        if "://" in hostname or "/" in hostname or "@" in hostname:
+            return False
+
+        import ipaddress
+
+        try:
+            ipaddress.ip_address(hostname)
+            return False
+        except ValueError:
+            pass
+
+        hostname = hostname.encode("idna").decode("ascii")
+
+        labels = hostname.split(".")
+
+        if len(labels) < 2:
+            return False
+
+        return all(
+            re.fullmatch(
+                r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?",
+                label,
+            )
+            for label in labels
+        )
+
+    except (ValueError, UnicodeError):
         return False
-
-    labels = value.split(".")
-
-    return all(
-        0 < len(label) <= 63
-        and re.fullmatch(r"[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?", label)
-        for label in labels
-    )
 
 def _ip(value: Any) -> bool:
     try:

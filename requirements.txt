@@ -6,3 +6,4 @@ esprima
 tinycss2
 cryptography
 scapy
+PyMuPDF

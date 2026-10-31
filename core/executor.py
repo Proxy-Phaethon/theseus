@@ -22,6 +22,7 @@ from extractors.http import httpextract
 from extractors.webpage import webpageextract
 from extractors.javascript import javascriptextract
 from extractors.css import cssextract
+from extractors.asn import asnextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -36,6 +37,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--webpage": webpageextract,
     "--javascript": javascriptextract,
     "--css": cssextract,
+    "--asn": asnextract,
 }
 
 class Executor:

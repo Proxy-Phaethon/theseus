@@ -20,6 +20,7 @@ from extractors.hostname import hostnameextract
 from extractors.redirect import redirectextract
 from extractors.http import httpextract
 from extractors.webpage import webpageextract
+from extractors.javascript import javascriptextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -32,6 +33,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--redirect": redirectextract,
     "--http": httpextract,
     "--webpage": webpageextract,
+    "--javascript": javascriptextract,
 }
 
 class Executor:

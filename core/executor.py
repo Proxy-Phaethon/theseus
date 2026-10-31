@@ -41,6 +41,7 @@ from extractors.archive import archiveextract
 from extractors.binary import binaryextract
 from extractors.font import fontextract
 from extractors.shortcut import shortcutextract
+from extractors.directory import directoryextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -74,6 +75,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--binary": binaryextract,
     "--font": fontextract,
     "--shortcut": shortcutextract,
+    "--directory": directoryextract,
 }
 
 class Executor:

@@ -30,6 +30,7 @@ from extractors.certificate import certificateextract
 from extractors.tls import tlsextract
 from extractors.pcap import pcapextract
 from extractors.flow import flowextract
+from extractors.file import fileextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -52,6 +53,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--tls": tlsextract,
     "--pcap": pcapextract,
     "--flow": flowextract,
+    "--file": fileextract,
 }
 
 class Executor:

@@ -7,3 +7,6 @@ tinycss2
 cryptography
 scapy
 PyMuPDF
+python-docx
+openpyxl
+python-pptx

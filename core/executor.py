@@ -33,6 +33,7 @@ from extractors.flow import flowextract
 from extractors.file import fileextract
 from extractors.hash import hashextract
 from extractors.pdf import pdfextract
+from extractors.office import officeextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -58,6 +59,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--file": fileextract,
     "--hash": hashextract,
     "--pdf": pdfextract,
+    "--office": officeextract,
 }
 
 class Executor:

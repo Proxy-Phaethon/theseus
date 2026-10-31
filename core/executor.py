@@ -28,6 +28,7 @@ from extractors.bssid import bssidextract
 from extractors.port import portextract
 from extractors.certificate import certificateextract
 from extractors.tls import tlsextract
+from extractors.pcap import pcapextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -48,6 +49,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--port": portextract,
     "--certificate": certificateextract,
     "--tls": tlsextract,
+    "--pcap": pcapextract,
 }
 
 class Executor:

@@ -286,7 +286,11 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "font": _has_extension(
         ".ttf", ".otf", ".ttc", ".woff", ".woff2",
     ),
-    "shortcut": _has_extension(".lnk", ".url", ".desktop", ".webloc"),
+    "shortcut": _has_extension(
+        ".lnk",
+        ".url",
+        ".desktop",
+    ),
     "directory": _directory,
     "email": _email,
     "email_headers": _structured,

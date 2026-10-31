@@ -40,6 +40,7 @@ from extractors.video import videoextract
 from extractors.archive import archiveextract
 from extractors.binary import binaryextract
 from extractors.font import fontextract
+from extractors.shortcut import shortcutextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -72,6 +73,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--archive": archiveextract,
     "--binary": binaryextract,
     "--font": fontextract,
+    "--shortcut": shortcutextract,
 }
 
 class Executor:

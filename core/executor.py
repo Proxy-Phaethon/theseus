@@ -23,6 +23,7 @@ from extractors.webpage import webpageextract
 from extractors.javascript import javascriptextract
 from extractors.css import cssextract
 from extractors.asn import asnextract
+from extractors.mac import macextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -38,6 +39,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--javascript": javascriptextract,
     "--css": cssextract,
     "--asn": asnextract,
+    "--mac": macextract,
 }
 
 class Executor:

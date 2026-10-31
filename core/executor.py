@@ -19,6 +19,7 @@ from extractors.cidr import cidrextract
 from extractors.hostname import hostnameextract
 from extractors.redirect import redirectextract
 from extractors.http import httpextract
+from extractors.webpage import webpageextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -30,6 +31,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--hostname": hostnameextract,
     "--redirect": redirectextract,
     "--http": httpextract,
+    "--webpage": webpageextract,
 }
 
 class Executor:

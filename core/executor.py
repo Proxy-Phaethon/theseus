@@ -13,11 +13,13 @@ from core.packets import Packet, PacketStatus
 # Extractor imports
 from extractors.url import urlextract
 from extractors.domain import domainextract
+from extractors.dns import dnsextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--url": urlextract,
     "--domain": domainextract,
+    "--dns": dnsextract,
 }
 
 class Executor:

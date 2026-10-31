@@ -257,7 +257,11 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
         ".bmp", ".tiff", ".tif", ".webp",
         ".ico", ".jfif", ".avif",
     ),
-    "audio": _has_extension(".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac"),
+    "audio": _has_extension(
+        ".mp3", ".wav", ".flac", ".aac", ".m4a",
+        ".ogg", ".opus", ".wma", ".aiff", ".aif",
+        ".ape", ".wv", ".mp4",
+    ),
     "video": _has_extension(".mp4", ".mkv", ".avi", ".mov", ".webm", ".mpeg"),
     "archive": _has_extension(".zip", ".tar", ".gz", ".7z", ".rar", ".bz2", ".xz"),
     "binary": lambda value: isinstance(value, bytes) or _file_input(value),

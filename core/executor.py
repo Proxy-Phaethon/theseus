@@ -35,6 +35,7 @@ from extractors.hash import hashextract
 from extractors.pdf import pdfextract
 from extractors.office import officeextract
 from extractors.image import imageextract
+from extractors.audio import audioextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -62,6 +63,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--pdf": pdfextract,
     "--office": officeextract,
     "--image": imageextract,
+    "--audio": audioextract,
 }
 
 class Executor:

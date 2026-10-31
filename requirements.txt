@@ -3,3 +3,4 @@ dnspython
 requests
 beautifulsoup4
 esprima
+tinycss2

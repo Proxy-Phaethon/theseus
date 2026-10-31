@@ -21,6 +21,7 @@ from extractors.redirect import redirectextract
 from extractors.http import httpextract
 from extractors.webpage import webpageextract
 from extractors.javascript import javascriptextract
+from extractors.css import cssextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -34,6 +35,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--http": httpextract,
     "--webpage": webpageextract,
     "--javascript": javascriptextract,
+    "--css": cssextract,
 }
 
 class Executor:

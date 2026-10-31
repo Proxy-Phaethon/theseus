@@ -252,7 +252,11 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "office": _has_extension(
         ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp"
     ),
-    "image": _image,
+    "image": _has_extension(
+        ".jpg", ".jpeg", ".png", ".gif",
+        ".bmp", ".tiff", ".tif", ".webp",
+        ".ico", ".jfif", ".avif",
+    ),
     "audio": _has_extension(".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac"),
     "video": _has_extension(".mp4", ".mkv", ".avi", ".mov", ".webm", ".mpeg"),
     "archive": _has_extension(".zip", ".tar", ".gz", ".7z", ".rar", ".bz2", ".xz"),

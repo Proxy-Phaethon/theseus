@@ -12,6 +12,8 @@ openpyxl
 python-pptx
 Pillow
 mutagen
+fonttools
+brotli
 
 # external
 ffmpeg

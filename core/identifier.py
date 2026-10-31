@@ -283,7 +283,9 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
         ".xz",
     ),
     "binary": lambda value: isinstance(value, bytes) or _file_input(value),
-    "font": _has_extension(".ttf", ".otf", ".woff", ".woff2"),
+    "font": _has_extension(
+        ".ttf", ".otf", ".ttc", ".woff", ".woff2",
+    ),
     "shortcut": _has_extension(".lnk", ".url", ".desktop", ".webloc"),
     "directory": _directory,
     "email": _email,

@@ -24,6 +24,7 @@ from extractors.javascript import javascriptextract
 from extractors.css import cssextract
 from extractors.asn import asnextract
 from extractors.mac import macextract
+from extractors.bssid import bssidextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -40,6 +41,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--css": cssextract,
     "--asn": asnextract,
     "--mac": macextract,
+    "--bssid": bssidextract,
 }
 
 class Executor:

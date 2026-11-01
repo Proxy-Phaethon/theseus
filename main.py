@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shlex
 import sys
+import json
 
 from rich.text import Text
 
@@ -121,6 +122,18 @@ class Theseus:
             return
 
         value = " ".join(parts[1:]) if len(parts) > 1 else None
+
+        if flag == "--http-message" and value is not None:
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as exc:
+                self.console.print(
+                    Text(
+                        f"Invalid JSON input: {exc}",
+                        style="error",
+                    )
+                )
+                return
 
         self.process_request(flag, value)
 

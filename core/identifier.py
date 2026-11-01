@@ -295,6 +295,50 @@ def _json(value: Any) -> bool:
     except (json.JSONDecodeError, TypeError):
         return False
 
+def _sbom(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    path = Path(value).expanduser()
+
+    if not path.is_file():
+        return False
+
+    filename = path.name.lower()
+
+    try:
+        if filename.endswith(".spdx"):
+            with path.open("r", encoding="utf-8-sig") as file:
+                return "SPDXVersion:" in file.read(4096)
+
+        if filename.endswith((".yaml", ".yml")):
+            with path.open("r", encoding="utf-8-sig") as file:
+                content = file.read(4096)
+                return "spdxVersion:" in content or "SPDXVersion:" in content
+
+        if filename.endswith(".json"):
+            with path.open("r", encoding="utf-8-sig") as file:
+                document = json.load(file)
+
+            return (
+                isinstance(document, dict)
+                and (
+                    document.get("bomFormat") == "CycloneDX"
+                    or bool(document.get("spdxVersion"))
+                )
+            )
+
+        if filename.endswith(".xml"):
+            with path.open("rb") as file:
+                content = file.read(4096)
+
+            return b"<bom" in content and b"cyclonedx.org/schema" in content
+
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+
+    return False
+
 def _xml(value: Any) -> bool:
     if not _text(value):
         return False
@@ -508,6 +552,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "ics": _ics,
     "git-repository": _git_repository,
     "git-commit": _git_commit,
+    "sbom": _sbom,
     "json": _json,
     "xml": _xml,
     "csv": _has_extension(".csv"),

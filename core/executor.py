@@ -52,6 +52,7 @@ from extractors.ics import icsextract
 from extractors.git_repository import gitrepositoryextract
 from extractors.git_commit import gitcommitextract
 from extractors.package import packageextract
+from extractors.sbom import sbomextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -96,6 +97,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--git-repository": gitrepositoryextract,
     "--git-commit": gitcommitextract,
     "--package": packageextract,
+    "--sbom": sbomextract,
 }
 
 class Executor:

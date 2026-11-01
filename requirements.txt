@@ -17,6 +17,7 @@ brotli
 icalendar
 vobject
 GitPython
+PyYAML
 
 # external
 ffmpeg

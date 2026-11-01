@@ -33,74 +33,196 @@ class FlagSpec:
     description: str
     implemented: bool = False
 
-# Extraction flag reference.
-# Only mark an extractor implemented when it actually exists and works.
+# Accepted input-type flags.
+# Each flag represents an input type, not an individual extractor.
+# Descriptions indicate the extraction operations dispatched for that input.
 
 FLAG_CATALOG: tuple[FlagSpec, ...] = (
-    # Web and internet infrastructure
-    FlagSpec("url", "Web", "URL", "Extract URL components.", True),
-    FlagSpec("domain", "Web", "Domain name", "Extract domain information."),
-    FlagSpec("dns", "Web", "Domain name", "Extract DNS records."),
-    FlagSpec("ip", "Network", "IP address", "Extract IP address information."),
-    FlagSpec("cidr", "Network", "CIDR range", "Extract network range information."),
-    FlagSpec("hostname", "Network", "Hostname", "Extract hostname information."),
-    FlagSpec("redirect", "Web", "URL", "Extract redirect information."),
-    FlagSpec("http", "Web", "HTTP response or headers", "Extract HTTP metadata."),
-    FlagSpec("webpage", "Web", "HTML source or webpage", "Extract webpage information."),
-    FlagSpec("javascript", "Web", "JavaScript source", "Extract JavaScript artefacts."),
-    FlagSpec("css", "Web", "CSS source", "Extract CSS information."),
-    FlagSpec("asn", "Network", "ASN", "Extract autonomous system information."),
-    FlagSpec("mac", "Network", "MAC address", "Extract MAC address information."),
-    FlagSpec("bssid", "Network", "BSSID", "Extract wireless network identifiers."),
-    FlagSpec("port", "Network", "Port or scan result", "Extract port information."),
-    FlagSpec("certificate", "Network", "Certificate data", "Extract certificate fields."),
-    FlagSpec("tls", "Network", "TLS data", "Extract TLS information."),
-    FlagSpec("pcap", "Network", "PCAP file", "Extract packet capture data."),
-    FlagSpec("flow", "Network", "Network flow data", "Extract network flow information."),
+    FlagSpec(
+        "url", "Network", "URL",
+        "Extract URL components and follow HTTP redirects.", True,
+    ),
+    FlagSpec(
+        "domain", "Network", "Domain name",
+        "Extract domain information and query DNS records.", True,
+    ),
+    FlagSpec(
+        "hostname", "Network", "Hostname",
+        "Extract hostname structure and domain information.", True,
+    ),
+    FlagSpec(
+        "ip", "Network", "IPv4 or IPv6 address",
+        "Extract IP address properties and classifications.", True,
+    ),
+    FlagSpec(
+        "cidr", "Network", "CIDR network",
+        "Extract network boundaries, address ranges and network properties.", True,
+    ),
+    FlagSpec(
+        "port", "Network", "Port number, optionally with TCP or UDP",
+        "Identify the port and its locally associated service.", True,
+    ),
+    FlagSpec(
+        "mac-address", "Network", "MAC address",
+        "Extract MAC address properties and BSSID information.", True,
+    ),
+    FlagSpec(
+        "asn", "Network", "Autonomous System Number",
+        "Retrieve autonomous system registration and announced-prefix information.", True,
+    ),
+    FlagSpec(
+        "tls-host", "Network", "Hostname or HTTPS URL",
+        "Establish a TLS connection and extract session and certificate information.", True,
+    ),
+    FlagSpec(
+        "certificate", "Network", "PEM or DER certificate",
+        "Extract certificate metadata, identities, extensions and fingerprints.", True,
+    ),
+    FlagSpec(
+        "http-message", "Network", "Structured HTTP message",
+        "Extract HTTP request and response metadata, headers and body information.", True,
+    ),
+    FlagSpec(
+        "network-capture", "Network", "PCAP or PCAPNG file",
+        "Extract packet metadata and group packets into network flows.", True,
+    ),
 
-    # Files and digital media
-    FlagSpec("file", "Files", "File path or file data", "Extract general file metadata."),
-    FlagSpec("hash", "Files", "File hash", "Extract hash information."),
-    FlagSpec("pdf", "Files", "PDF file", "Extract PDF metadata and contents."),
-    FlagSpec("office", "Files", "Office document", "Extract Office document metadata."),
-    FlagSpec("image", "Media", "Image file", "Extract image metadata."),
-    FlagSpec("audio", "Media", "Audio file", "Extract audio metadata."),
-    FlagSpec("video", "Media", "Video file", "Extract video metadata."),
-    FlagSpec("archive", "Files", "Archive file", "Extract archive contents and metadata."),
-    FlagSpec("binary", "Files", "Binary file", "Extract binary file information."),
-    FlagSpec("font", "Files", "Font file", "Extract font metadata."),
-    FlagSpec("shortcut", "Files", "Shortcut file", "Extract shortcut information."),
-    FlagSpec("directory", "Files", "Directory path", "Extract directory information."),
+    FlagSpec(
+        "html-document", "Web", "HTML source",
+        "Extract page metadata, headings, links, images, scripts and stylesheets.", True,
+    ),
+    FlagSpec(
+        "javascript-source", "Web", "JavaScript source",
+        "Extract functions, classes, variables, imports, exports, comments and URL references.", True,
+    ),
+    FlagSpec(
+        "css-source", "Web", "CSS source",
+        "Extract selectors, declarations, at-rules, imports, URLs and font families.", True,
+    ),
+    FlagSpec(
+        "http-archive", "Web", "HAR file or HAR JSON",
+        "Extract recorded HTTP requests, responses, headers, cookies, content and timings.", True,
+    ),
 
-    # Email and communications
-    FlagSpec("email", "Communications", "Email message", "Extract email information."),
-    FlagSpec("email_headers", "Communications", "Email headers", "Extract email header fields."),
-    FlagSpec("message_id", "Communications", "Message-ID", "Extract message identifier information."),
-    FlagSpec("contact", "Communications", "Contact data", "Extract contact information."),
-    FlagSpec("calendar", "Communications", "Calendar data", "Extract calendar information."),
-    FlagSpec("vcf", "Communications", "VCF file", "Extract vCard contact records."),
-    FlagSpec("ics", "Communications", "ICS file", "Extract calendar records."),
+    FlagSpec(
+        "file", "Files", "Existing filesystem file",
+        "Extract general file metadata, hashes and binary characteristics.", True,
+    ),
+    FlagSpec(
+        "directory", "Files", "Existing directory",
+        "Recursively extract directory entries, file metadata and filesystem properties.", True,
+    ),
+    FlagSpec(
+        "hash", "Files", "Supported hexadecimal hash digest",
+        "Identify possible hash algorithms from digest length.", True,
+    ),
+    FlagSpec(
+        "binary-file", "Files", "Binary file",
+        "Extract binary signatures, entropy, byte statistics and cryptographic hashes.", True,
+    ),
+    FlagSpec(
+        "pdf", "Documents", "PDF file",
+        "Extract PDF metadata, page content, links, annotations, images and document structure.", True,
+    ),
+    FlagSpec(
+        "office-document", "Documents", "DOCX, XLSX or PPTX file",
+        "Extract Office document properties and document content.", True,
+    ),
+    FlagSpec(
+        "image", "Media", "Image file",
+        "Extract image properties, EXIF data, GPS metadata, frames, ICC information and hashes.", True,
+    ),
+    FlagSpec(
+        "audio", "Media", "Supported audio file",
+        "Extract audio metadata, tags, stream information and embedded artwork metadata.", True,
+    ),
+    FlagSpec(
+        "video", "Media", "Supported video file",
+        "Extract container metadata, streams, codecs, chapters and media properties.", True,
+    ),
+    FlagSpec(
+        "archive", "Files", "Supported archive or compressed file",
+        "Extract archive entries, file metadata, compression information and archive structure.", True,
+    ),
+    FlagSpec(
+        "font", "Files", "TTF, OTF, TTC, WOFF or WOFF2 file",
+        "Extract font names, metrics, character coverage, variable axes and table information.", True,
+    ),
+    FlagSpec(
+        "shortcut", "Files", "LNK, URL or desktop shortcut file",
+        "Extract shortcut targets, arguments, working directories and metadata.", True,
+    ),
 
-    # Development and software
-    FlagSpec("git_repository", "Software", "Git repository", "Extract repository metadata."),
-    FlagSpec("git_commit", "Software", "Git commit", "Extract commit information."),
-    FlagSpec("package", "Software", "Package metadata", "Extract software package information."),
-    FlagSpec("sbom", "Software", "SBOM document", "Extract software bill of materials."),
-    FlagSpec("container", "Software", "Container image or metadata", "Extract container information."),
-    FlagSpec("api_spec", "Software", "API specification", "Extract API specification details."),
-    FlagSpec("cve", "Software", "CVE identifier or record", "Extract vulnerability record fields."),
+    FlagSpec(
+        "email", "Communications", "Raw email, EML or MBOX",
+        "Extract email content, headers, addresses, message identifiers, MIME parts and attachments.", True,
+    ),
+    FlagSpec(
+        "contact", "Communications", "Email address, phone number or vCard",
+        "Extract contact details and vCard records.", True,
+    ),
+    FlagSpec(
+        "calendar", "Communications", "Raw iCalendar data or ICS file",
+        "Extract calendar properties, events, tasks, journals, timezones and alarms.", True,
+    ),
+    FlagSpec(
+        "browser-profile", "Browser", "Browser profile directory or supported artefact file",
+        "Extract browser history, bookmarks, cookies, autofill data and login metadata.", True,
+    ),
 
-    # Structured data and system artefacts
-    FlagSpec("json", "Structured Data", "JSON data", "Extract JSON structure and values."),
-    FlagSpec("xml", "Structured Data", "XML data", "Extract XML structure and values."),
-    FlagSpec("csv", "Structured Data", "CSV file or data", "Extract CSV records."),
-    FlagSpec("sqlite", "Structured Data", "SQLite database", "Extract database structure and records."),
-    FlagSpec("config", "System", "Configuration file", "Extract configuration data."),
-    FlagSpec("env", "System", "Environment file", "Extract environment variables."),
-    FlagSpec("registry", "System", "Registry data", "Extract registry information."),
-    FlagSpec("log", "System", "Log file or data", "Extract log entries."),
-    FlagSpec("browser", "System", "Browser artefacts", "Extract browser information."),
-    FlagSpec("har", "Web", "HAR file", "Extract HTTP archive information."),
+    FlagSpec(
+        "git-repository", "Software", "Local Git repository",
+        "Extract repository configuration, remotes, branches, tags, commits and working-tree state.", True,
+    ),
+    FlagSpec(
+        "git-commit", "Software", "Commit hash or repository path with commit hash",
+        "Extract commit metadata, authorship, parents, statistics and changed-file information.", True,
+    ),
+    FlagSpec(
+        "package-manifest", "Software", "Supported package manifest or lockfile",
+        "Extract package metadata, dependencies, versions and manifest information.", True,
+    ),
+    FlagSpec(
+        "sbom-document", "Software", "CycloneDX or SPDX document",
+        "Extract SBOM metadata, components, identifiers, licences, checksums and relationships.", True,
+    ),
+    FlagSpec(
+        "container-artefact", "Software", "Dockerfile, Compose, Kubernetes or supported OCI artefact",
+        "Extract container configuration, image references, manifests and deployment metadata.", True,
+    ),
+
+    FlagSpec(
+        "json-document", "Structured Data", "JSON source or file",
+        "Extract JSON structure, values, depth, key occurrences and duplicate keys.", True,
+    ),
+    FlagSpec(
+        "xml-document", "Structured Data", "XML source or file",
+        "Extract XML elements, attributes, namespaces, text and document structure.", True,
+    ),
+    FlagSpec(
+        "csv-document", "Structured Data", "CSV source or file",
+        "Extract CSV headers, rows, column statistics, empty cells and duplicate records.", True,
+    ),
+    FlagSpec(
+        "sqlite-database", "Structured Data", "SQLite database file",
+        "Extract database metadata, tables, columns, indexes, views, triggers and records.", True,
+    ),
+    FlagSpec(
+        "config-file", "System", "INI, TOML, YAML or JSON configuration",
+        "Extract configuration data and structural information.", True,
+    ),
+    FlagSpec(
+        "environment-file", "System", "ENV file or environment-variable source",
+        "Extract variable names, values, assignments, references and comments.", True,
+    ),
+    FlagSpec(
+        "registry-artefact", "System", "Windows Registry hive or REG export",
+        "Extract registry keys, values, types and registry metadata.", True,
+    ),
+    FlagSpec(
+        "log", "System", "Log file or log text",
+        "Extract timestamps, severity levels, sources, messages and access-log fields.", True,
+    ),
 )
 
 @dataclass(slots=True)

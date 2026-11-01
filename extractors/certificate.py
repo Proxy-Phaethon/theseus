@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 from datetime import timezone
+from pathlib import Path
 
 from cryptography import x509
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes, serialization
 
 from core.packets import Packet, PacketStatus
 
 def certificateextract(packet: Packet) -> Packet:
-    """Extract structured information from an X.509 certificate."""
+    """Extract structured information from a PEM or DER X.509 certificate."""
 
     result = packet.child(
         stage="extraction",
@@ -20,23 +21,26 @@ def certificateextract(packet: Packet) -> Packet:
         certificate_data = packet.input
 
         if isinstance(certificate_data, str):
-            certificate_data = certificate_data.strip().encode("utf-8")
+            certificate_path = Path(certificate_data)
+
+            if not certificate_path.is_file():
+                raise ValueError(
+                    f"Certificate file does not exist: {certificate_path}"
+                )
+
+            certificate_data = certificate_path.read_bytes()
 
         if not isinstance(certificate_data, bytes):
-            raise ValueError("Certificate input must be PEM or DER data.")
+            raise ValueError("Certificate input must be a file path or bytes.")
 
         if not certificate_data:
             raise ValueError("Certificate input cannot be empty.")
 
         if b"-----BEGIN CERTIFICATE-----" in certificate_data:
-            certificate = x509.load_pem_x509_certificate(
-                certificate_data
-            )
+            certificate = x509.load_pem_x509_certificate(certificate_data)
             encoding = "PEM"
         else:
-            certificate = x509.load_der_x509_certificate(
-                certificate_data
-            )
+            certificate = x509.load_der_x509_certificate(certificate_data)
             encoding = "DER"
 
         def get_name(name):
@@ -56,27 +60,21 @@ def certificateextract(packet: Packet) -> Packet:
             san_extension = certificate.extensions.get_extension_for_class(
                 x509.SubjectAlternativeName
             )
-
             subject_alternative_names = [
-                str(name)
-                for name in san_extension.value
+                str(name) for name in san_extension.value
             ]
-
         except x509.ExtensionNotFound:
             subject_alternative_names = None
 
         try:
-            basic_constraints = (
-                certificate.extensions.get_extension_for_class(
-                    x509.BasicConstraints
-                ).value
-            )
+            basic_constraints = certificate.extensions.get_extension_for_class(
+                x509.BasicConstraints
+            ).value
 
             constraints = {
                 "is_ca": basic_constraints.ca,
                 "path_length": basic_constraints.path_length,
             }
-
         except x509.ExtensionNotFound:
             constraints = None
 
@@ -88,12 +86,10 @@ def certificateextract(packet: Packet) -> Packet:
         }
 
         try:
-            public_key_info["public_key_pem"] = (
-                public_key.public_bytes(
-                    encoding=serialization.Encoding.PEM,
-                    format=serialization.PublicFormat.SubjectPublicKeyInfo,
-                ).decode("utf-8")
-            )
+            public_key_info["public_key_pem"] = public_key.public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            ).decode("utf-8")
         except (AttributeError, ValueError):
             public_key_info["public_key_pem"] = None
 
@@ -108,19 +104,19 @@ def certificateextract(packet: Packet) -> Packet:
             "subject": get_name(certificate.subject),
             "issuer": get_name(certificate.issuer),
             "validity": {
-                "not_before": format_datetime(certificate.not_valid_before_utc),
-                "not_after": format_datetime(certificate.not_valid_after_utc),
+                "not_before": format_datetime(
+                    certificate.not_valid_before_utc
+                ),
+                "not_after": format_datetime(
+                    certificate.not_valid_after_utc
+                ),
             },
             "subject_alternative_names": subject_alternative_names,
             "basic_constraints": constraints,
             "public_key": public_key_info,
             "fingerprints": {
-                "sha1": certificate.fingerprint(
-                    __import__("cryptography").hazmat.primitives.hashes.SHA1()
-                ).hex(),
-                "sha256": certificate.fingerprint(
-                    __import__("cryptography").hazmat.primitives.hashes.SHA256()
-                ).hex(),
+                "sha1": certificate.fingerprint(hashes.SHA1()).hex(),
+                "sha256": certificate.fingerprint(hashes.SHA256()).hex(),
             },
         }
 

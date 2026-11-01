@@ -14,17 +14,12 @@ from ui.status import format_status
 from ui.theme import status_style
 
 class Responder:
-    """Format extraction Packets into terminal-ready Rich renderables."""
+    """Format extraction Packets into one consolidated Rich response."""
 
     FAILURE_STATUSES = {
         PacketStatus.FAILED,
         PacketStatus.NOT_SUPPORTED,
         PacketStatus.NOT_IMPLEMENTED,
-    }
-
-    SUCCESS_STATUSES = {
-        PacketStatus.SUCCESS,
-        PacketStatus.PARTIAL_SUCCESS,
     }
 
     def respond(self, packets: list[Packet]) -> RenderableType:
@@ -55,210 +50,273 @@ class Responder:
         if not valid_packets:
             return self._invalid_response(invalid_count)
 
+        overall_status = self._overall_status(valid_packets)
+
         sections: list[RenderableType] = [
-            self._summary(valid_packets, invalid_count),
+            self._header(valid_packets, overall_status),
+            self._results(valid_packets, invalid_count),
         ]
-
-        for packet in valid_packets:
-            sections.append(self._result(packet))
-
-        if invalid_count:
-            sections.append(
-                Panel(
-                    Text(
-                        f"{invalid_count} invalid extraction response(s) "
-                        "were omitted.",
-                        style="warning",
-                    ),
-                    title="Response warnings",
-                    border_style="warning",
-                    expand=False,
-                )
-            )
 
         return Group(*sections)
 
-    def _summary(
+    def _overall_status(
         self,
         packets: list[Packet],
-        invalid_count: int,
+    ) -> PacketStatus:
+        """Determine the combined extraction status."""
+
+        statuses = [packet.status for packet in packets]
+
+        if all(status == PacketStatus.SUCCESS for status in statuses):
+            return PacketStatus.SUCCESS
+
+        if all(status in self.FAILURE_STATUSES for status in statuses):
+            return PacketStatus.FAILED
+
+        return PacketStatus.PARTIAL_SUCCESS
+
+    def _header(
+        self,
+        packets: list[Packet],
+        overall_status: PacketStatus,
     ) -> RenderableType:
-        """Display the combined extraction outcome."""
+        """Build the consolidated extraction heading."""
 
-        successful = sum(
-            packet.status in self.SUCCESS_STATUSES
+        artefacts = sorted({
+            packet.artefact_type
             for packet in packets
-        )
-
-        failed = sum(
-            packet.status in self.FAILURE_STATUSES
-            for packet in packets
-        )
-
-        pending = sum(
-            packet.status in {
-                PacketStatus.PENDING,
-                PacketStatus.RUNNING,
-            }
-            for packet in packets
-        )
-
-        if failed == 0 and pending == 0 and invalid_count == 0:
-            overall_status = PacketStatus.SUCCESS
-
-        elif successful > 0:
-            overall_status = PacketStatus.PARTIAL_SUCCESS
-
-        elif pending > 0:
-            overall_status = PacketStatus.RUNNING
-
-        else:
-            overall_status = PacketStatus.FAILED
+            if packet.artefact_type
+        })
 
         details = Table.grid(padding=(0, 2))
         details.add_column(style="muted", no_wrap=True)
-        details.add_column(style="text")
+        details.add_column(style="text", overflow="fold")
 
-        details.add_row("Status", format_status(overall_status.value))
-        details.add_row("Extractors executed", str(len(packets)))
-        details.add_row("Successful", str(successful))
-        details.add_row("Failed", str(failed))
+        details.add_row(
+            "Artefact(s)",
+            ", ".join(artefacts) if artefacts else "None",
+        )
+        details.add_row(
+            "Status",
+            format_status(overall_status.value),
+        )
 
-        if pending:
-            details.add_row("Pending / running", str(pending))
+        task_id = self._task_id(packets)
 
-        if invalid_count:
-            details.add_row("Invalid responses", str(invalid_count))
-
-        request_ids = {
-            packet.request_id
-            for packet in packets
-            if packet.request_id
-        }
-
-        if len(request_ids) == 1:
-            details.add_row("Request ID", next(iter(request_ids)))
+        if task_id:
+            details.add_row("Task ID", task_id)
 
         return Panel(
             details,
-            title="THESEUS / EXTRACTION SUMMARY",
+            title="EXTRACTION RESULT",
             title_align="left",
             border_style=status_style(overall_status.value),
             padding=(1, 2),
             expand=False,
         )
 
-    def _result(self, packet: Packet) -> RenderableType:
-        """Format one extractor's response."""
+    @staticmethod
+    def _task_id(packets: list[Packet]) -> str | None:
+        """Resolve the common parent task ID where possible."""
 
-        sections: list[RenderableType] = [
-            self._header(packet),
-        ]
+        parent_ids = {
+            packet.parent_task_id
+            for packet in packets
+            if packet.parent_task_id
+        }
 
-        if packet.status in self.FAILURE_STATUSES:
-            sections.append(self._failure(packet))
+        if len(parent_ids) == 1:
+            return next(iter(parent_ids))
 
-        else:
-            if packet.data:
-                sections.append(
-                    self._data_section(packet.data)
-                )
+        task_ids = {
+            packet.task_id
+            for packet in packets
+            if packet.task_id
+        }
 
-            if packet.entities:
-                sections.append(
-                    self._structured_section(
-                        "Entities",
-                        packet.entities,
-                    )
-                )
+        if len(task_ids) == 1:
+            return next(iter(task_ids))
 
-            if packet.related_entities:
-                sections.append(
-                    self._structured_section(
-                        "Related entities",
-                        packet.related_entities,
-                    )
-                )
+        if len(task_ids) > 1:
+            return "Multiple"
 
-            if packet.provenance:
-                sections.append(
-                    self._structured_section(
-                        "Provenance",
-                        packet.provenance,
-                    )
-                )
+        return None
 
-            if packet.errors:
-                sections.append(
-                    self._errors_section(packet.errors)
-                )
-
-            if not any((
-                packet.data,
-                packet.entities,
-                packet.related_entities,
-                packet.provenance,
-                packet.errors,
-            )):
-                sections.append(
-                    Text(
-                        "No results found.",
-                        style="muted",
-                    )
-                )
-
-        return Group(*sections)
-
-    def _header(self, packet: Packet) -> RenderableType:
-        """Build an individual extraction heading."""
-
-        status = format_status(packet.status.value)
-
-        details = Table.grid(padding=(0, 2))
-        details.add_column(style="muted", no_wrap=True)
-        details.add_column(style="text")
-
-        details.add_row("Artefact", packet.artefact_type)
-        details.add_row("Status", status)
-
-        if packet.task_id:
-            details.add_row("Task ID", packet.task_id)
-
-        return Panel(
-            details,
-            title="EXTRACTION RESULT",
-            title_align="left",
-            border_style=status_style(packet.status.value),
-            padding=(1, 2),
-            expand=False,
-        )
-
-    def _data_section(self, data: dict[str, Any]) -> RenderableType:
-        """Format extractor-specific data."""
-
-        return self._structured_section("Results", data)
-
-    def _structured_section(
+    def _results(
         self,
-        title: str,
-        value: Any,
+        packets: list[Packet],
+        invalid_count: int,
     ) -> RenderableType:
-        """Format dictionaries and lists into readable tables."""
+        """Merge and display the results from all extractors."""
+
+        merged: dict[str, Any] = {}
+
+        for packet in packets:
+            self._merge_section(merged, packet.data)
+
+            self._merge_section(
+                merged,
+                {"Entities": packet.entities},
+            )
+            self._merge_section(
+                merged,
+                {"Related Entities": packet.related_entities},
+            )
+            self._merge_section(
+                merged,
+                {"Provenance": packet.provenance},
+            )
+            self._merge_section(
+                merged,
+                {"Errors / Warnings": packet.errors},
+            )
+
+            if packet.status in self.FAILURE_STATUSES:
+                self._merge_section(
+                    merged,
+                    {
+                        "Extraction Status": packet.status.value,
+                    },
+                )
+
+        if invalid_count:
+            self._merge_section(
+                merged,
+                {
+                    "Response Warnings": [
+                        f"{invalid_count} invalid extraction "
+                        "response(s) were omitted."
+                    ],
+                },
+            )
+
+        merged = self._clean(merged)
 
         table = Table.grid(padding=(0, 2))
-        table.add_column(style="muted", no_wrap=True)
+        table.add_column(style="muted", overflow="fold")
         table.add_column(style="text", overflow="fold")
 
-        self._add_values(table, value)
+        if merged:
+            self._add_values(table, merged)
+        else:
+            table.add_row(
+                "Results",
+                Text("No results found.", style="muted"),
+            )
 
         return Panel(
             table,
-            title=title,
+            title="RESULTS",
             title_align="left",
             border_style="border",
             padding=(1, 2),
             expand=False,
         )
+
+    def _merge_section(
+        self,
+        target: dict[str, Any],
+        section: Any,
+    ) -> None:
+        """Merge a section into the consolidated result."""
+
+        section = self._clean(section)
+
+        if not section:
+            return
+
+        if not isinstance(section, dict):
+            return
+
+        for key, value in section.items():
+            if key not in target:
+                target[key] = value
+            else:
+                target[key] = self._merge_values(
+                    target[key],
+                    value,
+                )
+
+    def _merge_values(self, existing: Any, incoming: Any) -> Any:
+        """Recursively merge values without discarding conflicts."""
+
+        if isinstance(existing, dict) and isinstance(incoming, dict):
+            merged = dict(existing)
+
+            for key, value in incoming.items():
+                if key in merged:
+                    merged[key] = self._merge_values(
+                        merged[key],
+                        value,
+                    )
+                else:
+                    merged[key] = value
+
+            return merged
+
+        if isinstance(existing, list) and isinstance(incoming, list):
+            merged = list(existing)
+
+            for value in incoming:
+                self._append_unique(merged, value)
+
+            return merged
+
+        if existing == incoming:
+            return existing
+
+        if isinstance(existing, list):
+            merged = list(existing)
+        else:
+            merged = [existing]
+
+        if isinstance(incoming, list):
+            for value in incoming:
+                self._append_unique(merged, value)
+        else:
+            self._append_unique(merged, incoming)
+
+        return merged
+
+    @staticmethod
+    def _append_unique(target: list[Any], value: Any) -> None:
+        """Append a value only when it is not already present."""
+
+        if not any(existing == value for existing in target):
+            target.append(value)
+
+    def _clean(self, value: Any) -> Any:
+        """Remove empty values while preserving meaningful falsey values."""
+
+        if value is None:
+            return None
+
+        if isinstance(value, str):
+            return value if value.strip() else None
+
+        if isinstance(value, dict):
+            cleaned = {}
+
+            for key, item in value.items():
+                cleaned_item = self._clean(item)
+
+                if cleaned_item is not None:
+                    cleaned[key] = cleaned_item
+
+            return cleaned or None
+
+        if isinstance(value, list):
+            cleaned = []
+
+            for item in value:
+                cleaned_item = self._clean(item)
+
+                if cleaned_item is not None:
+                    self._append_unique(cleaned, cleaned_item)
+
+            return cleaned or None
+
+        return value
 
     def _add_values(
         self,
@@ -267,46 +325,34 @@ class Responder:
         *,
         label: str | None = None,
     ) -> None:
-        """Recursively add structured values to a table."""
+        """Recursively render merged values."""
 
         if isinstance(value, dict):
-            if not value:
-                table.add_row(
-                    label or "Value",
-                    Text("None", style="muted"),
-                )
-                return
-
             for key, item in value.items():
+                formatted_key = self._format_label(str(key))
+
+                item_label = (
+                    f"{label} / {formatted_key}"
+                    if label
+                    else formatted_key
+                )
+
                 self._add_values(
                     table,
                     item,
-                    label=self._format_label(str(key)),
+                    label=item_label,
                 )
 
         elif isinstance(value, list):
-            if not value:
-                table.add_row(
-                    label or "Value",
-                    Text("None", style="muted"),
-                )
-                return
-
             for index, item in enumerate(value, start=1):
-                entry_label = (
-                    f"{label} [{index}]"
-                    if label
-                    else f"Entry {index}"
-                )
-
                 if isinstance(item, (dict, list)):
                     table.add_row(
-                        entry_label,
+                        f"{label or 'Entry'} [{index}]",
                         self._nested_table(item),
                     )
                 else:
                     table.add_row(
-                        entry_label,
+                        f"{label or 'Entry'} [{index}]",
                         self._format_scalar(item),
                     )
 
@@ -320,73 +366,26 @@ class Responder:
         """Create a nested table for structured list entries."""
 
         table = Table.grid(padding=(0, 2))
-        table.add_column(style="muted", no_wrap=True)
+        table.add_column(style="muted", overflow="fold")
         table.add_column(style="text", overflow="fold")
 
         self._add_values(table, value)
 
         return table
 
-    def _errors_section(
-        self,
-        errors: list[dict[str, Any]],
-    ) -> RenderableType:
-        """Display extraction errors and warnings."""
+    @staticmethod
+    def _format_label(value: str) -> str:
+        return value.replace("_", " ").strip().title()
 
-        table = Table.grid(padding=(0, 2))
-        table.add_column(style="error", no_wrap=True)
-        table.add_column(style="text", overflow="fold")
-
-        for error in errors:
-            if not isinstance(error, dict):
-                continue
-
-            code = str(error.get("code", "unknown_error"))
-            message = str(
-                error.get("message", "No details available.")
+    @staticmethod
+    def _format_scalar(value: Any) -> Text:
+        if isinstance(value, bool):
+            return Text(
+                str(value),
+                style="success" if value else "muted",
             )
 
-            table.add_row(code, message)
-
-        return Panel(
-            table,
-            title="Errors / Warnings",
-            title_align="left",
-            border_style="warning",
-            padding=(1, 2),
-            expand=False,
-        )
-
-    def _failure(self, packet: Packet) -> RenderableType:
-        """Display unsuccessful extraction states."""
-
-        messages = {
-            PacketStatus.FAILED: "Extraction failed.",
-            PacketStatus.NOT_SUPPORTED: "This input type is not supported.",
-            PacketStatus.NOT_IMPLEMENTED: "No extractor is configured for this input type.",
-            PacketStatus.PENDING: "Extraction has not started.",
-            PacketStatus.RUNNING: "Extraction is still in progress.",
-        }
-
-        message = messages.get(
-            packet.status,
-            "Extraction did not complete successfully.",
-        )
-
-        sections: list[RenderableType] = [
-            Panel(
-                Text(message, style="text"),
-                border_style=status_style(packet.status.value),
-                expand=False,
-            )
-        ]
-
-        if packet.errors:
-            sections.append(
-                self._errors_section(packet.errors)
-            )
-
-        return Group(*sections)
+        return Text(str(value), style="text")
 
     @staticmethod
     def _empty_response() -> RenderableType:
@@ -412,20 +411,3 @@ class Responder:
             border_style="error",
             expand=False,
         )
-
-    @staticmethod
-    def _format_label(value: str) -> str:
-        return value.replace("_", " ").strip().title()
-
-    @staticmethod
-    def _format_scalar(value: Any) -> Text:
-        if value is None:
-            return Text("None", style="muted")
-
-        if isinstance(value, bool):
-            return Text(
-                str(value),
-                style="success" if value else "muted",
-            )
-
-        return Text(str(value), style="text")

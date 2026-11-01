@@ -1,4 +1,7 @@
 tldextract
+rich
+pytest
+pytest-cov
 dnspython
 requests
 beautifulsoup4

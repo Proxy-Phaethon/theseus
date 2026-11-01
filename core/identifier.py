@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 from email.utils import parseaddr
 
 from core.packets import Packet, PacketStatus
+from extractors.contact import EMAIL_PATTERN, PHONE_PATTERN
 
 def _text(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
@@ -179,6 +180,27 @@ def _message_id(value):
 
     # Email source file.
     return _has_extension(".eml")(candidate)
+
+def _contact(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    candidate = value.strip()
+
+    if "BEGIN:VCARD" in candidate.upper():
+        return True
+
+    if "\n" in candidate or "\r" in candidate:
+        return False
+
+    if EMAIL_PATTERN.fullmatch(candidate):
+        return True
+
+    if PHONE_PATTERN.fullmatch(candidate):
+        digits = re.sub(r"\D", "", candidate)
+        return 7 <= len(digits) <= 15
+
+    return _has_extension(".vcf")(candidate)
 
 def _file_input(value: Any) -> bool:
     if isinstance(value, bytes):
@@ -364,6 +386,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
         "git_commit": lambda value: (
             _text(value) and bool(re.fullmatch(r"[a-fA-F0-9]{7,64}", value.strip()))
         ),
+    "contact": _contact,
     "package": _nonempty,
     "sbom": _structured,
     "container": _nonempty,

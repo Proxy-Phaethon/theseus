@@ -1,7 +1,8 @@
+
 """Input identifier for Theseus.
 
-Validates input flags and checks whether their accompanying
-content matches the expected artefact type.
+Recognises accepted input-type flags and validates their accompanying
+input. It does not select or execute extractors.
 """
 
 from __future__ import annotations
@@ -14,15 +15,63 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
-from email.utils import parseaddr
 
 from core.packets import Packet, PacketStatus
-from extractors import csv
-from extractors.config import _detect_format
-from extractors.contact import EMAIL_PATTERN, PHONE_PATTERN
 
 def _text(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+def _safe_path(value: Any) -> Path | None:
+    """Return a Path only when the input can safely be treated as a path."""
+    if not isinstance(value, (str, Path)):
+        return None
+
+    try:
+        return Path(value).expanduser()
+    except (OSError, ValueError, TypeError):
+        return None
+
+def _file(value: Any) -> bool:
+    path = _safe_path(value)
+    if path is None:
+        return False
+
+    try:
+        return path.is_file() and not path.is_symlink()
+    except OSError:
+        return False
+
+def _directory(value: Any) -> bool:
+    path = _safe_path(value)
+    if path is None:
+        return False
+
+    try:
+        return path.is_dir() and not path.is_symlink()
+    except OSError:
+        return False
+
+def _has_extension(*extensions: str) -> Callable[[Any], bool]:
+    extensions = tuple(ext.lower() for ext in extensions)
+
+    def validate(value: Any) -> bool:
+        path = _safe_path(value)
+
+        if path is None or not _file(path):
+            return False
+
+        return str(path).lower().endswith(extensions)
+
+    return validate
+
+def _nonempty(value: Any) -> bool:
+    if isinstance(value, bytes):
+        return bool(value)
+
+    return (
+        _text(value)
+        or isinstance(value, (dict, list))
+    )
 
 def _url(value: Any) -> bool:
     if not _text(value):
@@ -37,8 +86,7 @@ def _url(value: Any) -> bool:
         if not parsed.hostname:
             return False
 
-        parsed.port  # Accessing this validates the port, if present.
-
+        parsed.port
         return True
 
     except ValueError:
@@ -51,10 +99,8 @@ def _domain(value: Any) -> bool:
     try:
         hostname = value.strip().rstrip(".").lower()
 
-        if "://" in hostname or "/" in hostname or "@" in hostname:
+        if any(char in hostname for char in (":", "/", "@", "?", "#")):
             return False
-
-        import ipaddress
 
         try:
             ipaddress.ip_address(hostname)
@@ -63,7 +109,6 @@ def _domain(value: Any) -> bool:
             pass
 
         hostname = hostname.encode("idna").decode("ascii")
-
         labels = hostname.split(".")
 
         if len(labels) < 2:
@@ -81,232 +126,514 @@ def _domain(value: Any) -> bool:
         return False
 
 def _ip(value: Any) -> bool:
-    try:
-        ipaddress.ip_address(value.strip())
-        return True
-    except (ValueError, AttributeError):
-        return False
-
-def _cidr(value: Any) -> bool:
-    try:
-        ipaddress.ip_network(value.strip(), strict=False)
-        return True
-    except (ValueError, AttributeError):
-        return False
-
-def _hostname(value: Any) -> bool:
-    return _domain(value) or _ip(value)
-
-def _port(value: Any) -> bool:
-    try:
-        port = int(value)
-        return 0 <= port <= 65535
-    except (ValueError, TypeError):
-        return False
-
-def _hash(value: Any) -> bool:
     if not _text(value):
         return False
 
-    return bool(re.fullmatch(
-        r"(?:[a-fA-F0-9]{32}|[a-fA-F0-9]{40}|"
-        r"[a-fA-F0-9]{56}|[a-fA-F0-9]{64}|"
-        r"[a-fA-F0-9]{96}|[a-fA-F0-9]{128})",
-        value.strip(),
-    ))
+    try:
+        ipaddress.ip_address(value.strip())
+        return True
+    except ValueError:
+        return False
 
-def _email(value):
-    if not isinstance(value, str) or not value.strip():
+def _cidr(value: Any) -> bool:
+    if not _text(value):
+        return False
+
+    try:
+        ipaddress.ip_network(value.strip(), strict=False)
+        return True
+    except ValueError:
+        return False
+
+def _hostname(value: Any) -> bool:
+    if not _text(value):
+        return False
+
+    hostname = value.strip().rstrip(".")
+
+    if _ip(hostname):
+        return True
+
+    if not hostname or len(hostname) > 253:
+        return False
+
+    try:
+        hostname = hostname.encode("idna").decode("ascii")
+    except UnicodeError:
+        return False
+
+    labels = hostname.split(".")
+
+    return all(
+        re.fullmatch(
+            r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?",
+            label,
+        )
+        for label in labels
+    )
+
+def _port(value: Any) -> bool:
+    if not _text(value):
+        return False
+
+    match = re.fullmatch(
+        r"(\d+)(?:/(tcp|udp))?",
+        value.strip(),
+        re.IGNORECASE,
+    )
+
+    return bool(
+        match and 0 <= int(match.group(1)) <= 65535
+    )
+
+def _mac(value: Any) -> bool:
+    return bool(
+        _text(value)
+        and re.fullmatch(
+            r"(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}",
+            value.strip(),
+        )
+    )
+
+def _asn(value: Any) -> bool:
+    return bool(
+        _text(value)
+        and re.fullmatch(
+            r"(?:AS)?\d+",
+            value.strip(),
+            re.IGNORECASE,
+        )
+        and 1 <= int(value.strip().removeprefix("AS").removeprefix("as")) <= 4294967295
+    )
+
+def _hash(value: Any) -> bool:
+    return bool(
+        _text(value)
+        and re.fullmatch(
+            r"(?:[a-fA-F0-9]{32}|[a-fA-F0-9]{40}|"
+            r"[a-fA-F0-9]{56}|[a-fA-F0-9]{64}|"
+            r"[a-fA-F0-9]{96}|[a-fA-F0-9]{128})",
+            value.strip(),
+        )
+    )
+
+def _pdf(value: Any) -> bool:
+    if isinstance(value, bytes):
+        return value.startswith(b"%PDF-")
+
+    return _has_extension(".pdf")(value)
+
+def _image(value: Any) -> bool:
+    return _has_extension(
+        ".jpg", ".jpeg", ".png", ".gif",
+        ".bmp", ".tiff", ".tif", ".webp",
+        ".ico", ".jfif", ".avif",
+    )(value)
+
+def _office(value: Any) -> bool:
+    return _has_extension(
+        ".docx", ".xlsx", ".pptx",
+    )(value)
+
+def _archive(value: Any) -> bool:
+    return _has_extension(
+        ".zip", ".tar", ".tar.gz", ".tgz",
+        ".tar.bz2", ".tbz", ".tbz2",
+        ".tar.xz", ".txz", ".gz", ".bz2", ".xz",
+    )(value)
+
+def _audio(value: Any) -> bool:
+    return _has_extension(
+        ".mp3", ".wav", ".flac", ".aac", ".m4a",
+        ".ogg", ".opus", ".wma", ".aiff", ".aif",
+        ".ape", ".wv", ".mp4",
+    )(value)
+
+def _video(value: Any) -> bool:
+    return _has_extension(
+        ".mp4", ".m4v", ".mkv", ".mov", ".avi",
+        ".wmv", ".flv", ".webm", ".mpeg", ".mpg",
+        ".m4p", ".3gp", ".3g2", ".ts", ".mts",
+        ".m2ts", ".vob", ".ogv", ".asf",
+    )(value)
+
+def _font(value: Any) -> bool:
+    return _has_extension(
+        ".ttf", ".otf", ".ttc", ".woff", ".woff2",
+    )(value)
+
+def _shortcut(value: Any) -> bool:
+    return _has_extension(
+        ".lnk", ".url", ".desktop",
+    )(value)
+
+def _pcap(value: Any) -> bool:
+    return _has_extension(".pcap", ".pcapng")(value)
+
+def _file_or_content(value: Any) -> bool:
+    return _file(value) or _nonempty(value)
+
+def _json(value: Any) -> bool:
+    if not _text(value):
         return False
 
     candidate = value.strip()
 
-    # Raw email source
-    if "\n" in candidate or "\r" in candidate:
-        return (
-            "From:" in candidate
-            or "Received:" in candidate
-            or "Message-ID:" in candidate
+    if candidate.startswith(("{", "[")):
+        try:
+            json.loads(candidate)
+            return True
+        except json.JSONDecodeError:
+            return False
+
+    path = _safe_path(candidate)
+
+    if path is None or not _file(path):
+        return False
+
+    if path.suffix.lower() != ".json":
+        return False
+
+    try:
+        with path.open("r", encoding="utf-8-sig") as file:
+            json.load(file)
+        return True
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+
+def _xml(value: Any) -> bool:
+    if not _text(value):
+        return False
+
+    candidate = value.strip()
+
+    if candidate.startswith("<"):
+        if re.search(r"<!\s*(DOCTYPE|ENTITY)\b", candidate, re.I):
+            return False
+
+        try:
+            ET.fromstring(candidate)
+            return True
+        except ET.ParseError:
+            return False
+
+    path = _safe_path(candidate)
+
+    if path is None or not _file(path) or path.suffix.lower() != ".xml":
+        return False
+
+    try:
+        content = path.read_text(encoding="utf-8-sig")
+
+        if re.search(r"<!\s*(DOCTYPE|ENTITY)\b", content, re.I):
+            return False
+
+        ET.fromstring(content)
+        return True
+    except (OSError, UnicodeDecodeError, ET.ParseError):
+        return False
+
+def _csv(value: Any) -> bool:
+    import csv
+
+    if not _text(value):
+        return False
+
+    candidate = value.strip()
+
+    path = _safe_path(candidate)
+
+    if path is not None and _file(path):
+        return path.suffix.lower() == ".csv"
+
+    try:
+        dialect = csv.Sniffer().sniff(candidate[:8192])
+        return dialect.delimiter in (",", ";", "\t", "|")
+    except csv.Error:
+        return False
+
+def _sqlite(value: Any) -> bool:
+    if not _has_extension(".db", ".sqlite", ".sqlite3")(value):
+        return False
+
+    try:
+        with Path(value).open("rb") as file:
+            return file.read(16) == b"SQLite format 3\x00"
+    except OSError:
+        return False
+
+def _config(value: Any) -> bool:
+    if not _text(value):
+        return False
+
+    candidate = value.strip()
+    path = _safe_path(candidate)
+
+    if path is not None and _file(path):
+        return path.suffix.lower() in (
+            ".ini", ".cfg", ".conf", ".toml", ".yaml", ".yml", ".json",
         )
 
-    # Email file
+    if candidate.startswith(("{", "[")):
+        return _json(candidate)
+
+    if re.search(r"(?m)^\s*\[[^\]]+\]\s*$", candidate):
+        return True
+
+    if re.search(r"(?m)^\s*[A-Za-z_][\w.-]*\s*:", candidate):
+        return True
+
+    if re.search(r"(?m)^\s*[A-Za-z_][\w.-]*\s*=", candidate):
+        return True
+
+    return False
+
+def _env(value: Any) -> bool:
+    if not _text(value):
+        return False
+
+    candidate = value.strip()
+    path = _safe_path(candidate)
+
+    if path is not None and _file(path):
+        return path.name.lower() == ".env" or path.name.lower().startswith(".env.")
+
+    for line in candidate.splitlines():
+        line = line.strip()
+
+        if not line or line.startswith("#"):
+            continue
+
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\s*=", line):
+            return True
+
+    return False
+
+def _email(value: Any) -> bool:
+    if not _text(value):
+        return False
+
+    candidate = value.strip()
+
+    if "\n" in candidate or "\r" in candidate:
+        return any(
+            re.match(
+                r"^(From|Received|Message-ID|Subject|Date):",
+                line,
+                re.IGNORECASE,
+            )
+            for line in candidate.splitlines()
+        )
+
     return _has_extension(".eml", ".mbox")(candidate)
 
-def _email_headers(value):
-    if not isinstance(value, str) or not value.strip():
-        return False
-
-    candidate = value.strip()
-
-    # Raw email/header source.
-    if "\n" in candidate or "\r" in candidate:
-        header_names = (
-            "From:",
-            "To:",
-            "Subject:",
-            "Date:",
-            "Received:",
-            "Message-ID:",
-            "Return-Path:",
-        )
-
-        return any(
-            line.lower().startswith(tuple(name.lower() for name in header_names))
-            for line in candidate.splitlines()
-        )
-
-    # File-based input.
-    return _has_extension(".eml")(candidate)
-
-def _message_id(value):
-    if not isinstance(value, str) or not value.strip():
-        return False
-
-    candidate = value.strip()
-
-    # Raw email source.
-    if "\n" in candidate or "\r" in candidate:
-        return any(
-            line.lower().startswith("message-id:")
-            for line in candidate.splitlines()
-        )
-
-    # Direct Message-ID value.
-    if candidate.startswith("<") and candidate.endswith(">"):
-        return bool(
-            re.fullmatch(
-                r"<[^<>\s@]+@[^<>\s@]+>",
-                candidate,
-            )
-        )
-
-    # Email source file.
-    return _has_extension(".eml")(candidate)
-
-def _contact(value):
-    if not isinstance(value, str) or not value.strip():
+def _contact(value: Any) -> bool:
+    if not _text(value):
         return False
 
     candidate = value.strip()
 
     if "BEGIN:VCARD" in candidate.upper():
+        return "END:VCARD" in candidate.upper()
+
+    if re.fullmatch(
+        r"[^@\s]+@[^@\s]+\.[^@\s]+",
+        candidate,
+    ):
         return True
 
-    if "\n" in candidate or "\r" in candidate:
-        return False
-
-    if EMAIL_PATTERN.fullmatch(candidate):
-        return True
-
-    if PHONE_PATTERN.fullmatch(candidate):
+    if re.fullmatch(r"\+?[\d\s().-]+", candidate):
         digits = re.sub(r"\D", "", candidate)
         return 7 <= len(digits) <= 15
 
     return _has_extension(".vcf")(candidate)
 
-def _calendar(value):
-    if not isinstance(value, str) or not value.strip():
+def _calendar(value: Any) -> bool:
+    if not _text(value):
         return False
 
     candidate = value.strip()
 
-    if "\n" in candidate or "\r" in candidate:
-        return (
-            "BEGIN:VCALENDAR" in candidate.upper()
-            and "END:VCALENDAR" in candidate.upper()
-        )
+    if "BEGIN:VCALENDAR" in candidate.upper():
+        return "END:VCALENDAR" in candidate.upper()
 
     return _has_extension(".ics")(candidate)
 
-def _vcf(value):
-    if not isinstance(value, str) or not value.strip():
+def _git_repository(value: Any) -> bool:
+    path = _safe_path(value)
+
+    if path is None or not _directory(path):
         return False
-
-    candidate = value.strip()
-
-    if "\n" in candidate or "\r" in candidate:
-        return (
-            "BEGIN:VCARD" in candidate.upper()
-            and "END:VCARD" in candidate.upper()
-        )
-
-    return _has_extension(".vcf")(candidate)
-
-def _ics(value):
-    if not isinstance(value, str) or not value.strip():
-        return False
-
-    candidate = value.strip()
-
-    return _has_extension(".ics")(candidate)
-
-def _git_repository(value):
-    if not isinstance(value, str) or not value.strip():
-        return False
-
-    path = Path(value.strip())
 
     try:
         return (
-            path.is_dir()
-            and (
-                (path / ".git").exists()
-                or (path / "HEAD").exists()
-            )
+            (path / ".git").exists()
+            or (path / "HEAD").is_file()
         )
     except OSError:
         return False
 
-def _file_input(value: Any) -> bool:
-    if isinstance(value, bytes):
-        return bool(value)
-
-    if isinstance(value, Path):
-        return value.is_file()
-
-    if isinstance(value, str):
-        try:
-            return Path(value).is_file()
-        except (OSError, ValueError):
-            return False
-
-    return False
-
-def _directory(value: Any) -> bool:
-    if not isinstance(value, (str, Path)):
-        return False
-
-    try:
-        return Path(value).is_dir()
-    except (OSError, ValueError):
-        return False
-
-def _structured(value: Any) -> bool:
-    return isinstance(value, (dict, list)) or _text(value)
-
-def _json(value):
-    if not isinstance(value, str) or not value.strip():
+def _git_commit(value: Any) -> bool:
+    if not _text(value):
         return False
 
     candidate = value.strip()
-    path = Path(candidate)
 
-    if path.is_file():
-        return path.suffix.lower() == ".json"
+    if "::" in candidate:
+        repository, commit = candidate.rsplit("::", 1)
+        path = _safe_path(repository)
+
+        return bool(
+            path
+            and _git_repository(path)
+            and re.fullmatch(r"[0-9a-fA-F]{4,64}", commit.strip())
+        )
+
+    return bool(
+        re.fullmatch(r"[0-9a-fA-F]{4,64}", candidate)
+    )
+
+def _package(value: Any) -> bool:
+    if not _text(value):
+        return False
+
+    filename = Path(value).name.lower()
+
+    supported = {
+        "pyproject.toml", "setup.py", "setup.cfg", "pkg-info",
+        "package.json", "package-lock.json",
+        "cargo.toml", "cargo.lock",
+        "composer.json", "composer.lock",
+        "pom.xml", "gemfile.lock",
+    }
+
+    return (
+        filename in supported or filename.endswith(".gemspec")
+    ) and _file(value)
+
+def _registry(value: Any) -> bool:
+    if not _text(value):
+        return False
+
+    candidate = value.strip()
+    path = _safe_path(candidate)
+
+    if path is not None and _file(path):
+        try:
+            with path.open("rb") as file:
+                header = file.read(16)
+
+            return (
+                header.startswith(b"regf")
+                or path.suffix.lower() == ".reg"
+            )
+        except OSError:
+            return False
+
+    return bool(
+        re.search(
+            r"(?im)^\s*(?:Windows Registry Editor Version 5\.00|REGEDIT4)\s*$",
+            candidate,
+        )
+    )
+
+def _log(value: Any) -> bool:
+    if not _text(value):
+        return False
+
+    candidate = value.strip()
+    path = _safe_path(candidate)
+
+    if path is not None and _file(path):
+        return path.suffix.lower() in (".log", ".logs", ".syslog")
+
+    return (
+        "\n" in candidate
+        and bool(
+            re.search(
+                r"(?im)\b(ERROR|WARNING|INFO|DEBUG|CRITICAL|NOTICE|FATAL)\b"
+                r"|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b",
+                candidate,
+            )
+        )
+    )
+
+def _browser(value: Any) -> bool:
+    if not _text(value):
+        return False
+
+    candidate = value.strip()
+    path = _safe_path(candidate)
+
+    artefacts = {
+        "history",
+        "places.sqlite",
+        "cookies",
+        "cookies.sqlite",
+        "login data",
+        "web data",
+        "bookmarks",
+    }
+
+    if path is not None and _directory(path):
+        try:
+            return any(
+                (path / name).is_file()
+                for name in artefacts
+            )
+        except OSError:
+            return False
+
+    if path is not None and _file(path):
+        return path.name.lower() in artefacts
+
+    return False
+
+def _har(value: Any) -> bool:
+    if not _text(value):
+        return False
+
+    candidate = value.strip()
+
+    if candidate.startswith("{"):
+        try:
+            document = json.loads(candidate)
+            return (
+                isinstance(document, dict)
+                and isinstance(document.get("log"), dict)
+                and isinstance(document["log"].get("entries", []), list)
+            )
+        except json.JSONDecodeError:
+            return False
+
+    path = _safe_path(candidate)
+
+    if path is None or not _file(path) or path.suffix.lower() != ".har":
+        return False
 
     try:
-        json.loads(candidate)
-        return True
-    except (json.JSONDecodeError, ValueError):
+        with path.open("r", encoding="utf-8-sig") as file:
+            document = json.load(file)
+
+        return (
+            isinstance(document, dict)
+            and isinstance(document.get("log"), dict)
+            and isinstance(document["log"].get("entries", []), list)
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return False
 
-def _sbom(value):
-    if not isinstance(value, str) or not value.strip():
+def _sbom(value: Any) -> bool:
+    if not _text(value):
         return False
 
-    path = Path(value).expanduser()
+    candidate = value.strip()
+    path = _safe_path(candidate)
 
-    if not path.is_file():
+    if path is None or not _file(path):
         return False
 
     filename = path.name.lower()
@@ -319,7 +646,7 @@ def _sbom(value):
         if filename.endswith((".yaml", ".yml")):
             with path.open("r", encoding="utf-8-sig") as file:
                 content = file.read(4096)
-                return "spdxVersion:" in content or "SPDXVersion:" in content
+            return "spdxVersion:" in content or "SPDXVersion:" in content
 
         if filename.endswith(".json"):
             with path.open("r", encoding="utf-8-sig") as file:
@@ -337,160 +664,30 @@ def _sbom(value):
             with path.open("rb") as file:
                 content = file.read(4096)
 
-            return b"<bom" in content and b"cyclonedx.org/schema" in content
+            return (
+                b"<bom" in content
+                and b"cyclonedx.org/schema" in content
+            )
 
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return False
 
     return False
 
-def _xml(value):
-    if not isinstance(value, str) or not value.strip():
+def _container(value: Any) -> bool:
+    if not _text(value):
         return False
 
     candidate = value.strip()
-    path = Path(candidate)
+    path = _safe_path(candidate)
 
-    if path.is_file():
-        return path.suffix.lower() == ".xml"
-
-    if not candidate.startswith("<"):
-        return False
-
-    if re.search(
-        r"<!\s*(DOCTYPE|ENTITY)\b",
-        candidate,
-        flags=re.IGNORECASE,
-    ):
-        return False
-
-    try:
-        ET.fromstring(candidate)
-        return True
-    except ET.ParseError:
-        return False
-
-def _pdf(value: Any) -> bool:
-    if isinstance(value, bytes):
-        return value.startswith(b"%PDF-")
-
-    if isinstance(value, (str, Path)):
-        return str(value).lower().endswith(".pdf") and _file_input(value)
-
-    return False
-
-def _image(value: Any) -> bool:
-    signatures = (
-        b"\xff\xd8\xff",                 # JPEG
-        b"\x89PNG\r\n\x1a\n",           # PNG
-        b"GIF87a", b"GIF89a",           # GIF
-        b"BM",                           # BMP
-        b"RIFF",                         # WebP (additional check below)
-    )
-
-    if isinstance(value, bytes):
-        return (
-            any(value.startswith(sig) for sig in signatures[:-1])
-            or (
-                value.startswith(b"RIFF")
-                and value[8:12] == b"WEBP"
-            )
-        )
-
-    if isinstance(value, (str, Path)):
-        return (
-            str(value).lower().endswith(
-                (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff")
-            )
-            and _file_input(value)
-        )
-
-    return False
-
-def _has_extension(*extensions: str) -> Callable[[Any], bool]:
-    def validate(value: Any) -> bool:
-        return (
-            isinstance(value, (str, Path))
-            and str(value).lower().endswith(extensions)
-            and _file_input(value)
-        )
-    return validate
-
-def _git_commit(value):
-    if not isinstance(value, str) or not value.strip():
-        return False
-
-    candidate = value.strip()
-
-    if "::" in candidate:
-        repository_path, commit_reference = candidate.rsplit("::", 1)
-
-        if not repository_path.strip() or not commit_reference.strip():
-            return False
-
-        path = Path(repository_path.strip())
-
-        try:
-            return (
-                path.is_dir()
-                and (
-                    (path / ".git").exists()
-                    or (path / "HEAD").exists()
-                )
-                and bool(re.fullmatch(
-                    r"[0-9a-fA-F]{4,64}",
-                    commit_reference.strip(),
-                ))
-            )
-        except OSError:
-            return False
-
-    return bool(
-        re.fullmatch(r"[0-9a-fA-F]{4,64}", candidate)
-    )
-
-def _nonempty(value: Any) -> bool:
-    if isinstance(value, bytes):
-        return bool(value)
-
-    return _text(value) or isinstance(value, (dict, list))
-
-def _package(value):
-    if not isinstance(value, str) or not value.strip():
-        return False
-
-    filename = Path(value).name.lower()
-
-    supported = {
-        "pyproject.toml",
-        "setup.py",
-        "setup.cfg",
-        "pkg-info",
-        "package.json",
-        "package-lock.json",
-        "cargo.toml",
-        "cargo.lock",
-        "composer.json",
-        "composer.lock",
-        "pom.xml",
-        "gemfile.lock",
-    }
-
-    return filename in supported or filename.endswith(".gemspec")
-
-def _container(value):
-    if not isinstance(value, str) or not value.strip():
-        return False
-
-    path = Path(value).expanduser()
-
-    if path.is_dir():
+    if path is not None and _directory(path):
         return (
             (path / "oci-layout").is_file()
             and (path / "index.json").is_file()
         )
 
-    if not path.is_file():
+    if path is None or not _file(path):
         return False
 
     filename = path.name.lower()
@@ -499,10 +696,8 @@ def _container(value):
         return True
 
     if filename in {
-        "compose.yaml",
-        "compose.yml",
-        "docker-compose.yaml",
-        "docker-compose.yml",
+        "compose.yaml", "compose.yml",
+        "docker-compose.yaml", "docker-compose.yml",
     }:
         return True
 
@@ -518,14 +713,8 @@ def _container(value):
                 isinstance(document, dict)
                 and (
                     "services" in document
-                    or (
-                        "apiVersion" in document
-                        and "kind" in document
-                    )
-                    or (
-                        "manifests" in document
-                        and "schemaVersion" in document
-                    )
+                    or ("apiVersion" in document and "kind" in document)
+                    or ("manifests" in document and "schemaVersion" in document)
                 )
             )
 
@@ -535,10 +724,7 @@ def _container(value):
 
             return (
                 "services:" in content
-                or (
-                    "apiVersion:" in content
-                    and "kind:" in content
-                )
+                or ("apiVersion:" in content and "kind:" in content)
             )
 
     except (OSError, UnicodeDecodeError, json.JSONDecodeError):
@@ -546,399 +732,132 @@ def _container(value):
 
     return False
 
-def _csv(value):
-    if not isinstance(value, str) or not value.strip():
-        return False
-
-    candidate = value.strip()
-    path = Path(candidate)
-
-    if path.is_file():
-        return path.suffix.lower() == ".csv"
-
-    try:
-        sample = candidate[:8192]
-        dialect = csv.Sniffer().sniff(sample)
-
-        return dialect.delimiter in (",", ";", "\t", "|")
-
-    except csv.Error:
-        return False
-
-def _sqlite(value):
-    if not isinstance(value, str) or not value.strip():
-        return False
-
-    path = Path(value.strip())
-
-    if not path.is_file():
-        return False
-
-    if path.suffix.lower() not in (".db", ".sqlite", ".sqlite3"):
-        return False
-
-    try:
-        with path.open("rb") as file:
-            return file.read(16) == b"SQLite format 3\x00"
-    except OSError:
-        return False
-
-def _config(value):
-    if not isinstance(value, str) or not value.strip():
-        return False
-
-    candidate = value.strip()
-    path = Path(candidate)
-
-    if path.is_file():
-        return path.suffix.lower() in (
-            ".ini",
-            ".cfg",
-            ".conf",
-            ".toml",
-            ".yaml",
-            ".yml",
-            ".json",
-        )
-
-    try:
-        _detect_format(candidate)
-        return True
-    except (ValueError, ImportError):
-        return False
-
-def _env(value):
-    if not isinstance(value, str) or not value.strip():
-        return False
-
-    candidate = value.strip()
-    path = Path(candidate)
-
-    if path.is_file():
-        return path.name.lower() == ".env" or path.name.lower().startswith(".env.")
-
-    for line in candidate.splitlines():
-        line = line.strip()
-
-        if not line or line.startswith("#"):
-            continue
-
-        if line.startswith("export "):
-            line = line[7:].lstrip()
-
-        if re.match(
-            r"^[A-Za-z_][A-Za-z0-9_]*\s*=",
-            line,
-        ):
-            return True
-
-    return False
-
-
-def _looks_like_reg(raw):
-    return bool(
-        re.search(
-            r"(?im)^\s*Windows Registry Editor Version 5\.00\s*$"
-            r"|^\s*REGEDIT4\s*$",
-            raw,
-        )
-    )
-
-def _registry(value):
-    if not isinstance(value, str) or not value.strip():
-        return False
-
-    path = Path(value.strip())
-
-    if path.is_file():
-        try:
-            with path.open("rb") as file:
-                header = file.read(16)
-
-            return (
-                header == b"regf"
-                or path.suffix.lower() == ".reg"
-            )
-        except OSError:
-            return False
-
-    return _looks_like_reg(value.strip())
-
-def _log(value):
-    if not isinstance(value, str) or not value.strip():
-        return False
-
-    path = Path(value.strip())
-
-    if path.is_file():
-        return path.suffix.lower() in (
-            ".log",
-            ".logs",
-            ".syslog",
-        )
-
-    candidate = value.strip()
-
-    return "\n" in candidate and any(
-        marker in candidate
-        for marker in (
-            "ERROR",
-            "WARNING",
-            "INFO",
-            "DEBUG",
-            "CRITICAL",
-            "Jan ",
-            "Feb ",
-            "Mar ",
-            "Apr ",
-            "May ",
-            "Jun ",
-            "Jul ",
-            "Aug ",
-            "Sep ",
-            "Oct ",
-            "Nov ",
-            "Dec ",
-        )
-    )
-
-def _browser(value):
-    if not isinstance(value, str) or not value.strip():
-        return False
-
-    path = Path(value.strip())
-
-    if path.is_dir():
-        return any(
-            (path / name).is_file()
-            for name in (
-                "History",
-                "places.sqlite",
-                "Cookies",
-                "cookies.sqlite",
-                "Login Data",
-                "Web Data",
-                "Bookmarks",
-            )
-        )
-
-    if path.is_file():
-        return path.name.lower() in {
-            "history",
-            "places.sqlite",
-            "cookies",
-            "cookies.sqlite",
-            "login data",
-            "web data",
-            "bookmarks",
-        }
-
-    return False
-
-def _har(value):
-    if not isinstance(value, str) or not value.strip():
-        return False
-
-    candidate = value.strip()
-
-    if candidate.lstrip().startswith("{"):
-        try:
-            document = json.loads(candidate)
-            return (
-                isinstance(document, dict)
-                and isinstance(document.get("log"), dict)
-                and isinstance(document["log"].get("entries", []), list)
-            )
-        except json.JSONDecodeError:
-            return False
-
-    path = Path(candidate)
-
-    if path.is_file():
-        if path.suffix.lower() != ".har":
-            return False
-
-        try:
-            with path.open("r", encoding="utf-8-sig") as file:
-                document = json.load(file)
-
-            return (
-                isinstance(document, dict)
-                and isinstance(document.get("log"), dict)
-                and isinstance(document["log"].get("entries", []), list)
-            )
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-            return False
-
-    return False
-
-# Flag-to-validator mapping
 VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "url": _url,
     "domain": _domain,
-    "dns": _domain,
+    "hostname": _hostname,
     "ip": _ip,
     "cidr": _cidr,
-    "hostname": _hostname,
-    "redirect": _url,
-    "http": _structured,
-    "webpage": lambda value: _url(value) or _text(value),
-    "javascript": _nonempty,
-    "css": _nonempty,
-    "asn": lambda value: bool(re.fullmatch(r"(?:AS)?\d+", str(value).strip(), re.I)),
-    "mac": lambda value: bool(re.fullmatch(
-        r"(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}", str(value).strip()
-    )),
-    "bssid": lambda value: bool(re.fullmatch(
-        r"(?:[0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}", str(value).strip()
-    )),
     "port": _port,
-    "certificate": _nonempty,
-    "tls": _url,
-    "pcap": _has_extension(".pcap", ".pcapng"),
-    "flow": _structured,
-    "file": _file_input,
-    "hash": _hash,
-    "pdf": _pdf,
-    "office": _has_extension(
-        ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".odt", ".ods", ".odp"
-    ),
-    "image": _has_extension(
-        ".jpg", ".jpeg", ".png", ".gif",
-        ".bmp", ".tiff", ".tif", ".webp",
-        ".ico", ".jfif", ".avif",
-    ),
-    "audio": _has_extension(
-        ".mp3", ".wav", ".flac", ".aac", ".m4a",
-        ".ogg", ".opus", ".wma", ".aiff", ".aif",
-        ".ape", ".wv", ".mp4",
-    ),
-    "video": _has_extension(
-        ".mp4", ".m4v", ".mkv", ".mov", ".avi",
-        ".wmv", ".flv", ".webm", ".mpeg", ".mpg",
-        ".m4p", ".3gp", ".3g2", ".ts", ".mts",
-        ".m2ts", ".vob", ".ogv", ".asf",
-    ),
-    "archive": _has_extension(
-        ".zip",
-        ".tar",
-        ".tar.gz",
-        ".tgz",
-        ".tar.bz2",
-        ".tbz",
-        ".tbz2",
-        ".tar.xz",
-        ".txz",
-        ".gz",
-        ".bz2",
-        ".xz",
-    ),
-    "binary": lambda value: isinstance(value, bytes) or _file_input(value),
-    "font": _has_extension(
-        ".ttf", ".otf", ".ttc", ".woff", ".woff2",
-    ),
-    "shortcut": _has_extension(
-        ".lnk",
-        ".url",
-        ".desktop",
-    ),
+    "mac-address": _mac,
+    "asn": _asn,
+
+    "file": _file,
     "directory": _directory,
+    "hash": _hash,
+
+    "pdf": _pdf,
+    "office-document": _office,
+    "image": _image,
+    "audio": _audio,
+    "video": _video,
+    "archive": _archive,
+    "binary-file": lambda value: _file(value),
+    "font": _font,
+    "shortcut": _shortcut,
+
+    "network-capture": _pcap,
+    "http-message": lambda value: isinstance(value, dict),
+    "html-document": _nonempty,
+    "javascript-source": _nonempty,
+    "css-source": _nonempty,
+    "tls-host": _hostname,
+    "certificate": _nonempty,
+
     "email": _email,
-    "email-headers": _email_headers,
-    "message-id": _message_id,
-        "contact": _structured,
-        "calendar": _structured,
-        "vcf": _has_extension(".vcf"),
-        "ics": _has_extension(".ics"),
-        "git_repository": _nonempty,
-        "git_commit": lambda value: (
-            _text(value) and bool(re.fullmatch(r"[a-fA-F0-9]{7,64}", value.strip()))
-        ),
     "contact": _contact,
-    "package": _package,
-    "sbom": _structured,
-    "container": _nonempty,
-    "api_spec": _structured,
-    "cve": lambda value: (
-        _text(value) and bool(re.fullmatch(r"CVE-\d{4}-\d{4,}", value.strip(), re.I))
-    ),
     "calendar": _calendar,
-    "vcf": _vcf,
-    "ics": _ics,
+    "browser-profile": _browser,
+    "http-archive": _har,
+    "log": _log,
+
     "git-repository": _git_repository,
     "git-commit": _git_commit,
-    "sbom": _sbom,
-    "container": _container,
-    "json": _json,
-    "xml": _xml,
-    "csv": _csv,
-    "sqlite": _sqlite,
-    "config": _config,
-    "env": _env,
-    "registry": _registry,
-    "log": _log,
-    "browser": _browser,
-    "har": _har,
+
+    "package-manifest": _package,
+    "sbom-document": _sbom,
+    "container-artefact": _container,
+
+    "json-document": _json,
+    "xml-document": _xml,
+    "csv-document": _csv,
+    "sqlite-database": _sqlite,
+    "config-file": _config,
+    "environment-file": _env,
+    "registry-artefact": _registry,
 }
 
 class Identifier:
-    """Validates input flags and their accompanying content."""
+    """Recognises accepted input flags and validates their input."""
 
     def identify(self, packet: Packet) -> Packet:
-        """Validate an input Packet and produce an identification report."""
-
         if not isinstance(packet, Packet):
             raise TypeError("Identifier requires a Packet.")
 
         flag = packet.metadata.get("flag")
 
         if not isinstance(flag, str) or not flag.strip():
-            return self._failure(packet, "missing_flag", "No input flag was provided.")
+            return self._failure(
+                packet,
+                "MISSING_FLAG",
+                "No input flag was provided.",
+            )
 
         flag = flag.strip().lower()
 
-        if flag.startswith("--"):
-            flag = flag[2:]
-
-        validator = VALIDATORS.get(flag)
-
-        if validator is None:
+        if not flag.startswith("--"):
             return self._failure(
                 packet,
-                "unknown_flag",
-                f"Unsupported input flag: --{flag}",
+                "INVALID_FLAG_FORMAT",
+                "Input flags must begin with '--'.",
             )
 
-        if not validator(packet.input):
+        if flag not in VALIDATORS:
             return self._failure(
                 packet,
-                "invalid_input",
-                f"Input does not match the expected format for --{flag}.",
+                "UNKNOWN_FLAG",
+                f"Unsupported input flag: {flag}",
+            )
+
+        validator = VALIDATORS[flag[2:]]
+
+        try:
+            valid = validator(packet.input)
+        except Exception:
+            valid = False
+
+        if not valid:
+            return self._failure(
+                packet,
+                "INVALID_INPUT",
+                f"Input does not match the expected format for {flag}.",
             )
 
         report = packet.child(
             stage="identification",
-            artefact_type=flag,
+            artefact_type=flag[2:],
             input=packet.input,
             status=PacketStatus.SUCCESS,
         )
 
         report.metadata = {
-            "flag": f"--{flag}",
+            "flag": flag,
             "identified": True,
         }
 
         report.data = {
-            "recognised_flag": f"--{flag}",
-            "artefact_type": flag,
+            "recognised_flag": flag,
+            "artefact_type": flag[2:],
         }
 
         return report
 
     @staticmethod
-    def _failure(packet: Packet, code: str, message: str) -> Packet:
-        """Create a failed identification report."""
-
+    def _failure(
+        packet: Packet,
+        code: str,
+        message: str,
+    ) -> Packet:
         report = packet.child(
             stage="identification",
             artefact_type="unknown",

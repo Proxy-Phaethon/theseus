@@ -457,6 +457,74 @@ def _package(value):
 
     return filename in supported or filename.endswith(".gemspec")
 
+def _container(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    path = Path(value).expanduser()
+
+    if path.is_dir():
+        return (
+            (path / "oci-layout").is_file()
+            and (path / "index.json").is_file()
+        )
+
+    if not path.is_file():
+        return False
+
+    filename = path.name.lower()
+
+    if filename == "dockerfile" or filename.startswith("dockerfile."):
+        return True
+
+    if filename in {
+        "compose.yaml",
+        "compose.yml",
+        "docker-compose.yaml",
+        "docker-compose.yml",
+    }:
+        return True
+
+    if filename.endswith((".tar", ".tar.gz", ".tgz")):
+        return True
+
+    try:
+        if filename.endswith(".json"):
+            with path.open("r", encoding="utf-8-sig") as file:
+                document = json.load(file)
+
+            return (
+                isinstance(document, dict)
+                and (
+                    "services" in document
+                    or (
+                        "apiVersion" in document
+                        and "kind" in document
+                    )
+                    or (
+                        "manifests" in document
+                        and "schemaVersion" in document
+                    )
+                )
+            )
+
+        if filename.endswith((".yaml", ".yml")):
+            with path.open("r", encoding="utf-8-sig") as file:
+                content = file.read(8192)
+
+            return (
+                "services:" in content
+                or (
+                    "apiVersion:" in content
+                    and "kind:" in content
+                )
+            )
+
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+
+    return False
+
 # Flag-to-validator mapping
 VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "url": _url,
@@ -553,6 +621,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "git-repository": _git_repository,
     "git-commit": _git_commit,
     "sbom": _sbom,
+    "container": _container,
     "json": _json,
     "xml": _xml,
     "csv": _has_extension(".csv"),

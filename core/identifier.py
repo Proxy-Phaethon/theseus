@@ -155,6 +155,31 @@ def _email_headers(value):
     # File-based input.
     return _has_extension(".eml")(candidate)
 
+def _message_id(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    candidate = value.strip()
+
+    # Raw email source.
+    if "\n" in candidate or "\r" in candidate:
+        return any(
+            line.lower().startswith("message-id:")
+            for line in candidate.splitlines()
+        )
+
+    # Direct Message-ID value.
+    if candidate.startswith("<") and candidate.endswith(">"):
+        return bool(
+            re.fullmatch(
+                r"<[^<>\s@]+@[^<>\s@]+>",
+                candidate,
+            )
+        )
+
+    # Email source file.
+    return _has_extension(".eml")(candidate)
+
 def _file_input(value: Any) -> bool:
     if isinstance(value, bytes):
         return bool(value)
@@ -330,17 +355,15 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "directory": _directory,
     "email": _email,
     "email-headers": _email_headers,
-    "message_id": lambda value: (
-        _text(value) and bool(re.fullmatch(r"<[^<>\s]+@[^<>\s]+>", value.strip()))
-    ),
-    "contact": _structured,
-    "calendar": _structured,
-    "vcf": _has_extension(".vcf"),
-    "ics": _has_extension(".ics"),
-    "git_repository": _nonempty,
-    "git_commit": lambda value: (
-        _text(value) and bool(re.fullmatch(r"[a-fA-F0-9]{7,64}", value.strip()))
-    ),
+    "message-id": _message_id,
+        "contact": _structured,
+        "calendar": _structured,
+        "vcf": _has_extension(".vcf"),
+        "ics": _has_extension(".ics"),
+        "git_repository": _nonempty,
+        "git_commit": lambda value: (
+            _text(value) and bool(re.fullmatch(r"[a-fA-F0-9]{7,64}", value.strip()))
+        ),
     "package": _nonempty,
     "sbom": _structured,
     "container": _nonempty,

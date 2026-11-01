@@ -54,6 +54,7 @@ from extractors.git_commit import gitcommitextract
 from extractors.package import packageextract
 from extractors.sbom import sbomextract
 from extractors.container import containerextract
+from extractors.json import jsonextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -100,6 +101,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--package": packageextract,
     "--sbom": sbomextract,
     "--container": containerextract,
+    "--json": jsonextract,
 }
 
 class Executor:

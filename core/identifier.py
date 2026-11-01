@@ -282,17 +282,20 @@ def _directory(value: Any) -> bool:
 def _structured(value: Any) -> bool:
     return isinstance(value, (dict, list)) or _text(value)
 
-def _json(value: Any) -> bool:
-    if isinstance(value, (dict, list)):
-        return True
-
-    if not _text(value):
+def _json(value):
+    if not isinstance(value, str) or not value.strip():
         return False
 
+    candidate = value.strip()
+    path = Path(candidate)
+
+    if path.is_file():
+        return path.suffix.lower() == ".json"
+
     try:
-        json.loads(value)
+        json.loads(candidate)
         return True
-    except (json.JSONDecodeError, TypeError):
+    except (json.JSONDecodeError, ValueError):
         return False
 
 def _sbom(value):

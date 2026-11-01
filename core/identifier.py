@@ -342,12 +342,28 @@ def _sbom(value):
 
     return False
 
-def _xml(value: Any) -> bool:
-    if not _text(value):
+def _xml(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    candidate = value.strip()
+    path = Path(candidate)
+
+    if path.is_file():
+        return path.suffix.lower() == ".xml"
+
+    if not candidate.startswith("<"):
+        return False
+
+    if re.search(
+        r"<!\s*(DOCTYPE|ENTITY)\b",
+        candidate,
+        flags=re.IGNORECASE,
+    ):
         return False
 
     try:
-        ET.fromstring(value)
+        ET.fromstring(candidate)
         return True
     except ET.ParseError:
         return False

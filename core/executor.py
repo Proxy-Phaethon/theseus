@@ -55,6 +55,7 @@ from extractors.package import packageextract
 from extractors.sbom import sbomextract
 from extractors.container import containerextract
 from extractors.json import jsonextract
+from extractors.xml import xmlextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -102,6 +103,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--sbom": sbomextract,
     "--container": containerextract,
     "--json": jsonextract,
+    "--xml": xmlextract,
 }
 
 class Executor:

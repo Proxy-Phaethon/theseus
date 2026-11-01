@@ -16,6 +16,7 @@ fonttools
 brotli
 icalendar
 vobject
+GitPython
 
 # external
 ffmpeg

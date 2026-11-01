@@ -238,6 +238,23 @@ def _ics(value):
 
     return _has_extension(".ics")(candidate)
 
+def _git_repository(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    path = Path(value.strip())
+
+    try:
+        return (
+            path.is_dir()
+            and (
+                (path / ".git").exists()
+                or (path / "HEAD").exists()
+            )
+        )
+    except OSError:
+        return False
+
 def _file_input(value: Any) -> bool:
     if isinstance(value, bytes):
         return bool(value)
@@ -433,6 +450,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "calendar": _calendar,
     "vcf": _vcf,
     "ics": _ics,
+    "git-repository": _git_repository,
     "json": _json,
     "xml": _xml,
     "csv": _has_extension(".csv"),

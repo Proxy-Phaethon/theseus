@@ -49,6 +49,7 @@ from extractors.contact import contactextract
 from extractors.calendar import calendarextract
 from extractors.vcf import vcfextract
 from extractors.ics import icsextract
+from extractors.git_repository import gitrepositoryextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -90,6 +91,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--calendar": calendarextract,
     "--vcf": vcfextract,
     "--ics": icsextract,
+    "--git-repository": gitrepositoryextract,
 }
 
 class Executor:

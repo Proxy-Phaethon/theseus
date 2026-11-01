@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import esprima
 
 from core.packets import Packet, PacketStatus
@@ -15,9 +17,35 @@ def javascriptextract(packet: Packet) -> Packet:
 
     try:
         if not isinstance(packet.input, str):
-            raise ValueError("JavaScript input must be a source-code string.")
+            raise ValueError(
+                "JavaScript input must be source code or a file path."
+            )
 
-        source = packet.input
+        source_input = packet.input.strip()
+
+        if not source_input:
+            raise ValueError("JavaScript source cannot be empty.")
+
+        input_path = Path(source_input)
+
+        if input_path.exists():
+            if not input_path.is_file():
+                raise ValueError("JavaScript input path is not a file.")
+
+            source = input_path.read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+            source_type = "file"
+
+        elif "<" not in source_input or ">" not in source_input:
+            raise FileNotFoundError(
+                f"JavaScript file does not exist: {source_input}"
+            )
+
+        else:
+            source = source_input
+            source_type = "source"
 
         if not source.strip():
             raise ValueError("JavaScript source cannot be empty.")
@@ -61,7 +89,6 @@ def javascriptextract(packet: Packet) -> Packet:
 
             node_type = node.type
             loc = getattr(node, "loc", None)
-
             line = loc.start.line if loc else None
 
             if node_type == "FunctionDeclaration":
@@ -146,6 +173,7 @@ def javascriptextract(packet: Packet) -> Packet:
         ]
 
         result.data = {
+            "source_type": source_type,
             "source_length": len(source),
             "line_count": len(source.splitlines()),
             "functions": functions,

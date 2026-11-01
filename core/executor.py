@@ -59,6 +59,7 @@ from extractors.xml import xmlextract
 from extractors.csv import csvextract
 from extractors.sqlite import sqliteextract
 from extractors.config import configextract
+from extractors.env import envextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -110,6 +111,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--csv": csvextract,
     "--sqlite": sqliteextract,
     "--config": configextract,
+    "--env": envextract,
 }
 
 class Executor:

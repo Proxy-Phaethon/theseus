@@ -607,6 +607,33 @@ def _config(value):
     except (ValueError, ImportError):
         return False
 
+def _env(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    candidate = value.strip()
+    path = Path(candidate)
+
+    if path.is_file():
+        return path.name.lower() == ".env" or path.name.lower().startswith(".env.")
+
+    for line in candidate.splitlines():
+        line = line.strip()
+
+        if not line or line.startswith("#"):
+            continue
+
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+
+        if re.match(
+            r"^[A-Za-z_][A-Za-z0-9_]*\s*=",
+            line,
+        ):
+            return True
+
+    return False
+
 # Flag-to-validator mapping
 VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "url": _url,
@@ -709,7 +736,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "csv": _csv,
     "sqlite": _sqlite,
     "config": _config,
-    "env": _nonempty,
+    "env": _env,
     "registry": _nonempty,
     "log": _nonempty,
     "browser": _structured,

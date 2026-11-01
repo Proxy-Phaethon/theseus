@@ -664,6 +664,44 @@ def _registry(value):
 
     return _looks_like_reg(value.strip())
 
+def _log(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    path = Path(value.strip())
+
+    if path.is_file():
+        return path.suffix.lower() in (
+            ".log",
+            ".logs",
+            ".syslog",
+        )
+
+    candidate = value.strip()
+
+    return "\n" in candidate and any(
+        marker in candidate
+        for marker in (
+            "ERROR",
+            "WARNING",
+            "INFO",
+            "DEBUG",
+            "CRITICAL",
+            "Jan ",
+            "Feb ",
+            "Mar ",
+            "Apr ",
+            "May ",
+            "Jun ",
+            "Jul ",
+            "Aug ",
+            "Sep ",
+            "Oct ",
+            "Nov ",
+            "Dec ",
+        )
+    )
+
 # Flag-to-validator mapping
 VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "url": _url,
@@ -768,7 +806,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "config": _config,
     "env": _env,
     "registry": _registry,
-    "log": _nonempty,
+    "log": _log,
     "browser": _structured,
     "har": _json,
 }

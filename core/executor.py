@@ -61,6 +61,7 @@ from extractors.sqlite import sqliteextract
 from extractors.config import configextract
 from extractors.env import envextract
 from extractors.registry import registryextract
+from extractors.log import logextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -114,6 +115,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--config": configextract,
     "--env": envextract,
     "--registry": registryextract,
+    "--log": logextract,
 }
 
 class Executor:

@@ -1,4 +1,3 @@
-
 """Input identifier for Theseus.
 
 Recognises accepted input-type flags and validates their accompanying
@@ -803,6 +802,7 @@ class Identifier:
                 "No input flag was provided.",
             )
 
+
         flag = flag.strip().lower()
 
         if not flag.startswith("--"):
@@ -812,14 +812,16 @@ class Identifier:
                 "Input flags must begin with '--'.",
             )
 
-        if flag not in VALIDATORS:
+        validator_key = flag[2:]
+
+        if validator_key not in VALIDATORS:
             return self._failure(
                 packet,
                 "UNKNOWN_FLAG",
                 f"Unsupported input flag: {flag}",
             )
 
-        validator = VALIDATORS[flag[2:]]
+        validator = VALIDATORS[validator_key]
 
         try:
             valid = validator(packet.input)

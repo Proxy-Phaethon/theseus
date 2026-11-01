@@ -702,6 +702,39 @@ def _log(value):
         )
     )
 
+def _browser(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    path = Path(value.strip())
+
+    if path.is_dir():
+        return any(
+            (path / name).is_file()
+            for name in (
+                "History",
+                "places.sqlite",
+                "Cookies",
+                "cookies.sqlite",
+                "Login Data",
+                "Web Data",
+                "Bookmarks",
+            )
+        )
+
+    if path.is_file():
+        return path.name.lower() in {
+            "history",
+            "places.sqlite",
+            "cookies",
+            "cookies.sqlite",
+            "login data",
+            "web data",
+            "bookmarks",
+        }
+
+    return False
+
 # Flag-to-validator mapping
 VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "url": _url,
@@ -807,7 +840,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "env": _env,
     "registry": _registry,
     "log": _log,
-    "browser": _structured,
+    "browser": _browser,
     "har": _json,
 }
 

@@ -340,8 +340,6 @@ External dependencies may be required for particular extraction capabilities. Se
 
 ---
 
-**Theseus v1.0.0**
-
 ## Contributing
 
 Contributions, bug reports, and suggestions are welcome. When reporting a problem, include the operating system, Python version, installation method, relevant command output, and steps needed to reproduce it. Never include private credentials or sensitive investigation data.

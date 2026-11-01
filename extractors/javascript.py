@@ -28,17 +28,17 @@ def javascriptextract(packet: Packet) -> Packet:
 
         input_path = Path(source_input)
 
-        if input_path.exists():
-            if not input_path.is_file():
-                raise ValueError("JavaScript input path is not a file.")
-
+        if input_path.is_file():
             source = input_path.read_text(
                 encoding="utf-8",
                 errors="replace",
             )
             source_type = "file"
 
-        elif "<" not in source_input or ">" not in source_input:
+        elif (
+            input_path.suffix.lower() in {".js", ".mjs", ".cjs"}
+            or "/" in source_input
+        ):
             raise FileNotFoundError(
                 f"JavaScript file does not exist: {source_input}"
             )

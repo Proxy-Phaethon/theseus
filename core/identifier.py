@@ -564,6 +564,24 @@ def _csv(value):
     except csv.Error:
         return False
 
+def _sqlite(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    path = Path(value.strip())
+
+    if not path.is_file():
+        return False
+
+    if path.suffix.lower() not in (".db", ".sqlite", ".sqlite3"):
+        return False
+
+    try:
+        with path.open("rb") as file:
+            return file.read(16) == b"SQLite format 3\x00"
+    except OSError:
+        return False
+
 # Flag-to-validator mapping
 VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "url": _url,
@@ -664,7 +682,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "json": _json,
     "xml": _xml,
     "csv": _csv,
-    "sqlite": _has_extension(".db", ".sqlite", ".sqlite3"),
+    "sqlite": _sqlite,
     "config": _nonempty,
     "env": _nonempty,
     "registry": _nonempty,

@@ -57,6 +57,7 @@ from extractors.container import containerextract
 from extractors.json import jsonextract
 from extractors.xml import xmlextract
 from extractors.csv import csvextract
+from extractors.sqlite import sqliteextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -106,6 +107,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--json": jsonextract,
     "--xml": xmlextract,
     "--csv": csvextract,
+    "--sqlite": sqliteextract,
 }
 
 class Executor:

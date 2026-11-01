@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 from email.utils import parseaddr
 
 from core.packets import Packet, PacketStatus
+from extractors import csv
 from extractors.contact import EMAIL_PATTERN, PHONE_PATTERN
 
 def _text(value: Any) -> bool:
@@ -544,6 +545,25 @@ def _container(value):
 
     return False
 
+def _csv(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    candidate = value.strip()
+    path = Path(candidate)
+
+    if path.is_file():
+        return path.suffix.lower() == ".csv"
+
+    try:
+        sample = candidate[:8192]
+        dialect = csv.Sniffer().sniff(sample)
+
+        return dialect.delimiter in (",", ";", "\t", "|")
+
+    except csv.Error:
+        return False
+
 # Flag-to-validator mapping
 VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "url": _url,
@@ -643,7 +663,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "container": _container,
     "json": _json,
     "xml": _xml,
-    "csv": _has_extension(".csv"),
+    "csv": _csv,
     "sqlite": _has_extension(".db", ".sqlite", ".sqlite3"),
     "config": _nonempty,
     "env": _nonempty,

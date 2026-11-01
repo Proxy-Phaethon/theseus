@@ -338,8 +338,6 @@ External dependencies may be required for particular extraction capabilities. Se
 - Browser, email, environment, and other system artefacts may contain sensitive information.
 - Theseus extracts information present in its source artefacts. It does not independently establish the accuracy, ownership, or significance of that information.
 
----
-
 ## Contributing
 
 Contributions, bug reports, and suggestions are welcome. When reporting a problem, include the operating system, Python version, installation method, relevant command output, and steps needed to reproduce it. Never include private credentials or sensitive investigation data.

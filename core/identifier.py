@@ -634,6 +634,36 @@ def _env(value):
 
     return False
 
+
+def _looks_like_reg(raw):
+    return bool(
+        re.search(
+            r"(?im)^\s*Windows Registry Editor Version 5\.00\s*$"
+            r"|^\s*REGEDIT4\s*$",
+            raw,
+        )
+    )
+
+def _registry(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    path = Path(value.strip())
+
+    if path.is_file():
+        try:
+            with path.open("rb") as file:
+                header = file.read(16)
+
+            return (
+                header == b"regf"
+                or path.suffix.lower() == ".reg"
+            )
+        except OSError:
+            return False
+
+    return _looks_like_reg(value.strip())
+
 # Flag-to-validator mapping
 VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "url": _url,
@@ -737,7 +767,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "sqlite": _sqlite,
     "config": _config,
     "env": _env,
-    "registry": _nonempty,
+    "registry": _registry,
     "log": _nonempty,
     "browser": _structured,
     "har": _json,

@@ -18,6 +18,7 @@ icalendar
 vobject
 GitPython
 PyYAML
+python-registry
 
 # external
 ffmpeg

@@ -63,6 +63,7 @@ from extractors.env import envextract
 from extractors.registry import registryextract
 from extractors.log import logextract
 from extractors.browser import browserextract
+from extractors.har import harextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -118,6 +119,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--registry": registryextract,
     "--log": logextract,
     "--browser": browserextract,
+    "--har": harextract,
 }
 
 class Executor:

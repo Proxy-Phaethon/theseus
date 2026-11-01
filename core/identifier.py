@@ -735,6 +735,43 @@ def _browser(value):
 
     return False
 
+def _har(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    candidate = value.strip()
+
+    if candidate.lstrip().startswith("{"):
+        try:
+            document = json.loads(candidate)
+            return (
+                isinstance(document, dict)
+                and isinstance(document.get("log"), dict)
+                and isinstance(document["log"].get("entries", []), list)
+            )
+        except json.JSONDecodeError:
+            return False
+
+    path = Path(candidate)
+
+    if path.is_file():
+        if path.suffix.lower() != ".har":
+            return False
+
+        try:
+            with path.open("r", encoding="utf-8-sig") as file:
+                document = json.load(file)
+
+            return (
+                isinstance(document, dict)
+                and isinstance(document.get("log"), dict)
+                and isinstance(document["log"].get("entries", []), list)
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return False
+
+    return False
+
 # Flag-to-validator mapping
 VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "url": _url,
@@ -841,7 +878,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "registry": _registry,
     "log": _log,
     "browser": _browser,
-    "har": _json,
+    "har": _har,
 }
 
 class Identifier:

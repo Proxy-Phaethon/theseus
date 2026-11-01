@@ -18,7 +18,6 @@ from ui.progress import ProgressDisplay
 from ui.terminal import detect_terminal, create_terminal_console
 
 VERSION = "1.0.0"
-
 DESCRIPTION = "Digital artefact extraction tool."
 
 class Theseus:
@@ -55,7 +54,10 @@ class Theseus:
             )
         )
         self.console.print(
-            Text("Type 'help' to see available commands.", style="muted")
+            Text(
+                "Type 'help' to see available commands.",
+                style="muted",
+            )
         )
         self.console.print()
 
@@ -83,7 +85,9 @@ class Theseus:
                 self.console.print()
                 self.commands.should_quit = True
 
-        self.console.print(Text("Session terminated.", style="muted"))
+        self.console.print(
+            Text("Session terminated.", style="muted")
+        )
 
     def handle_input(self, user_input: str) -> None:
         """Determine whether input is a command or extraction request."""
@@ -95,14 +99,17 @@ class Theseus:
             parts = shlex.split(user_input)
         except ValueError as exc:
             self.console.print(
-                Text(f"Invalid input syntax: {exc}", style="error")
+                Text(
+                    f"Invalid input syntax: {exc}",
+                    style="error",
+                )
             )
             return
 
         if not parts:
             return
 
-        flag = parts[0]
+        flag = parts[0].lower()
 
         if not flag.startswith("--"):
             self.console.print(
@@ -113,10 +120,7 @@ class Theseus:
             )
             return
 
-        if len(parts) < 2:
-            value = None
-        else:
-            value = " ".join(parts[1:])
+        value = " ".join(parts[1:]) if len(parts) > 1 else None
 
         self.process_request(flag, value)
 
@@ -153,7 +157,7 @@ class Theseus:
         progress.start()
 
         try:
-            # Identification
+
             progress.start_task(
                 "Identification",
                 "Validating supplied input.",
@@ -180,45 +184,85 @@ class Theseus:
                 f"Recognised {report.artefact_type} input.",
             )
 
-            # Extraction
             progress.start_task(
                 "Extraction",
-                "Running the corresponding extractor.",
+                "Running compatible extractors.",
             )
 
-            result = self.executor.execute(report)
+            results = self.executor.execute(report)
 
-            if result.status == PacketStatus.SUCCESS:
+            if not isinstance(results, list) or not results:
+                progress.fail(
+                    "Extraction",
+                    "No extraction responses were returned.",
+                )
+                progress.finish()
+
+                self.console.print(
+                    Text(
+                        "Executor returned no valid extraction responses.",
+                        style="error",
+                    )
+                )
+                return
+
+            successful = sum(
+                result.status in {
+                    PacketStatus.SUCCESS,
+                    PacketStatus.PARTIAL_SUCCESS,
+                }
+                for result in results
+                if isinstance(result, Packet)
+            )
+
+            failed = sum(
+                result.status in {
+                    PacketStatus.FAILED,
+                    PacketStatus.NOT_SUPPORTED,
+                    PacketStatus.NOT_IMPLEMENTED,
+                }
+                for result in results
+                if isinstance(result, Packet)
+            )
+
+            pending = sum(
+                result.status in {
+                    PacketStatus.PENDING,
+                    PacketStatus.RUNNING,
+                }
+                for result in results
+                if isinstance(result, Packet)
+            )
+
+            if successful == len(results) and pending == 0:
                 progress.complete(
                     "Extraction",
-                    "Extraction completed successfully.",
+                    f"All {len(results)} extractor(s) completed successfully.",
                 )
-            elif result.status == PacketStatus.PARTIAL_SUCCESS:
+
+            elif successful > 0:
                 progress.partial(
                     "Extraction",
-                    "Extraction completed with partial results.",
+                    f"{successful} successful, {failed} failed.",
                 )
-            elif result.status in {
-                PacketStatus.NOT_IMPLEMENTED,
-                PacketStatus.NOT_SUPPORTED,
-            }:
-                progress.skip(
+
+            elif pending > 0:
+                progress.partial(
                     "Extraction",
-                    "No available extractor for this input.",
+                    "Some extractors are still running.",
                 )
+
             else:
                 progress.fail(
                     "Extraction",
-                    "Extraction failed.",
+                    f"All {failed} extractor(s) failed.",
                 )
 
             progress.finish()
-            self.display_result(result)
 
-            if result.status in {
-                PacketStatus.SUCCESS,
-                PacketStatus.PARTIAL_SUCCESS,
-            }:
+            self.display_result(results)
+
+            if successful > 0:
                 self.commands.record_history(
                     str(value)
                 )
@@ -233,10 +277,16 @@ class Theseus:
                 )
             )
 
-    def display_result(self, packet: Packet) -> None:
-        """Format and display an extraction result."""
+    def display_result(
+        self,
+        packets: Packet | list[Packet],
+    ) -> None:
+        """Format and display extraction responses."""
 
-        response = self.responder.respond(packet)
+        if isinstance(packets, Packet):
+            packets = [packets]
+
+        response = self.responder.respond(packets)
 
         self.console.print()
         self.console.print(response)
@@ -254,7 +304,9 @@ def main() -> None:
         sys.exit(130)
 
     except Exception as exc:
-        print(f"Theseus encountered an unexpected error: {exc}")
+        print(
+            f"Theseus encountered an unexpected error: {exc}"
+        )
         sys.exit(1)
 
 if __name__ == "__main__":

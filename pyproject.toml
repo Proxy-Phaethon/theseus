@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "theseus"
+version = "1.0.0"
+description = "A digital artefact extraction tool."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+
+dependencies = [
+    "tldextract",
+    "dnspython",
+    "requests",
+    "beautifulsoup4",
+    "esprima",
+    "tinycss2",
+    "cryptography",
+    "scapy",
+    "PyMuPDF",
+    "python-docx",
+    "openpyxl",
+    "python-pptx",
+    "Pillow",
+    "mutagen",
+    "fonttools",
+    "brotli",
+    "icalendar",
+    "vobject",
+    "GitPython",
+    "PyYAML",
+    "python-registry",
+    "rich",
+]
+
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+]
+
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "core*",
+    "extractors*",
+    "ui*",
+]
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]

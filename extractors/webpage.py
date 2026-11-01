@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from urllib.parse import urljoin, urlsplit
+from pathlib import Path
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
 from core.packets import Packet, PacketStatus
 
 def webpageextract(packet: Packet) -> Packet:
-    """Extract structured information from HTML webpage source."""
+    """Extract structured information from HTML source or a local HTML file."""
 
     result = packet.child(
         stage="extraction",
@@ -17,12 +18,26 @@ def webpageextract(packet: Packet) -> Packet:
 
     try:
         if not isinstance(packet.input, str):
-            raise ValueError("Webpage input must be an HTML string.")
+            raise ValueError(
+                "Webpage input must be an HTML string or file path."
+            )
 
-        html = packet.input.strip()
+        html_input = packet.input.strip()
 
-        if not html:
+        if not html_input:
             raise ValueError("HTML input cannot be empty.")
+
+        input_path = Path(html_input)
+
+        if input_path.is_file():
+            html = input_path.read_text(encoding="utf-8", errors="replace")
+            source_type = "file"
+        else:
+            html = html_input
+            source_type = "html"
+
+        if not html.strip():
+            raise ValueError("HTML document is empty.")
 
         soup = BeautifulSoup(html, "html.parser")
 
@@ -53,10 +68,7 @@ def webpageextract(packet: Packet) -> Packet:
             if not value:
                 return None
 
-            if base_url:
-                return urljoin(base_url, value)
-
-            return value
+            return urljoin(base_url, value) if base_url else value
 
         links = []
 
@@ -92,10 +104,7 @@ def webpageextract(packet: Packet) -> Packet:
 
         stylesheets = []
 
-        for tag in soup.find_all(
-            "link",
-            href=True,
-        ):
+        for tag in soup.find_all("link", href=True):
             rel = tag.get("rel") or []
 
             if "stylesheet" in rel:
@@ -116,6 +125,7 @@ def webpageextract(packet: Packet) -> Packet:
             ]
 
         result.data = {
+            "source_type": source_type,
             "title": title,
             "description": description,
             "language": soup.html.get("lang") if soup.html else None,

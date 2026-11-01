@@ -29,9 +29,18 @@ def webpageextract(packet: Packet) -> Packet:
 
         input_path = Path(html_input)
 
-        if input_path.is_file():
+        if input_path.exists():
+            if not input_path.is_file():
+                raise ValueError("HTML input path is not a file.")
+
             html = input_path.read_text(encoding="utf-8", errors="replace")
             source_type = "file"
+
+        elif "<" not in html_input or ">" not in html_input:
+            raise FileNotFoundError(
+                f"HTML file does not exist: {html_input}"
+            )
+
         else:
             html = html_input
             source_type = "html"

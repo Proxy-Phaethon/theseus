@@ -351,6 +351,39 @@ def _has_extension(*extensions: str) -> Callable[[Any], bool]:
         )
     return validate
 
+def _git_commit(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    candidate = value.strip()
+
+    if "::" in candidate:
+        repository_path, commit_reference = candidate.rsplit("::", 1)
+
+        if not repository_path.strip() or not commit_reference.strip():
+            return False
+
+        path = Path(repository_path.strip())
+
+        try:
+            return (
+                path.is_dir()
+                and (
+                    (path / ".git").exists()
+                    or (path / "HEAD").exists()
+                )
+                and bool(re.fullmatch(
+                    r"[0-9a-fA-F]{4,64}",
+                    commit_reference.strip(),
+                ))
+            )
+        except OSError:
+            return False
+
+    return bool(
+        re.fullmatch(r"[0-9a-fA-F]{4,64}", candidate)
+    )
+
 def _nonempty(value: Any) -> bool:
     if isinstance(value, bytes):
         return bool(value)
@@ -451,6 +484,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "vcf": _vcf,
     "ics": _ics,
     "git-repository": _git_repository,
+    "git-commit": _git_commit,
     "json": _json,
     "xml": _xml,
     "csv": _has_extension(".csv"),

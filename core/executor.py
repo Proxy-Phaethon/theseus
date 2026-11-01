@@ -47,6 +47,7 @@ from extractors.email_headers import emailheadersextract
 from extractors.message_id import messageidextract
 from extractors.contact import contactextract
 from extractors.calendar import calendarextract
+from extractors.vcf import vcfextract
 
 # Flag-to-extractor mapping
 EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
@@ -86,6 +87,7 @@ EXTRACTORS: dict[str, Callable[[Packet], Packet]] = {
     "--message-id": messageidextract,
     "--contact": contactextract,
     "--calendar": calendarextract,
+    "--vcf": vcfextract,
 }
 
 class Executor:

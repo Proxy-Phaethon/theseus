@@ -15,6 +15,7 @@ mutagen
 fonttools
 brotli
 icalendar
+vobject
 
 # external
 ffmpeg

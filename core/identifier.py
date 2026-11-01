@@ -18,6 +18,7 @@ from email.utils import parseaddr
 
 from core.packets import Packet, PacketStatus
 from extractors import csv
+from extractors.config import _detect_format
 from extractors.contact import EMAIL_PATTERN, PHONE_PATTERN
 
 def _text(value: Any) -> bool:
@@ -582,6 +583,30 @@ def _sqlite(value):
     except OSError:
         return False
 
+def _config(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    candidate = value.strip()
+    path = Path(candidate)
+
+    if path.is_file():
+        return path.suffix.lower() in (
+            ".ini",
+            ".cfg",
+            ".conf",
+            ".toml",
+            ".yaml",
+            ".yml",
+            ".json",
+        )
+
+    try:
+        _detect_format(candidate)
+        return True
+    except (ValueError, ImportError):
+        return False
+
 # Flag-to-validator mapping
 VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "url": _url,
@@ -683,7 +708,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "xml": _xml,
     "csv": _csv,
     "sqlite": _sqlite,
-    "config": _nonempty,
+    "config": _config,
     "env": _nonempty,
     "registry": _nonempty,
     "log": _nonempty,

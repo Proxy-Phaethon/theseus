@@ -202,6 +202,20 @@ def _contact(value):
 
     return _has_extension(".vcf")(candidate)
 
+def _calendar(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    candidate = value.strip()
+
+    if "\n" in candidate or "\r" in candidate:
+        return (
+            "BEGIN:VCALENDAR" in candidate.upper()
+            and "END:VCALENDAR" in candidate.upper()
+        )
+
+    return _has_extension(".ics")(candidate)
+
 def _file_input(value: Any) -> bool:
     if isinstance(value, bytes):
         return bool(value)
@@ -394,6 +408,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "cve": lambda value: (
         _text(value) and bool(re.fullmatch(r"CVE-\d{4}-\d{4,}", value.strip(), re.I))
     ),
+    "calendar": _calendar,
     "json": _json,
     "xml": _xml,
     "csv": _has_extension(".csv"),

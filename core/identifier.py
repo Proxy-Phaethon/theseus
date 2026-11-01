@@ -390,6 +390,29 @@ def _nonempty(value: Any) -> bool:
 
     return _text(value) or isinstance(value, (dict, list))
 
+def _package(value):
+    if not isinstance(value, str) or not value.strip():
+        return False
+
+    filename = Path(value).name.lower()
+
+    supported = {
+        "pyproject.toml",
+        "setup.py",
+        "setup.cfg",
+        "pkg-info",
+        "package.json",
+        "package-lock.json",
+        "cargo.toml",
+        "cargo.lock",
+        "composer.json",
+        "composer.lock",
+        "pom.xml",
+        "gemfile.lock",
+    }
+
+    return filename in supported or filename.endswith(".gemspec")
+
 # Flag-to-validator mapping
 VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "url": _url,
@@ -473,7 +496,7 @@ VALIDATORS: dict[str, Callable[[Any], bool]] = {
             _text(value) and bool(re.fullmatch(r"[a-fA-F0-9]{7,64}", value.strip()))
         ),
     "contact": _contact,
-    "package": _nonempty,
+    "package": _package,
     "sbom": _structured,
     "container": _nonempty,
     "api_spec": _structured,

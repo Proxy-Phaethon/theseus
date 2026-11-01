@@ -16,23 +16,146 @@ from ui.theme import status_style
 class Responder:
     """Format extraction Packets into terminal-ready Rich renderables."""
 
-    def respond(self, packet: Packet) -> RenderableType:
-        """Convert an extraction Packet into a formatted response."""
+    FAILURE_STATUSES = {
+        PacketStatus.FAILED,
+        PacketStatus.NOT_SUPPORTED,
+        PacketStatus.NOT_IMPLEMENTED,
+    }
 
-        if not isinstance(packet, Packet):
-            raise TypeError("Responder requires a Packet.")
+    SUCCESS_STATUSES = {
+        PacketStatus.SUCCESS,
+        PacketStatus.PARTIAL_SUCCESS,
+    }
 
-        packet.validate()
+    def respond(self, packets: list[Packet]) -> RenderableType:
+        """Convert multiple extraction Packets into one response."""
+
+        if not isinstance(packets, list):
+            raise TypeError("Responder requires a list of Packets.")
+
+        if not packets:
+            return self._empty_response()
+
+        valid_packets: list[Packet] = []
+        invalid_count = 0
+
+        for packet in packets:
+            if not isinstance(packet, Packet):
+                invalid_count += 1
+                continue
+
+            try:
+                packet.validate()
+            except Exception:
+                invalid_count += 1
+                continue
+
+            valid_packets.append(packet)
+
+        if not valid_packets:
+            return self._invalid_response(invalid_count)
+
+        sections: list[RenderableType] = [
+            self._summary(valid_packets, invalid_count),
+        ]
+
+        for packet in valid_packets:
+            sections.append(self._result(packet))
+
+        if invalid_count:
+            sections.append(
+                Panel(
+                    Text(
+                        f"{invalid_count} invalid extraction response(s) "
+                        "were omitted.",
+                        style="warning",
+                    ),
+                    title="Response warnings",
+                    border_style="warning",
+                    expand=False,
+                )
+            )
+
+        return Group(*sections)
+
+    def _summary(
+        self,
+        packets: list[Packet],
+        invalid_count: int,
+    ) -> RenderableType:
+        """Display the combined extraction outcome."""
+
+        successful = sum(
+            packet.status in self.SUCCESS_STATUSES
+            for packet in packets
+        )
+
+        failed = sum(
+            packet.status in self.FAILURE_STATUSES
+            for packet in packets
+        )
+
+        pending = sum(
+            packet.status in {
+                PacketStatus.PENDING,
+                PacketStatus.RUNNING,
+            }
+            for packet in packets
+        )
+
+        if failed == 0 and pending == 0 and invalid_count == 0:
+            overall_status = PacketStatus.SUCCESS
+
+        elif successful > 0:
+            overall_status = PacketStatus.PARTIAL_SUCCESS
+
+        elif pending > 0:
+            overall_status = PacketStatus.RUNNING
+
+        else:
+            overall_status = PacketStatus.FAILED
+
+        details = Table.grid(padding=(0, 2))
+        details.add_column(style="muted", no_wrap=True)
+        details.add_column(style="text")
+
+        details.add_row("Status", format_status(overall_status.value))
+        details.add_row("Extractors executed", str(len(packets)))
+        details.add_row("Successful", str(successful))
+        details.add_row("Failed", str(failed))
+
+        if pending:
+            details.add_row("Pending / running", str(pending))
+
+        if invalid_count:
+            details.add_row("Invalid responses", str(invalid_count))
+
+        request_ids = {
+            packet.request_id
+            for packet in packets
+            if packet.request_id
+        }
+
+        if len(request_ids) == 1:
+            details.add_row("Request ID", next(iter(request_ids)))
+
+        return Panel(
+            details,
+            title="THESEUS / EXTRACTION SUMMARY",
+            title_align="left",
+            border_style=status_style(overall_status.value),
+            padding=(1, 2),
+            expand=False,
+        )
+
+    def _result(self, packet: Packet) -> RenderableType:
+        """Format one extractor's response."""
 
         sections: list[RenderableType] = [
             self._header(packet),
         ]
 
-        if packet.status in {
-            PacketStatus.FAILED,
-            PacketStatus.NOT_SUPPORTED,
-            PacketStatus.NOT_IMPLEMENTED,
-        }:
+        if packet.status in self.FAILURE_STATUSES:
             sections.append(self._failure(packet))
 
         else:
@@ -87,7 +210,7 @@ class Responder:
         return Group(*sections)
 
     def _header(self, packet: Packet) -> RenderableType:
-        """Build the extraction result heading."""
+        """Build an individual extraction heading."""
 
         status = format_status(packet.status.value)
 
@@ -98,12 +221,12 @@ class Responder:
         details.add_row("Artefact", packet.artefact_type)
         details.add_row("Status", status)
 
-        if packet.request_id:
-            details.add_row("Request ID", packet.request_id)
+        if packet.task_id:
+            details.add_row("Task ID", packet.task_id)
 
         return Panel(
             details,
-            title="THESEUS / EXTRACTION RESULT",
+            title="EXTRACTION RESULT",
             title_align="left",
             border_style=status_style(packet.status.value),
             padding=(1, 2),
@@ -148,7 +271,10 @@ class Responder:
 
         if isinstance(value, dict):
             if not value:
-                table.add_row(label or "Value", Text("No data", style="muted"))
+                table.add_row(
+                    label or "Value",
+                    Text("None", style="muted"),
+                )
                 return
 
             for key, item in value.items():
@@ -160,18 +286,27 @@ class Responder:
 
         elif isinstance(value, list):
             if not value:
-                table.add_row(label or "Value", Text("None", style="muted"))
+                table.add_row(
+                    label or "Value",
+                    Text("None", style="muted"),
+                )
                 return
 
             for index, item in enumerate(value, start=1):
+                entry_label = (
+                    f"{label} [{index}]"
+                    if label
+                    else f"Entry {index}"
+                )
+
                 if isinstance(item, (dict, list)):
                     table.add_row(
-                        label or f"Entry {index}",
+                        entry_label,
                         self._nested_table(item),
                     )
                 else:
                     table.add_row(
-                        label or f"Entry {index}",
+                        entry_label,
                         self._format_scalar(item),
                     )
 
@@ -203,8 +338,13 @@ class Responder:
         table.add_column(style="text", overflow="fold")
 
         for error in errors:
+            if not isinstance(error, dict):
+                continue
+
             code = str(error.get("code", "unknown_error"))
-            message = str(error.get("message", "No details available."))
+            message = str(
+                error.get("message", "No details available.")
+            )
 
             table.add_row(code, message)
 
@@ -223,7 +363,7 @@ class Responder:
         messages = {
             PacketStatus.FAILED: "Extraction failed.",
             PacketStatus.NOT_SUPPORTED: "This input type is not supported.",
-            PacketStatus.NOT_IMPLEMENTED: "This extractor has not been implemented.",
+            PacketStatus.NOT_IMPLEMENTED: "No extractor is configured for this input type.",
             PacketStatus.PENDING: "Extraction has not started.",
             PacketStatus.RUNNING: "Extraction is still in progress.",
         }
@@ -233,38 +373,59 @@ class Responder:
             "Extraction did not complete successfully.",
         )
 
-        if packet.errors:
-            details = self._errors_section(packet.errors)
+        sections: list[RenderableType] = [
+            Panel(
+                Text(message, style="text"),
+                border_style=status_style(packet.status.value),
+                expand=False,
+            )
+        ]
 
-            return Group(
-                Panel(
-                    Text(message, style="text"),
-                    border_style=status_style(packet.status.value),
-                    expand=False,
-                ),
-                details,
+        if packet.errors:
+            sections.append(
+                self._errors_section(packet.errors)
             )
 
+        return Group(*sections)
+
+    @staticmethod
+    def _empty_response() -> RenderableType:
         return Panel(
-            Text(message, style="text"),
-            border_style=status_style(packet.status.value),
+            Text(
+                "No extraction responses were received.",
+                style="muted",
+            ),
+            title="THESEUS / EXTRACTION RESULT",
+            border_style="warning",
+            expand=False,
+        )
+
+    @staticmethod
+    def _invalid_response(count: int) -> RenderableType:
+        return Panel(
+            Text(
+                f"No valid extraction responses were received. "
+                f"{count} invalid response(s) were rejected.",
+                style="error",
+            ),
+            title="THESEUS / EXTRACTION FAILURE",
+            border_style="error",
             expand=False,
         )
 
     @staticmethod
     def _format_label(value: str) -> str:
-        """Convert field names into readable labels."""
-
         return value.replace("_", " ").strip().title()
 
     @staticmethod
     def _format_scalar(value: Any) -> Text:
-        """Convert scalar values into readable Rich text."""
-
         if value is None:
             return Text("None", style="muted")
 
         if isinstance(value, bool):
-            return Text(str(value), style="success" if value else "muted")
+            return Text(
+                str(value),
+                style="success" if value else "muted",
+            )
 
         return Text(str(value), style="text")

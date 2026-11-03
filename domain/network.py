@@ -1,15 +1,23 @@
 import ipaddress
 import socket
-
 import requests
 
+from datetime import datetime, timezone
+
+MODULE_NAME = "network"
+
 TIMEOUT = 15
+MAX_IP_LOOKUPS = 30
 
 DNS_ENDPOINT = "https://cloudflare-dns.com/dns-query"
 RDAP_IP_ENDPOINT = "https://rdap.org/ip/{}"
 BGPVIEW_ENDPOINT = "https://api.bgpview.io"
-
 IPWHO_ENDPOINT = "https://ipwho.is/{}"
+
+HEADERS = {
+    "Accept": "application/json",
+    "User-Agent": "Theseus/1.0"
+}
 
 FIELDS = (
     "ipv4_addresses",
@@ -29,24 +37,98 @@ FIELDS = (
     "ip_allocation_organisations"
 )
 
-def empty_data():
-    return {field: "none" for field in FIELDS}
+def empty_data() -> dict:
+    return {
+        field: None if field in (
+            "ipv4_addresses",
+            "ipv6_addresses",
+            "ip_ranges_cidr",
+            "autonomous_system_numbers",
+            "asn_organisation_names",
+            "network_owner",
+            "isp",
+            "hosting_provider",
+            "cname_targets",
+            "bgp_announced_prefixes",
+            "origin_asns",
+            "ip_allocation_organisations"
+        ) else []
+        for field in FIELDS
+    }
 
-def request_json(url, params=None):
+def make_envelope(
+    status: str,
+    data: dict = None,
+    provenance: list = None,
+    related_entities: list = None,
+    errors: list = None
+) -> dict:
+    return {
+        "module": MODULE_NAME,
+        "status": status,
+        "data": data if data is not None else empty_data(),
+        "provenance": provenance if provenance is not None else [],
+        "related_entities": (
+            related_entities if related_entities is not None else []
+        ),
+        "errors": errors if errors is not None else []
+    }
+
+def unique(values: list) -> list:
+    result = []
+    seen = set()
+
+    for value in values:
+        if value is None or value == "":
+            continue
+
+        if isinstance(value, dict):
+            key = repr(sorted(value.items()))
+        else:
+            value = str(value).strip()
+
+            if not value:
+                continue
+
+            key = value.lower()
+
+        if key not in seen:
+            seen.add(key)
+            result.append(value)
+
+    return sorted(
+        result,
+        key=lambda item: str(item).lower()
+    )
+
+def add_provenance(
+    provenance: list,
+    source: str,
+    method: str
+):
+    provenance.append({
+        "source": source,
+        "method": method,
+        "retrieved_at": datetime.now(
+            timezone.utc
+        ).isoformat()
+    })
+
+def request_json(url: str, params: dict = None) -> dict:
     response = requests.get(
         url,
         params=params,
-        headers={
-            "Accept": "application/json",
-            "User-Agent": "Theseus/1.0"
-        },
+        headers=HEADERS,
         timeout=TIMEOUT
     )
 
     response.raise_for_status()
     return response.json()
 
-def get_dns_records(domain, record_type):
+def get_dns_records(
+    domain: str,
+    record_type: str
+) -> tuple:
     try:
         result = request_json(
             DNS_ENDPOINT,
@@ -56,18 +138,31 @@ def get_dns_records(domain, record_type):
             }
         )
 
-        return [
+        if not isinstance(result, dict):
+            raise ValueError(
+                "DNS resolver returned an unexpected response."
+            )
+
+        records = [
             record["data"]
             for record in result.get("Answer", [])
-            if "data" in record
+            if isinstance(record, dict) and "data" in record
         ]
 
-    except (requests.RequestException, ValueError):
-        return []
+        return records, [], True
 
-def resolve_hostname(hostname):
-    addresses = set()
+    except (
+        requests.RequestException,
+        ValueError,
+        TypeError
+    ) as exc:
+        return (
+            [],
+            [f"{record_type} lookup for {domain} failed: {exc}"],
+            False
+        )
 
+def resolve_hostname(hostname: str) -> tuple:
     try:
         results = socket.getaddrinfo(
             hostname,
@@ -75,44 +170,70 @@ def resolve_hostname(hostname):
             type=socket.SOCK_STREAM
         )
 
-        for result in results:
-            addresses.add(result[4][0])
+        addresses = sorted({
+            result[4][0]
+            for result in results
+        })
 
-    except socket.gaierror:
-        pass
+        return addresses, [], True
 
-    return sorted(addresses)
+    except socket.gaierror as exc:
+        return (
+            [],
+            [f"Hostname resolution for {hostname} failed: {exc}"],
+            False
+        )
 
-def reverse_dns(ip):
+def reverse_dns(ip: str) -> tuple:
     try:
         hostname, aliases, addresses = socket.gethostbyaddr(ip)
 
-        results = [hostname]
-        results.extend(aliases)
+        results = sorted({
+            value.lower().rstrip(".")
+            for value in [hostname, *aliases]
+            if value
+        })
 
-        return sorted(set(results))
+        return results, [], True
 
-    except (socket.herror, socket.gaierror, OSError):
-        return []
+    except (socket.herror, socket.gaierror, OSError) as exc:
+        return (
+            [],
+            [f"Reverse DNS lookup for {ip} failed: {exc}"],
+            False
+        )
 
-def get_rdap_ip(ip):
+def get_rdap_ip(ip: str) -> tuple:
     try:
         result = request_json(
             RDAP_IP_ENDPOINT.format(ip)
         )
 
+        if not isinstance(result, dict):
+            raise ValueError(
+                "RDAP returned an unexpected response."
+            )
+
         entities = []
 
         for entity in result.get("entities", []):
+            if not isinstance(entity, dict):
+                continue
 
             vcard = entity.get("vcardArray", [])
-
             name = None
 
-            if len(vcard) > 1:
+            if (
+                isinstance(vcard, list)
+                and len(vcard) > 1
+                and isinstance(vcard[1], list)
+            ):
                 for item in vcard[1]:
-
-                    if item[0] == "fn":
+                    if (
+                        isinstance(item, list)
+                        and len(item) >= 4
+                        and item[0] == "fn"
+                    ):
                         name = item[3]
                         break
 
@@ -127,52 +248,91 @@ def get_rdap_ip(ip):
             "start_address": result.get("startAddress"),
             "end_address": result.get("endAddress"),
             "entities": entities
-        }
+        }, [], True
 
-    except (requests.RequestException, ValueError, TypeError):
-        return None
+    except (
+        requests.RequestException,
+        ValueError,
+        TypeError
+    ) as exc:
+        return (
+            None,
+            [f"RDAP lookup for {ip} failed: {exc}"],
+            False
+        )
 
-def get_bgp_information(ip):
+def get_bgp_information(ip: str) -> tuple:
     try:
         result = request_json(
             f"{BGPVIEW_ENDPOINT}/ip/{ip}"
         )
 
+        if not isinstance(result, dict):
+            raise ValueError(
+                "BGPView returned an unexpected response."
+            )
+
         if result.get("status") != "ok":
-            return []
+            raise ValueError(
+                f"BGPView returned status: {result.get('status')}"
+            )
 
-        prefixes = result.get("data", {}).get("prefixes", [])
+        prefixes = (
+            result.get("data", {}).get("prefixes", [])
+        )
 
-        return prefixes
+        return prefixes, [], True
 
-    except (requests.RequestException, ValueError, TypeError):
-        return []
+    except (
+        requests.RequestException,
+        ValueError,
+        TypeError
+    ) as exc:
+        return (
+            [],
+            [f"BGP lookup for {ip} failed: {exc}"],
+            False
+        )
 
-def get_ipwho_information(ip):
+def get_ipwho_information(ip: str) -> tuple:
     try:
         result = request_json(
             IPWHO_ENDPOINT.format(ip)
         )
 
-        if not result.get("success"):
-            return None
+        if not isinstance(result, dict):
+            raise ValueError(
+                "IP geolocation service returned an unexpected response."
+            )
 
-        connection = result.get("connection", {})
+        if not result.get("success"):
+            raise ValueError(
+                result.get("message", "IP lookup was unsuccessful.")
+            )
+
+        connection = result.get("connection") or {}
 
         return {
             "isp": connection.get("isp"),
             "organisation": connection.get("org"),
             "asn": connection.get("asn")
-        }
+        }, [], True
 
-    except (requests.RequestException, ValueError, TypeError):
-        return None
+    except (
+        requests.RequestException,
+        ValueError,
+        TypeError
+    ) as exc:
+        return (
+            None,
+            [f"IP information lookup for {ip} failed: {exc}"],
+            False
+        )
 
-def get_ip_ranges(rdap_records):
+def get_ip_ranges(rdap_records: list) -> list:
     ranges = set()
 
     for record in rdap_records:
-
         if not record:
             continue
 
@@ -194,43 +354,85 @@ def get_ip_ranges(rdap_records):
                 end_ip
             )
 
-            ranges.update(str(network) for network in networks)
+            ranges.update(
+                str(network)
+                for network in networks
+            )
 
         except ValueError:
             continue
 
     return sorted(ranges)
 
-def get_related_hostnames(domain):
-    nameservers = [
-        value.rstrip(".")
-        for value in get_dns_records(domain, "NS")
-    ]
+def get_related_hostnames(domain: str):
+    nameservers, ns_errors, ns_success = get_dns_records(
+        domain,
+        "NS"
+    )
 
-    mail_servers = []
+    mail_records, mx_errors, mx_success = get_dns_records(
+        domain,
+        "MX"
+    )
 
-    for record in get_dns_records(domain, "MX"):
+    nameservers = sorted({
+        value.rstrip(".").lower()
+        for value in nameservers
+    })
 
+    mail_servers = set()
+
+    for record in mail_records:
         parts = record.split()
 
         if parts:
-            mail_servers.append(parts[-1].rstrip("."))
+            mail_servers.add(
+                parts[-1].rstrip(".").lower()
+            )
 
-    return sorted(set(nameservers)), sorted(set(mail_servers))
+    return (
+        nameservers,
+        sorted(mail_servers),
+        ns_errors + mx_errors,
+        ns_success,
+        mx_success
+    )
 
-def get_cname_targets(domain):
-    return sorted({
-        value.rstrip(".")
-        for value in get_dns_records(domain, "CNAME")
+def get_cname_targets(domain: str):
+    records, errors, succeeded = get_dns_records(
+        domain,
+        "CNAME"
+    )
+
+    targets = sorted({
+        value.rstrip(".").lower()
+        for value in records
     })
+
+    return targets, errors, succeeded
 
 def run(domain: str) -> dict:
     data = empty_data()
     provenance = []
     related_entities = []
+    errors = []
+
+    successful_sources = 0
 
     try:
-        domain_ips = resolve_hostname(domain)
+        domain_ips, source_errors, dns_success = (
+            resolve_hostname(domain)
+        )
+        errors.extend(source_errors)
+
+        if dns_success:
+            successful_sources += 1
+
+            add_provenance(
+                provenance,
+                "System DNS resolver",
+                "Domain address resolution"
+            )
 
         ipv4_addresses = sorted({
             ip for ip in domain_ips
@@ -242,34 +444,66 @@ def run(domain: str) -> dict:
             if ipaddress.ip_address(ip).version == 6
         })
 
-        if ipv4_addresses:
-            data["ipv4_addresses"] = ipv4_addresses
+        data["ipv4_addresses"] = ipv4_addresses
+        data["ipv6_addresses"] = ipv6_addresses
 
-        if ipv6_addresses:
-            data["ipv6_addresses"] = ipv6_addresses
+        (
+            nameservers,
+            mail_servers,
+            source_errors,
+            ns_success,
+            mx_success
+        ) = get_related_hostnames(domain)
 
-        nameservers, mail_servers = get_related_hostnames(domain)
+        errors.extend(source_errors)
+
+        if ns_success:
+            successful_sources += 1
+
+            add_provenance(
+                provenance,
+                DNS_ENDPOINT,
+                "Nameserver record retrieval"
+            )
+
+        if mx_success:
+            successful_sources += 1
+
+            add_provenance(
+                provenance,
+                DNS_ENDPOINT,
+                "Mail exchanger record retrieval"
+            )
 
         nameserver_ips = {}
         mail_server_ips = {}
 
         for hostname in nameservers:
-            addresses = resolve_hostname(hostname)
+            addresses, source_errors, succeeded = (
+                resolve_hostname(hostname)
+            )
+            errors.extend(source_errors)
+
+            if succeeded:
+                successful_sources += 1
 
             if addresses:
                 nameserver_ips[hostname] = addresses
 
         for hostname in mail_servers:
-            addresses = resolve_hostname(hostname)
+            addresses, source_errors, succeeded = (
+                resolve_hostname(hostname)
+            )
+            errors.extend(source_errors)
+
+            if succeeded:
+                successful_sources += 1
 
             if addresses:
                 mail_server_ips[hostname] = addresses
 
-        if nameserver_ips:
-            data["nameserver_ip_addresses"] = nameserver_ips
-
-        if mail_server_ips:
-            data["mail_server_ip_addresses"] = mail_server_ips
+        data["nameserver_ip_addresses"] = nameserver_ips
+        data["mail_server_ip_addresses"] = mail_server_ips
 
         all_ips = set(domain_ips)
 
@@ -279,54 +513,64 @@ def run(domain: str) -> dict:
         for addresses in mail_server_ips.values():
             all_ips.update(addresses)
 
+        all_ips = sorted(all_ips)[:MAX_IP_LOOKUPS]
+
         reverse_records = {}
 
-        for ip in sorted(all_ips):
+        for ip in all_ips:
+            hostnames, source_errors, succeeded = reverse_dns(ip)
+            errors.extend(source_errors)
 
-            hostnames = reverse_dns(ip)
+            if succeeded:
+                successful_sources += 1
 
             if hostnames:
                 reverse_records[ip] = hostnames
 
-        if reverse_records:
-            data["reverse_dns_hostnames"] = reverse_records
+        data["reverse_dns_hostnames"] = reverse_records
 
-        cname_targets = get_cname_targets(domain)
+        cname_targets, source_errors, cname_success = (
+            get_cname_targets(domain)
+        )
+        errors.extend(source_errors)
 
-        if cname_targets:
-            data["cname_targets"] = cname_targets
+        if cname_success:
+            successful_sources += 1
 
-            for target in cname_targets:
-                related_entities.append({
-                    "type": "hostname",
-                    "value": target,
-                    "relationship": "CNAME target"
-                })
+            add_provenance(
+                provenance,
+                DNS_ENDPOINT,
+                "Canonical hostname record retrieval"
+            )
+
+        data["cname_targets"] = cname_targets
 
         rdap_records = []
         ipwho_records = []
 
-        for ip in sorted(all_ips):
+        for ip in all_ips:
+            rdap, source_errors, rdap_success = get_rdap_ip(ip)
+            errors.extend(source_errors)
 
-            rdap = get_rdap_ip(ip)
+            if rdap_success:
+                successful_sources += 1
 
-            if rdap:
-                rdap_records.append(rdap)
+                if rdap:
+                    rdap_records.append(rdap)
 
-                if rdap.get("name"):
-                    related_entities.append({
-                        "type": "network",
-                        "value": rdap["name"],
-                        "relationship": "IP allocation"
+            ipwho, source_errors, ipwho_success = (
+                get_ipwho_information(ip)
+            )
+            errors.extend(source_errors)
+
+            if ipwho_success:
+                successful_sources += 1
+
+                if ipwho:
+                    ipwho_records.append({
+                        "ip": ip,
+                        **ipwho
                     })
-
-            ipwho = get_ipwho_information(ip)
-
-            if ipwho:
-                ipwho_records.append({
-                    "ip": ip,
-                    **ipwho
-                })
 
         network_owners = sorted({
             record["name"]
@@ -341,13 +585,10 @@ def run(domain: str) -> dict:
             if entity.get("name")
         })
 
-        if network_owners:
-            data["network_owner"] = network_owners
-
-        if allocation_organisations:
-            data["ip_allocation_organisations"] = (
-                allocation_organisations
-            )
+        data["network_owner"] = network_owners
+        data["ip_allocation_organisations"] = (
+            allocation_organisations
+        )
 
         isps = sorted({
             record["isp"]
@@ -355,34 +596,42 @@ def run(domain: str) -> dict:
             if record.get("isp")
         })
 
-        providers = sorted({
+        organisations = sorted({
             record["organisation"]
             for record in ipwho_records
             if record.get("organisation")
         })
 
-        if isps:
-            data["isp"] = isps
+        data["isp"] = isps
 
-        if providers:
-            data["hosting_provider"] = providers
+        data["hosting_provider"] = organisations
 
         bgp_prefixes = {}
         origin_asns = set()
         asn_organisations = set()
 
-        for ip in sorted(all_ips):
+        for ip in all_ips:
+            prefixes, source_errors, bgp_success = (
+                get_bgp_information(ip)
+            )
+            errors.extend(source_errors)
 
-            prefixes = get_bgp_information(ip)
+            if bgp_success:
+                successful_sources += 1
 
             for prefix in prefixes:
+                if not isinstance(prefix, dict):
+                    continue
 
                 prefix_value = prefix.get("prefix")
 
                 if not prefix_value:
                     continue
 
-                asn_data = prefix.get("asn", {})
+                asn_data = prefix.get("asn") or {}
+
+                if not isinstance(asn_data, dict):
+                    asn_data = {}
 
                 asn = asn_data.get("asn")
                 asn_name = (
@@ -390,107 +639,145 @@ def run(domain: str) -> dict:
                     or asn_data.get("description")
                 )
 
-                bgp_prefixes[prefix_value] = {
+                key = (prefix_value, asn)
+
+                bgp_prefixes[key] = {
+                    "prefix": prefix_value,
                     "ip": ip,
                     "asn": asn,
                     "organisation": asn_name
                 }
 
-                if asn:
+                if asn is not None:
                     origin_asns.add(asn)
 
                 if asn_name:
                     asn_organisations.add(asn_name)
 
-        if bgp_prefixes:
-            data["bgp_announced_prefixes"] = list(
-                bgp_prefixes.values()
+        data["bgp_announced_prefixes"] = list(
+            bgp_prefixes.values()
+        )
+
+        data["origin_asns"] = sorted(
+            origin_asns,
+            key=lambda value: int(value)
+        )
+
+        data["autonomous_system_numbers"] = sorted({
+            f"AS{asn}"
+            for asn in origin_asns
+        })
+
+        data["asn_organisation_names"] = sorted(
+            asn_organisations
+        )
+
+        data["ip_ranges_cidr"] = get_ip_ranges(
+            rdap_records
+        )
+
+        for ip in sorted(all_ips):
+            related_entities.append({
+                "type": "ip_address",
+                "value": ip,
+                "relationship": "resolved_infrastructure_address"
+            })
+
+        for hostname in nameservers:
+            related_entities.append({
+                "type": "hostname",
+                "value": hostname,
+                "relationship": "nameserver"
+            })
+
+        for hostname in mail_servers:
+            related_entities.append({
+                "type": "hostname",
+                "value": hostname,
+                "relationship": "mail_server"
+            })
+
+        for hostname in cname_targets:
+            related_entities.append({
+                "type": "hostname",
+                "value": hostname,
+                "relationship": "cname_target"
+            })
+
+        for ip, hostnames in reverse_records.items():
+            for hostname in hostnames:
+                related_entities.append({
+                    "type": "hostname",
+                    "value": hostname,
+                    "relationship": "reverse_dns_record"
+                })
+
+        for asn in origin_asns:
+            related_entities.append({
+                "type": "autonomous_system",
+                "value": f"AS{asn}",
+                "relationship": "bgp_origin"
+            })
+
+        for organisation in (
+            network_owners + allocation_organisations
+        ):
+            related_entities.append({
+                "type": "organisation",
+                "value": organisation,
+                "relationship": "ip_allocation_association"
+            })
+
+        seen = set()
+        unique_entities = []
+
+        for entity in related_entities:
+            key = (
+                entity["type"],
+                entity["value"].lower(),
+                entity["relationship"]
             )
 
-        if origin_asns:
-            data["origin_asns"] = sorted(origin_asns)
+            if key not in seen:
+                seen.add(key)
+                unique_entities.append(entity)
 
-            data["autonomous_system_numbers"] = sorted(
-                {f"AS{asn}" for asn in origin_asns}
-            )
+        related_entities = unique_entities
 
-        if asn_organisations:
-            data["asn_organisation_names"] = sorted(
-                asn_organisations
-            )
-
-        cidr_ranges = get_ip_ranges(rdap_records)
-
-        if cidr_ranges:
-            data["ip_ranges_cidr"] = cidr_ranges
-
-        if domain_ips:
-            provenance.append({
-                "source": "DNS",
-                "description": "Domain address resolution",
-                "url": DNS_ENDPOINT
-            })
-
-        if nameservers or mail_servers:
-            provenance.append({
-                "source": "DNS",
-                "description": "NS and MX records",
-                "url": DNS_ENDPOINT
-            })
-
-        if rdap_records:
-            provenance.append({
-                "source": "RDAP",
-                "description": "IP allocation records",
-                "url": "https://rdap.org/"
-            })
-
-        if ipwho_records:
-            provenance.append({
-                "source": "ipwho.is",
-                "description": "ISP and network organisation",
-                "url": IPWHO_ENDPOINT
-            })
-
-        if bgp_prefixes:
-            provenance.append({
-                "source": "BGPView",
-                "description": "BGP prefixes and origin ASNs",
-                "url": BGPVIEW_ENDPOINT
-            })
-
-        if reverse_records:
-            provenance.append({
-                "source": "Reverse DNS",
-                "description": "PTR hostname resolution"
-            })
-
-        populated = sum(
-            value != "none"
+        populated_fields = any(
+            value is not None and value != []
             for value in data.values()
         )
 
-        status = (
-            "success"
-            if populated == len(FIELDS)
-            else "partial" if populated else "error"
+        if errors and populated_fields:
+            status = "partial"
+
+        elif errors:
+            status = "error"
+
+        elif populated_fields:
+            status = "success"
+
+        else:
+            status = "no_results"
+
+        return make_envelope(
+            status=status,
+            data=data,
+            provenance=provenance,
+            related_entities=related_entities,
+            errors=errors
         )
 
-        return {
-            "status": status,
-            "module": "network",
-            "data": data,
-            "provenance": provenance,
-            "related_entities": related_entities
-        }
-
     except Exception as exc:
+        errors.append(
+            f"Network extraction failed: {exc}"
+        )
 
-        return {
-            "status": "error",
-            "module": "network",
-            "data": data,
-            "provenance": provenance,
-            "related_entities": related_entities,
-            "error": str(exc)
-        }
+        return make_envelope(
+            status="error",
+            data=data,
+            provenance=provenance,
+            related_entities=related_entities,
+            errors=errors
+        )

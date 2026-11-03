@@ -6,8 +6,11 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
+MODULE_NAME = "website"
+
 TIMEOUT = 15
 MAX_PAGES = 10
+MAX_PAGE_SIZE = 5 * 1024 * 1024
 
 USER_AGENT = "Theseus/1.0"
 
@@ -82,7 +85,7 @@ FIELDS = (
 
 EMAIL_PATTERN = re.compile(
     r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
-    re.IGNORECASE
+    re.IGNORECASE,
 )
 
 PHONE_PATTERN = re.compile(
@@ -95,26 +98,23 @@ LEI_PATTERN = re.compile(
 
 ANALYTICS_PATTERNS = {
     "Google Analytics": re.compile(
-        r"\bG-[A-Z0-9]{6,}\b"
+        r"\b(G-[A-Z0-9]{6,})\b"
     ),
     "Google Universal Analytics": re.compile(
-        r"\bUA-\d{4,}-\d+\b"
+        r"\b(UA-\d{4,}-\d+)\b"
     ),
     "Google Tag Manager": re.compile(
-        r"\bGTM-[A-Z0-9]+\b"
-    ),
-    "Meta Pixel": re.compile(
-        r"\b\d{10,20}\b"
+        r"\b(GTM-[A-Z0-9]+)\b"
     ),
     "Microsoft Clarity": re.compile(
         r"clarity\.ms/tag/([a-z0-9]+)",
-        re.IGNORECASE
+        re.IGNORECASE,
     ),
 }
 
 PAYMENT_PATTERNS = {
     "Stripe": re.compile(
-        r"\bpk_(?:live|test)_[A-Za-z0-9]+\b"
+        r"\b(pk_(?:live|test)_[A-Za-z0-9]+)\b"
     ),
     "PayPal": re.compile(
         r"(?:client-id|client_id)=([A-Za-z0-9_-]+)"
@@ -122,31 +122,56 @@ PAYMENT_PATTERNS = {
 }
 
 def empty_data() -> dict:
+    return {field: [] for field in FIELDS}
+
+def timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+def make_envelope(
+    status: str,
+    data: dict,
+    provenance: list,
+    related_entities: list,
+    errors: list,
+) -> dict:
     return {
-        field: []
-        for field in FIELDS
+        "module": MODULE_NAME,
+        "status": status,
+        "data": data,
+        "provenance": provenance,
+        "related_entities": related_entities,
+        "errors": errors,
     }
 
+def add_provenance(
+    provenance: list,
+    source: str,
+    method: str,
+) -> None:
+    provenance.append({
+        "source": source,
+        "method": method,
+        "retrieved_at": timestamp(),
+    })
+
 def unique(values: list) -> list:
-    cleaned = []
+    result = []
+    seen = set()
 
     for value in values:
         if isinstance(value, str):
             value = value.strip()
 
-            if value:
-                cleaned.append(value)
+            if not value:
+                continue
+
+            key = value.lower()
 
         elif isinstance(value, dict):
-            cleaned.append(value)
+            key = json.dumps(value, sort_keys=True)
 
-    result = []
-    seen = set()
-
-    for value in cleaned:
-        key = json.dumps(value, sort_keys=True) if isinstance(
-            value, dict
-        ) else value.lower()
+        else:
+            continue
 
         if key not in seen:
             seen.add(key)
@@ -158,10 +183,32 @@ def unique(values: list) -> list:
             json.dumps(item, sort_keys=True)
             if isinstance(item, dict)
             else item.lower()
-        )
+        ),
+    )
+
+def get_domain(hostname: str) -> str:
+    parsed = urlparse(
+        hostname if "://" in hostname else f"//{hostname}"
+    )
+
+    return (parsed.hostname or "").lower().rstrip(".")
+
+def is_http_url(url: str) -> bool:
+    return urlparse(url).scheme.lower() in ("http", "https")
+
+def is_internal_url(url: str, domain: str) -> bool:
+    hostname = get_domain(url)
+
+    if not hostname:
+        return False
+
+    return (
+        hostname == domain
+        or hostname.endswith("." + domain)
     )
 
 class WebsiteParser(HTMLParser):
+
     def __init__(self):
         super().__init__()
 
@@ -170,8 +217,10 @@ class WebsiteParser(HTMLParser):
         self.resources = []
         self.metadata = []
         self.json_ld = []
+
         self.in_script = False
         self.script_type = ""
+        self.current_link = None
 
     def handle_starttag(self, tag, attrs):
         attributes = dict(attrs)
@@ -180,10 +229,13 @@ class WebsiteParser(HTMLParser):
             href = attributes.get("href")
 
             if href:
-                self.links.append({
+                link = {
                     "href": href,
-                    "text": ""
-                })
+                    "text": "",
+                }
+
+                self.links.append(link)
+                self.current_link = link
 
         if tag in ("script", "iframe", "img", "link"):
             source = (
@@ -206,7 +258,7 @@ class WebsiteParser(HTMLParser):
             if key and value:
                 self.metadata.append({
                     "key": key.lower(),
-                    "value": value.strip()
+                    "value": value.strip(),
                 })
 
         if tag == "script":
@@ -218,40 +270,66 @@ class WebsiteParser(HTMLParser):
             if self.script_type == "application/ld+json":
                 self.json_ld.append(data)
 
-        else:
-            if data.strip():
-                self.text.append(data.strip())
+        elif data.strip():
+            self.text.append(data.strip())
+
+            if self.current_link is not None:
+                self.current_link["text"] += data.strip() + " "
 
     def handle_endtag(self, tag):
         if tag == "script":
             self.in_script = False
             self.script_type = ""
 
-    def handle_data_for_link(self, data):
-        if self.links:
-            self.links[-1]["text"] += data
+        elif tag == "a":
+            self.current_link = None
 
-def get_page(url: str):
+def get_page(url: str, domain: str):
+    if not is_http_url(url):
+        raise ValueError("Only HTTP and HTTPS URLs are supported.")
+
     response = requests.get(
         url,
         timeout=TIMEOUT,
         headers={"User-Agent": USER_AGENT},
-        allow_redirects=True
+        allow_redirects=True,
+        stream=True,
     )
 
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
 
-    content_type = response.headers.get(
-        "Content-Type", ""
-    ).lower()
+        if not is_internal_url(response.url, domain):
+            raise ValueError(
+                "Page redirected outside the target domain."
+            )
 
-    if "text/html" not in content_type:
-        return None, response.url
+        content_type = response.headers.get(
+            "Content-Type", ""
+        ).lower()
 
-    parser = WebsiteParser()
-    parser.feed(response.text)
+        if "text/html" not in content_type:
+            return None, response.url
 
-    return parser, response.url
+        content = response.raw.read(MAX_PAGE_SIZE + 1)
+
+        if len(content) > MAX_PAGE_SIZE:
+            raise ValueError("HTML page exceeds maximum size.")
+
+        encoding = response.encoding or "utf-8"
+
+        parser = WebsiteParser()
+        parser.feed(
+            content.decode(
+                encoding,
+                errors="replace",
+            )
+        )
+
+        return parser, response.url
+
+    finally:
+        response.close()
 
 def extract_jsonld(parser: WebsiteParser) -> list:
     results = []
@@ -281,7 +359,17 @@ def walk_jsonld(value):
         for child in value:
             yield from walk_jsonld(child)
 
-def extract_schema_data(objects: list, data: dict):
+def normalise_schema_type(value: str) -> str:
+    return value.rstrip("/").rsplit("/", 1)[-1].rsplit("#", 1)[-1].lower()
+
+def extract_schema_data(objects: list, data: dict) -> None:
+    organisation_types = {
+        "organization",
+        "corporation",
+        "localbusiness",
+        "company",
+    }
+
     for root in objects:
         for item in walk_jsonld(root):
             item_type = item.get("@type", [])
@@ -290,20 +378,15 @@ def extract_schema_data(objects: list, data: dict):
                 item_type = [item_type]
 
             types = {
-                value.lower()
+                normalise_schema_type(value)
                 for value in item_type
                 if isinstance(value, str)
             }
 
             name = item.get("name")
 
-            if name:
-                if types.intersection({
-                    "organization",
-                    "corporation",
-                    "localbusiness",
-                    "company"
-                }):
+            if isinstance(name, str):
+                if types.intersection(organisation_types):
                     data["company_names"].append(name)
                     data["organisation_names"].append(name)
 
@@ -324,9 +407,7 @@ def extract_schema_data(objects: list, data: dict):
                 copyright_holder = copyright_holder.get("name")
 
             if isinstance(copyright_holder, str):
-                data["copyright_holder_names"].append(
-                    copyright_holder
-                )
+                data["copyright_holder_names"].append(copyright_holder)
 
             email = item.get("email")
 
@@ -343,17 +424,20 @@ def extract_schema_data(objects: list, data: dict):
             address = item.get("address")
 
             if isinstance(address, dict):
-                data["business_addresses"].append({
+                address_data = {
                     key: address[key]
                     for key in (
                         "streetAddress",
                         "addressLocality",
                         "addressRegion",
                         "postalCode",
-                        "addressCountry"
+                        "addressCountry",
                     )
                     if address.get(key)
-                })
+                }
+
+                if address_data:
+                    data["business_addresses"].append(address_data)
 
             elif isinstance(address, str):
                 data["business_addresses"].append(address)
@@ -363,32 +447,37 @@ def extract_schema_data(objects: list, data: dict):
             if isinstance(identifier, dict):
                 identifier = identifier.get("value")
 
+            elif isinstance(identifier, list):
+                identifier = [
+                    entry.get("value")
+                    if isinstance(entry, dict)
+                    else entry
+                    for entry in identifier
+                ]
+
             if isinstance(identifier, str):
-                data["legal_entity_identifiers"].append(
-                    identifier
+                data["legal_entity_identifiers"].append(identifier)
+
+            elif isinstance(identifier, list):
+                data["legal_entity_identifiers"].extend(
+                    value for value in identifier
+                    if isinstance(value, str)
                 )
 
-def get_domain(hostname: str) -> str:
-    return hostname.lower().split(":")[0].rstrip(".")
-
-def is_internal_url(url: str, domain: str) -> bool:
-    hostname = get_domain(urlparse(url).netloc)
-
-    return (
-        hostname == domain
-        or hostname.endswith("." + domain)
-    )
-
-def identify_social_accounts(urls: list, data: dict):
+def identify_social_accounts(urls: list, data: dict) -> None:
     for url in urls:
         parsed = urlparse(url)
-        hostname = get_domain(parsed.netloc)
+        hostname = get_domain(url)
+
+        if not hostname:
+            continue
 
         platform = None
 
-        for domain, name in SOCIAL_PLATFORMS.items():
-            if hostname == domain or hostname.endswith(
-                "." + domain
+        for social_domain, name in SOCIAL_PLATFORMS.items():
+            if (
+                hostname == social_domain
+                or hostname.endswith("." + social_domain)
             ):
                 platform = name
                 break
@@ -408,21 +497,25 @@ def identify_social_accounts(urls: list, data: dict):
 
         data["social_media_accounts"].append({
             "platform": platform,
-            "url": url
+            "url": url,
         })
 
         if username:
             data["public_usernames"].append({
                 "platform": platform,
                 "username": username,
-                "url": url
+                "url": url,
             })
 
-def identify_services(urls: list, data: dict):
+def identify_services(
+    urls: list,
+    domain: str,
+    data: dict,
+) -> None:
     for url in urls:
-        hostname = get_domain(urlparse(url).netloc)
+        hostname = get_domain(url)
 
-        if not hostname:
+        if not hostname or is_internal_url(url, domain):
             continue
 
         data["external_service_domains"].append(hostname)
@@ -458,43 +551,34 @@ def identify_services(urls: list, data: dict):
                     "Checkout.com",
                     "Adyen",
                 ):
-                    data["payment_provider_identifiers"].append(
-                        provider
-                    )
+                    data["payment_provider_identifiers"].append(provider)
 
-def extract_identifiers(text: str, data: dict):
+def extract_identifiers(text: str, data: dict) -> None:
     for provider, pattern in ANALYTICS_PATTERNS.items():
-        matches = pattern.findall(text)
-
-        for match in matches:
-            identifier = (
-                match if isinstance(match, str)
-                else match[0]
-            )
-
-            if provider == "Meta Pixel":
-                continue
-
+        for identifier in pattern.findall(text):
             data["analytics_identifiers"].append({
                 "provider": provider,
-                "identifier": identifier
+                "identifier": identifier,
             })
 
     for provider, pattern in PAYMENT_PATTERNS.items():
-        for match in pattern.findall(text):
+        for identifier in pattern.findall(text):
             data["payment_provider_identifiers"].append({
                 "provider": provider,
-                "identifier": match
+                "identifier": identifier,
             })
 
-def extract_legal_identifiers(text: str, data: dict):
+def extract_legal_identifiers(text: str, data: dict) -> None:
     for match in LEI_PATTERN.findall(text.upper()):
         data["legal_entity_identifiers"].append({
             "type": "potential_lei",
-            "value": match
+            "value": match,
         })
 
-def extract_metadata(parser: WebsiteParser, data: dict):
+def extract_metadata(
+    parser: WebsiteParser,
+    data: dict,
+) -> None:
     for item in parser.metadata:
         key = item["key"]
         value = item["value"]
@@ -502,53 +586,56 @@ def extract_metadata(parser: WebsiteParser, data: dict):
         if key in ("author", "article:author"):
             data["website_author_names"].append(value)
 
-        if key == "generator":
+        elif key == "generator":
             data["cms_identifiers"].append(value)
+
+        elif key in ("og:site_name", "application-name"):
+            data["company_names"].append(value)
 
 def identify_cms_and_technologies(
     resources: list,
     source: str,
-    data: dict
-):
+    data: dict,
+) -> None:
     source_lower = source.lower()
     resources_lower = " ".join(resources).lower()
 
     fingerprints = {
         "WordPress": (
             "wp-content/",
-            "wp-includes/"
+            "wp-includes/",
         ),
         "Drupal": (
             "drupalsettings",
-            "/sites/default/files/"
+            "/sites/default/files/",
         ),
         "Joomla": (
             "/media/system/js/",
-            "joomla!"
+            "joomla!",
         ),
         "Shopify": (
             "cdn.shopify.com",
-            "shopify.theme"
+            "shopify.theme",
         ),
         "Wix": (
             "wixstatic.com",
-            "wix.com"
+            "wix.com",
         ),
         "Squarespace": (
             "static.squarespace.com",
-            "squarespace.com"
+            "squarespace.com",
         ),
         "Webflow": (
             "webflow.js",
-            "webflow.com"
+            "webflow.com",
         ),
         "Next.js": (
             "/_next/",
-            "__next_data__"
+            "__next_data__",
         ),
         "Nuxt": (
             "/_nuxt/",
-            "__nuxt"
+            "__nuxt",
         ),
     }
 
@@ -566,16 +653,26 @@ def identify_cms_and_technologies(
                 "Webflow",
             ):
                 data["cms_identifiers"].append(technology)
+
             else:
-                data["technology_identifiers"].append(
-                    technology
-                )
+                data["technology_identifiers"].append(technology)
 
 def run(domain: str) -> dict:
     data = empty_data()
     provenance = []
     related_entities = []
     errors = []
+
+    domain = get_domain(domain)
+
+    if not domain:
+        return make_envelope(
+            "error",
+            data,
+            provenance,
+            related_entities,
+            ["No valid domain was provided."],
+        )
 
     base_url = f"https://{domain}/"
 
@@ -599,10 +696,13 @@ def run(domain: str) -> dict:
         if url in visited:
             continue
 
+        if not is_internal_url(url, domain):
+            continue
+
         visited.add(url)
 
         try:
-            parser, final_url = get_page(url)
+            parser, final_url = get_page(url, domain)
 
             if parser is None:
                 continue
@@ -616,14 +716,17 @@ def run(domain: str) -> dict:
             all_resources.update(
                 urljoin(final_url, resource)
                 for resource in parser.resources
+                if is_http_url(urljoin(final_url, resource))
             )
 
             page_text = " ".join(parser.text)
-            source_text = page_text + " " + " ".join(
+
+            metadata_text = " ".join(
                 f"{item['key']} {item['value']}"
                 for item in parser.metadata
             )
 
+            source_text = page_text + " " + metadata_text
             all_source.append(source_text)
 
             data["contact_email_addresses"].extend(
@@ -642,23 +745,22 @@ def run(domain: str) -> dict:
             identify_cms_and_technologies(
                 parser.resources,
                 source_text,
-                data
+                data,
             )
 
-            provenance.append({
-                "source": final_url,
-                "method": "Website HTML and metadata extraction",
-                "retrieved_at": datetime.now(
-                    timezone.utc
-                ).isoformat()
-            })
+            add_provenance(
+                provenance,
+                final_url,
+                "Website HTML and metadata extraction",
+            )
 
             for link in parser.links:
                 target = urljoin(final_url, link["href"])
                 path = urlparse(target).path.lower()
 
                 if (
-                    is_internal_url(target, domain)
+                    is_http_url(target)
+                    and is_internal_url(target, domain)
                     and any(
                         keyword in path
                         for keyword in (
@@ -668,44 +770,52 @@ def run(domain: str) -> dict:
                             "team",
                             "legal",
                             "privacy",
-                            "terms"
+                            "terms",
                         )
                     )
                     and target not in visited
+                    and target not in pages
                 ):
                     pages.append(target)
 
-        except requests.RequestException as exc:
-            errors.append(
-                f"Page retrieval failed for {url}: {exc}"
-            )
+        except (
+            requests.RequestException,
+            ValueError,
+            UnicodeError,
+        ) as exc:
+            errors.append(f"Page retrieval failed for {url}: {exc}")
+
+        except Exception as exc:
+            errors.append(f"Page extraction failed for {url}: {exc}")
 
     identify_social_accounts(
         list(all_links),
-        data
+        data,
     )
 
     identify_services(
         list(all_resources),
-        data
+        domain,
+        data,
     )
 
     combined_source = " ".join(all_source)
 
     extract_identifiers(
         combined_source,
-        data
+        data,
     )
 
     extract_legal_identifiers(
         combined_source,
-        data
+        data,
     )
 
     copyright_pattern = re.compile(
-        r"(?:©|copyright)\s*(?:\d{4}(?:\s*[-–]\s*\d{4})?)?"
+        r"(?:©|copyright)\s*"
+        r"(?:\d{4}(?:\s*[-–]\s*\d{4})?)?"
         r"\s*([^|<>\n]+)",
-        re.IGNORECASE
+        re.IGNORECASE,
     )
 
     for match in copyright_pattern.findall(combined_source):
@@ -721,35 +831,35 @@ def run(domain: str) -> dict:
         related_entities.append({
             "type": "organisation",
             "value": name,
-            "relationship": "published_on_website"
+            "relationship": "published_on_website",
         })
 
     for name in data["published_individual_names"]:
         related_entities.append({
             "type": "person",
             "value": name,
-            "relationship": "published_on_website"
+            "relationship": "published_on_website",
         })
 
     for email in data["contact_email_addresses"]:
         related_entities.append({
             "type": "email_address",
             "value": email,
-            "relationship": "published_on_website"
+            "relationship": "published_on_website",
         })
 
     for telephone in data["telephone_numbers"]:
         related_entities.append({
             "type": "telephone_number",
             "value": telephone,
-            "relationship": "published_on_website"
+            "relationship": "published_on_website",
         })
 
     for hostname in data["external_service_domains"]:
         related_entities.append({
             "type": "domain",
             "value": hostname,
-            "relationship": "external_website_resource"
+            "relationship": "external_website_resource",
         })
 
     related_entities = unique(related_entities)
@@ -761,28 +871,17 @@ def run(domain: str) -> dict:
 
     if errors and populated_fields:
         status = "partial"
-
     elif errors:
         status = "error"
-
-    elif populated_fields == len(FIELDS):
-        status = "success"
-
     elif populated_fields:
-        status = "partial"
-
+        status = "success"
     else:
         status = "no_results"
 
-    result = {
-        "status": status,
-        "module": "website",
-        "data": data,
-        "provenance": provenance,
-        "related_entities": related_entities
-    }
-
-    if errors:
-        result["error"] = errors
-
-    return result
+    return make_envelope(
+        status,
+        data,
+        provenance,
+        related_entities,
+        errors,
+    )

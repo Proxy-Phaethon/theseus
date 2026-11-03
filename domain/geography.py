@@ -1,5 +1,5 @@
+import json
 import socket
-import ssl
 import requests
 
 from datetime import datetime, timezone
@@ -9,91 +9,154 @@ from urllib.parse import urljoin, urlparse
 MODULE_NAME = "geography"
 
 RDAP_ENDPOINT = "https://rdap.org/domain/{}"
-DNS_ENDPOINT = "https://cloudflare-dns.com/dns-query"
-GEO_ENDPOINT = "https://ipwho.is/{}"
-
 TIMEOUT = 15
-MAX_GEOLOOKUPS = 30
+MAX_WEBSITE_PAGES = 6
+MAX_PAGE_SIZE = 5 * 1024 * 1024
 
 FIELDS = (
-    "registrant_country",
-    "registrant_region",
-    "registrant_city",
-    "registrant_address",
-    "registrant_postal_code",
-    "hosting_country",
-    "hosting_city",
-    "ip_geolocation",
-    "nameserver_locations",
-    "mail_server_locations",
-    "cdn_edge_locations",
-    "certificate_organisation_country",
-    "public_business_addresses",
-    "website_contact_geography",
+    "registrant_location",
+    "published_locations",
+    "ip_addresses",
+    "nameserver_ip_addresses",
+    "mail_server_ip_addresses",
 )
 
 def empty_data() -> dict:
     return {
-        "registrant_country": None,
-        "registrant_region": None,
-        "registrant_city": None,
-        "registrant_address": None,
-        "registrant_postal_code": None,
-        "hosting_country": [],
-        "hosting_city": [],
-        "ip_geolocation": [],
-        "nameserver_locations": [],
-        "mail_server_locations": [],
-        "cdn_edge_locations": [],
-        "certificate_organisation_country": None,
-        "public_business_addresses": [],
-        "website_contact_geography": [],
+        "registrant_location": {
+            "country": None,
+            "region": None,
+            "city": None,
+            "address": None,
+            "postal_code": None,
+        },
+        "published_locations": [],
+        "ip_addresses": [],
+        "nameserver_ip_addresses": [],
+        "mail_server_ip_addresses": [],
     }
 
 def timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 def make_envelope(
-    data: dict,
     status: str,
-    provenance: list,
-    related_entities: list,
-    errors: list,
+    data: dict = None,
+    provenance: list = None,
+    related_entities: list = None,
+    errors: list = None,
 ) -> dict:
     return {
         "module": MODULE_NAME,
         "status": status,
-        "data": data,
-        "provenance": provenance,
-        "related_entities": related_entities,
-        "errors": errors,
+        "data": data if data is not None else empty_data(),
+        "provenance": provenance if provenance is not None else [],
+        "related_entities": (
+            related_entities if related_entities is not None else []
+        ),
+        "errors": errors if errors is not None else [],
     }
+
+def unique(values: list) -> list:
+    result = []
+    seen = set()
+
+    for value in values:
+        if value is None:
+            continue
+
+        if isinstance(value, dict):
+            key = json.dumps(
+                value,
+                sort_keys=True,
+                default=str,
+            ).lower()
+        else:
+            value = str(value).strip()
+
+            if not value:
+                continue
+
+            key = value.lower()
+
+        if key not in seen:
+            seen.add(key)
+            result.append(value)
+
+    return sorted(
+        result,
+        key=lambda item: str(item).lower(),
+    )
+
+def add_provenance(
+    provenance: list,
+    source: str,
+    method: str,
+) -> None:
+    provenance.append({
+        "source": source,
+        "method": method,
+        "retrieved_at": timestamp(),
+    })
 
 def request_json(url: str, **kwargs) -> dict:
     response = requests.get(
         url,
         timeout=TIMEOUT,
+        headers={
+            "User-Agent": "Theseus/1.0",
+            **kwargs.pop("headers", {}),
+        },
         **kwargs,
     )
 
-    response.raise_for_status()
-    return response.json()
+    try:
+        response.raise_for_status()
+        return response.json()
+    finally:
+        response.close()
 
-def get_dns_records(domain: str, record_type: str) -> list:
+def get_rdap_location(domain: str) -> dict | None:
     result = request_json(
-        DNS_ENDPOINT,
-        params={
-            "name": domain,
-            "type": record_type,
-        },
-        headers={"Accept": "application/dns-json"},
+        RDAP_ENDPOINT.format(domain),
     )
 
-    return [
-        record["data"]
-        for record in result.get("Answer", [])
-        if "data" in record
-    ]
+    for entity in result.get("entities", []):
+        if "registrant" not in entity.get("roles", []):
+            continue
+
+        vcard = entity.get("vcardArray", [])
+
+        if (
+            len(vcard) < 2
+            or not isinstance(vcard[1], list)
+        ):
+            continue
+
+        for item in vcard[1]:
+            if (
+                not isinstance(item, list)
+                or len(item) < 4
+                or item[0] != "adr"
+                or not isinstance(item[3], list)
+            ):
+                continue
+
+            address = item[3]
+
+            return {
+                "address": ", ".join(
+                    str(part).strip()
+                    for part in address
+                    if part
+                ) or None,
+                "city": address[3] or None if len(address) > 3 else None,
+                "region": address[4] or None if len(address) > 4 else None,
+                "postal_code": address[5] or None if len(address) > 5 else None,
+                "country": address[6] or None if len(address) > 6 else None,
+            }
+
+    return None
 
 def get_ip_addresses(hostname: str) -> list:
     results = socket.getaddrinfo(
@@ -107,65 +170,32 @@ def get_ip_addresses(hostname: str) -> list:
         for result in results
     })
 
-def geolocate_ip(ip: str) -> dict | None:
+def get_dns_records(
+    domain: str,
+    record_type: str,
+) -> list:
     result = request_json(
-        GEO_ENDPOINT.format(ip),
+        "https://cloudflare-dns.com/dns-query",
+        params={
+            "name": domain,
+            "type": record_type,
+        },
+        headers={
+            "Accept": "application/dns-json",
+        },
     )
 
-    if not result.get("success"):
-        raise ValueError(
-            f"Geolocation provider returned no result for {ip}."
-        )
+    if not isinstance(result, dict):
+        raise ValueError("Unexpected DNS response.")
 
-    connection = result.get("connection") or {}
+    if result.get("Status") not in (0, 3):
+        raise ValueError("DNS resolver returned an unsuccessful status.")
 
-    return {
-        "ip": ip,
-        "country": result.get("country"),
-        "region": result.get("region"),
-        "city": result.get("city"),
-        "postal_code": result.get("postal"),
-        "latitude": result.get("latitude"),
-        "longitude": result.get("longitude"),
-        "isp": connection.get("isp"),
-    }
-
-def get_rdap_location(domain: str) -> dict | None:
-    result = request_json(
-        RDAP_ENDPOINT.format(domain),
-    )
-
-    for entity in result.get("entities", []):
-        if "registrant" not in entity.get("roles", []):
-            continue
-
-        vcard = entity.get("vcardArray", [])
-
-        if len(vcard) < 2 or not isinstance(vcard[1], list):
-            continue
-
-        for item in vcard[1]:
-            if (
-                isinstance(item, list)
-                and len(item) >= 4
-                and item[0] == "adr"
-                and isinstance(item[3], list)
-            ):
-                address = item[3]
-
-                return {
-                    "address": ", ".join(
-                        str(part)
-                        for part in address
-                        if part
-                    ) or None,
-                    "city": address[3] or None,
-                    "region": address[4] or None,
-                    "postal_code": address[5] or None,
-                    "country": address[6] or None,
-                }
-
-    return None
+    return [
+        record["data"]
+        for record in result.get("Answer", [])
+        if isinstance(record, dict) and "data" in record
+    ]
 
 class WebsiteParser(HTMLParser):
     def __init__(self):
@@ -181,7 +211,7 @@ class WebsiteParser(HTMLParser):
 
         if (
             tag == "script"
-            and attrs.get("type") == "application/ld+json"
+            and attrs.get("type", "").lower() == "application/ld+json"
         ):
             self.in_jsonld = True
             self.current_script = ""
@@ -232,8 +262,10 @@ def collect_addresses(data) -> list:
             if extracted:
                 addresses.append(extracted)
 
-        elif isinstance(address, str):
-            addresses.append({"address": address})
+        elif isinstance(address, str) and address.strip():
+            addresses.append({
+                "address": address.strip(),
+            })
 
         for key, value in data.items():
             if key == "address":
@@ -244,7 +276,33 @@ def collect_addresses(data) -> list:
 
     return addresses
 
-def extract_website_addresses(domain: str) -> tuple[list, list, list]:
+def normalise_address(address: dict) -> dict:
+    field_mapping = {
+        "streetAddress": "address",
+        "addressLocality": "city",
+        "addressRegion": "region",
+        "postalCode": "postal_code",
+        "addressCountry": "country",
+    }
+
+    normalised = {
+        "country": None,
+        "region": None,
+        "city": None,
+        "address": None,
+        "postal_code": None,
+    }
+
+    if "address" in address:
+        normalised["address"] = address["address"]
+
+    for original, canonical in field_mapping.items():
+        if address.get(original):
+            normalised[canonical] = address[original]
+
+    return normalised
+
+def extract_website_addresses(domain: str) -> tuple:
     base_url = f"https://{domain}/"
     base_host = urlparse(base_url).hostname
 
@@ -253,124 +311,109 @@ def extract_website_addresses(domain: str) -> tuple[list, list, list]:
     errors = []
     visited = set()
 
-    session = requests.Session()
-
     headers = {
         "User-Agent": "Theseus/1.0 (public domain research)",
     }
 
-    while urls and len(visited) < 6:
-        url = urls.pop(0)
+    with requests.Session() as session:
+        while urls and len(visited) < MAX_WEBSITE_PAGES:
+            url = urls.pop(0)
 
-        if url in visited:
-            continue
-
-        visited.add(url)
-
-        try:
-            response = session.get(
-                url,
-                headers=headers,
-                timeout=TIMEOUT,
-            )
-
-            response.raise_for_status()
-
-            if urlparse(response.url).hostname != base_host:
+            if url in visited:
                 continue
 
-            if "text/html" not in response.headers.get(
-                "Content-Type", ""
-            ):
-                continue
+            visited.add(url)
+            response = None
 
-            parser = WebsiteParser()
-            parser.feed(response.text)
+            try:
+                response = session.get(
+                    url,
+                    headers=headers,
+                    timeout=TIMEOUT,
+                    stream=True,
+                )
 
-            for script in parser.jsonld:
-                try:
-                    structured_data = __import__("json").loads(script)
+                response.raise_for_status()
 
-                    addresses.extend(
-                        collect_addresses(structured_data)
-                    )
+                final_host = urlparse(response.url).hostname
 
-                except (ValueError, TypeError):
+                if final_host != base_host:
+                    errors.append("Website redirected outside the target domain.")
                     continue
 
-            for link in parser.links[:5]:
-                candidate = urljoin(response.url, link)
+                if "text/html" not in response.headers.get(
+                    "Content-Type", ""
+                ).lower():
+                    continue
 
-                if (
-                    urlparse(candidate).hostname == base_host
-                    and candidate not in visited
-                ):
-                    urls.append(candidate)
+                content = response.raw.read(
+                    MAX_PAGE_SIZE + 1,
+                    decode_content=True,
+                )
 
-        except requests.RequestException as exc:
-            errors.append(
-                f"Website retrieval failed ({url}): {exc}"
-            )
+                if len(content) > MAX_PAGE_SIZE:
+                    errors.append("Website page exceeded the extraction size limit.")
+                    continue
 
-    unique_addresses = []
+                encoding = response.encoding or "utf-8"
+                html = content.decode(encoding, errors="replace")
 
-    for address in addresses:
-        if address not in unique_addresses:
-            unique_addresses.append(address)
+                parser = WebsiteParser()
+                parser.feed(html)
 
-    contact_geography = [
+                for script in parser.jsonld:
+                    try:
+                        structured_data = json.loads(script)
+                        addresses.extend(
+                            collect_addresses(structured_data)
+                        )
+                    except (ValueError, TypeError):
+                        continue
+
+                for link in parser.links:
+                    candidate = urljoin(response.url, link)
+
+                    if (
+                        urlparse(candidate).hostname == base_host
+                        and candidate not in visited
+                        and candidate not in urls
+                    ):
+                        urls.append(candidate)
+
+            except requests.RequestException:
+                errors.append("Website page retrieval failed.")
+
+            except (OSError, UnicodeError):
+                errors.append("Website page could not be processed.")
+
+            finally:
+                if response is not None:
+                    response.close()
+
+    published_locations = [
         {
+            **normalise_address(address),
             "source": "website structured data",
-            **address,
         }
-        for address in unique_addresses
+        for address in addresses
     ]
 
-    session.close()
+    return unique(published_locations), errors
 
-    return unique_addresses, contact_geography, errors
-
-def get_certificate_country(domain: str) -> str | None:
-    context = ssl.create_default_context()
-
-    with socket.create_connection(
-        (domain, 443),
-        timeout=TIMEOUT,
-    ) as connection:
-
-        with context.wrap_socket(
-            connection,
-            server_hostname=domain,
-        ) as secure_socket:
-
-            certificate = secure_socket.getpeercert()
-
-    for group in certificate.get("subject", []):
-        for key, value in group:
-            if key == "countryName":
-                return value
-
-    return None
-
-def add_provenance(
-    provenance: list,
-    source: str,
-    method: str,
+def add_related_entity(
+    related_entities: list,
+    entity_type: str,
+    value: str,
+    relationship: str,
 ) -> None:
-    provenance.append({
-        "source": source,
-        "method": method,
-        "retrieved_at": timestamp(),
+    if not value:
+        return
+
+    related_entities.append({
+        "type": entity_type,
+        "value": value,
+        "relationship": relationship,
     })
-
-def has_data(value) -> bool:
-    if value is None:
-        return False
-
-    if isinstance(value, (list, dict, tuple, set)):
-        return bool(value)
-
-    return True
 
 def run(domain: str) -> dict:
     data = empty_data()
@@ -379,271 +422,231 @@ def run(domain: str) -> dict:
     errors = []
 
     successful_sources = 0
-    geolookups = 0
 
     try:
-        registrant = get_rdap_location(domain)
+        domain = domain.strip().lower().rstrip(".")
 
-        if registrant:
-            data["registrant_country"] = registrant["country"]
-            data["registrant_region"] = registrant["region"]
-            data["registrant_city"] = registrant["city"]
-            data["registrant_address"] = registrant["address"]
-            data["registrant_postal_code"] = registrant["postal_code"]
+        if not domain:
+            raise ValueError("A domain must be provided.")
+
+        try:
+            registrant = get_rdap_location(domain)
+
+            if registrant:
+                data["registrant_location"] = registrant
 
             successful_sources += 1
 
-        add_provenance(
-            provenance,
-            RDAP_ENDPOINT.format(domain),
-            "RDAP registrant address extraction",
-        )
-
-    except Exception as exc:
-        errors.append(f"RDAP retrieval failed: {exc}")
-
-    try:
-        domain_ips = get_ip_addresses(domain)
-        ip_locations = []
-
-        for ip in domain_ips:
-            if geolookups >= MAX_GEOLOOKUPS:
-                errors.append(
-                    "Geolocation lookup limit reached."
-                )
-                break
-
-            try:
-                location = geolocate_ip(ip)
-                geolookups += 1
-
-                if location:
-                    ip_locations.append(location)
-
-            except Exception as exc:
-                errors.append(
-                    f"IP geolocation failed ({ip}): {exc}"
-                )
-                geolookups += 1
-
-        data["ip_geolocation"] = ip_locations
-
-        data["hosting_country"] = sorted({
-            item["country"]
-            for item in ip_locations
-            if item["country"]
-        })
-
-        data["hosting_city"] = sorted({
-            item["city"]
-            for item in ip_locations
-            if item["city"]
-        })
-
-        successful_sources += 1
-
-        add_provenance(
-            provenance,
-            GEO_ENDPOINT,
-            "IP geolocation",
-        )
-
-        for location in ip_locations:
-            related_entities.append({
-                "type": "ip_address",
-                "value": location["ip"],
-                "relationship": "resolved_from_target_domain",
-            })
-
-    except Exception as exc:
-        errors.append(
-            f"Domain IP retrieval failed: {exc}"
-        )
-
-    try:
-        nameservers = get_dns_records(domain, "NS")
-        nameserver_locations = []
-
-        for nameserver in nameservers:
-            hostname = nameserver.rstrip(".").lower()
-
-            try:
-                addresses = get_ip_addresses(hostname)
-            except socket.gaierror as exc:
-                errors.append(
-                    f"Nameserver resolution failed ({hostname}): {exc}"
-                )
-                continue
-
-            for ip in addresses:
-                if geolookups >= MAX_GEOLOOKUPS:
-                    break
-
-                try:
-                    location = geolocate_ip(ip)
-                    geolookups += 1
-
-                    if location:
-                        nameserver_locations.append({
-                            "hostname": hostname,
-                            **location,
-                        })
-
-                except Exception as exc:
-                    errors.append(
-                        f"Nameserver geolocation failed ({ip}): {exc}"
-                    )
-                    geolookups += 1
-
-        data["nameserver_locations"] = nameserver_locations
-        successful_sources += 1
-
-        add_provenance(
-            provenance,
-            DNS_ENDPOINT,
-            "DNS nameserver and IP geolocation inspection",
-        )
-
-    except Exception as exc:
-        errors.append(
-            f"Nameserver inspection failed: {exc}"
-        )
-
-    try:
-        mail_servers = get_dns_records(domain, "MX")
-        mail_locations = []
-
-        for record in mail_servers:
-            parts = record.split()
-            hostname = parts[-1].rstrip(".").lower() if parts else None
-
-            if not hostname:
-                continue
-
-            try:
-                addresses = get_ip_addresses(hostname)
-            except socket.gaierror as exc:
-                errors.append(
-                    f"Mail server resolution failed ({hostname}): {exc}"
-                )
-                continue
-
-            for ip in addresses:
-                if geolookups >= MAX_GEOLOOKUPS:
-                    break
-
-                try:
-                    location = geolocate_ip(ip)
-                    geolookups += 1
-
-                    if location:
-                        mail_locations.append({
-                            "hostname": hostname,
-                            **location,
-                        })
-
-                except Exception as exc:
-                    errors.append(
-                        f"Mail server geolocation failed ({ip}): {exc}"
-                    )
-                    geolookups += 1
-
-        data["mail_server_locations"] = mail_locations
-        successful_sources += 1
-
-        add_provenance(
-            provenance,
-            DNS_ENDPOINT,
-            "DNS mail server and IP geolocation inspection",
-        )
-
-    except Exception as exc:
-        errors.append(
-            f"Mail server inspection failed: {exc}"
-        )
-
-    data["cdn_edge_locations"] = [
-        item
-        for item in data["ip_geolocation"]
-        if any(
-            keyword in (item.get("isp") or "").lower()
-            for keyword in (
-                "cloudflare",
-                "akamai",
-                "fastly",
-                "amazon",
-                "cloudfront",
+            add_provenance(
+                provenance,
+                RDAP_ENDPOINT.format(domain),
+                "RDAP registrant address extraction",
             )
+
+            if registrant:
+                for field in (
+                    "country",
+                    "region",
+                    "city",
+                ):
+                    add_related_entity(
+                        related_entities,
+                        "location",
+                        registrant.get(field),
+                        f"registrant_{field}",
+                    )
+
+        except (
+            requests.RequestException,
+            ValueError,
+            TypeError,
+            KeyError,
+        ):
+            errors.append("RDAP location retrieval failed.")
+
+        try:
+            addresses = get_ip_addresses(domain)
+            data["ip_addresses"] = addresses
+
+            successful_sources += 1
+
+            add_provenance(
+                provenance,
+                "System DNS resolver",
+                "Target domain IP address resolution",
+            )
+
+            for address in addresses:
+                add_related_entity(
+                    related_entities,
+                    "ip_address",
+                    address,
+                    "resolved_from_target_domain",
+                )
+
+        except OSError:
+            errors.append("Target domain IP resolution failed.")
+
+        try:
+            nameservers = get_dns_records(domain, "NS")
+            nameserver_ips = set()
+
+            for nameserver in nameservers:
+                hostname = nameserver.rstrip(".").lower()
+
+                try:
+                    addresses = get_ip_addresses(hostname)
+                    nameserver_ips.update(addresses)
+
+                    for address in addresses:
+                        add_related_entity(
+                            related_entities,
+                            "ip_address",
+                            address,
+                            "nameserver_ip_address",
+                        )
+
+                except OSError:
+                    errors.append("Nameserver IP resolution failed.")
+
+                add_related_entity(
+                    related_entities,
+                    "hostname",
+                    hostname,
+                    "nameserver",
+                )
+
+            data["nameserver_ip_addresses"] = sorted(nameserver_ips)
+
+            successful_sources += 1
+
+            add_provenance(
+                provenance,
+                "Cloudflare DNS",
+                "Nameserver record and IP address retrieval",
+            )
+
+        except (
+            requests.RequestException,
+            ValueError,
+            TypeError,
+        ):
+            errors.append("Nameserver retrieval failed.")
+
+        try:
+            mail_servers = get_dns_records(domain, "MX")
+            mail_server_ips = set()
+
+            for record in mail_servers:
+                parts = record.split()
+
+                if not parts:
+                    continue
+
+                hostname = parts[-1].rstrip(".").lower()
+
+                try:
+                    addresses = get_ip_addresses(hostname)
+                    mail_server_ips.update(addresses)
+
+                    for address in addresses:
+                        add_related_entity(
+                            related_entities,
+                            "ip_address",
+                            address,
+                            "mail_server_ip_address",
+                        )
+
+                except OSError:
+                    errors.append("Mail server IP resolution failed.")
+
+                add_related_entity(
+                    related_entities,
+                    "hostname",
+                    hostname,
+                    "mail_server",
+                )
+
+            data["mail_server_ip_addresses"] = sorted(mail_server_ips)
+
+            successful_sources += 1
+
+            add_provenance(
+                provenance,
+                "Cloudflare DNS",
+                "Mail exchanger record and IP address retrieval",
+            )
+
+        except (
+            requests.RequestException,
+            ValueError,
+            TypeError,
+        ):
+            errors.append("Mail server retrieval failed.")
+
+        try:
+            published_locations, website_errors = (
+                extract_website_addresses(domain)
+            )
+
+            data["published_locations"] = published_locations
+            errors.extend(website_errors)
+
+            successful_sources += 1
+
+            add_provenance(
+                provenance,
+                f"https://{domain}",
+                "Website JSON-LD structured address extraction",
+            )
+
+            for location in published_locations:
+                for field in ("country", "region", "city"):
+                    add_related_entity(
+                        related_entities,
+                        "location",
+                        location.get(field),
+                        f"published_{field}",
+                    )
+
+        except (
+            requests.RequestException,
+            ValueError,
+            TypeError,
+        ):
+            errors.append("Website location extraction failed.")
+
+        related_entities = unique(related_entities)
+
+        populated_fields = any(
+            value is not None and value != [] and value != {}
+            for value in data.values()
         )
-    ]
 
-    try:
-        certificate_country = get_certificate_country(domain)
+        if errors and populated_fields:
+            status = "partial"
+        elif errors:
+            status = "error"
+        elif populated_fields:
+            status = "success"
+        elif successful_sources:
+            status = "no_results"
+        else:
+            status = "error"
 
-        data["certificate_organisation_country"] = (
-            certificate_country
+        return make_envelope(
+            status=status,
+            data=data,
+            provenance=provenance,
+            related_entities=related_entities,
+            errors=errors,
         )
 
-        successful_sources += 1
-
-        add_provenance(
-            provenance,
-            f"https://{domain}",
-            "TLS certificate subject country inspection",
+    except Exception:
+        return make_envelope(
+            status="error",
+            data=data,
+            provenance=provenance,
+            related_entities=related_entities,
+            errors=["Geography extraction failed."],
         )
-
-    except Exception as exc:
-        errors.append(
-            f"TLS certificate inspection failed: {exc}"
-        )
-
-    try:
-        addresses, contact_geography, website_errors = (
-            extract_website_addresses(domain)
-        )
-
-        data["public_business_addresses"] = addresses
-        data["website_contact_geography"] = contact_geography
-        errors.extend(website_errors)
-
-        successful_sources += 1
-
-        add_provenance(
-            provenance,
-            f"https://{domain}",
-            "Website JSON-LD structured address extraction",
-        )
-
-    except Exception as exc:
-        errors.append(
-            f"Website geography extraction failed: {exc}"
-        )
-
-    populated_fields = sum(
-        has_data(value)
-        for value in data.values()
-    )
-
-    if errors and populated_fields:
-        status = "partial"
-
-    elif errors and successful_sources == 0:
-        status = "error"
-
-    elif populated_fields:
-        status = "success"
-
-    elif successful_sources:
-        status = "no_results"
-
-    else:
-        status = "error"
-
-    return {
-        "module": MODULE_NAME,
-        "status": status,
-        "data": data,
-        "provenance": provenance,
-        "related_entities": related_entities,
-        "errors": errors,
-    }

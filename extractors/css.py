@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import tinycss2
 
 from core.packets import Packet, PacketStatus
@@ -15,9 +17,35 @@ def cssextract(packet: Packet) -> Packet:
 
     try:
         if not isinstance(packet.input, str):
-            raise ValueError("CSS input must be a source-code string.")
+            raise ValueError(
+                "CSS input must be source code or a file path."
+            )
 
-        source = packet.input
+        source_input = packet.input.strip()
+
+        if not source_input:
+            raise ValueError("CSS source cannot be empty.")
+
+        input_path = Path(source_input)
+
+        if input_path.is_file():
+            source = input_path.read_text(
+                encoding="utf-8",
+                errors="replace",
+            )
+            source_type = "file"
+
+        elif (
+            input_path.suffix.lower() == ".css"
+            or "/" in source_input
+        ):
+            raise FileNotFoundError(
+                f"CSS file does not exist: {source_input}"
+            )
+
+        else:
+            source = source_input
+            source_type = "source"
 
         if not source.strip():
             raise ValueError("CSS source cannot be empty.")
@@ -47,7 +75,9 @@ def cssextract(packet: Packet) -> Packet:
                 if item.type == "declaration":
                     entry = {
                         "property": item.name,
-                        "value": tinycss2.serialize(item.value).strip(),
+                        "value": tinycss2.serialize(
+                            item.value
+                        ).strip(),
                         "important": item.important,
                         "selector": selector,
                     }
@@ -62,50 +92,58 @@ def cssextract(packet: Packet) -> Packet:
 
                 elif item.type == "error":
                     raise ValueError(
-                        f"CSS declaration parsing error: {item.message}"
+                        "CSS declaration parsing error: "
+                        f"{item.message}"
                     )
 
-        for rule in rules:
-            if rule.type == "qualified-rule":
-                selector = tinycss2.serialize(
-                    rule.prelude
-                ).strip()
+        def extract_rules(parsed_rules):
+            for rule in parsed_rules:
 
-                selectors.append(selector)
+                if rule.type == "qualified-rule":
+                    selector = tinycss2.serialize(
+                        rule.prelude
+                    ).strip()
 
-                extract_declarations(
-                    rule.content,
-                    selector=selector,
-                )
+                    selectors.append(selector)
 
-            elif rule.type == "at-rule":
-                name = rule.lower_at_keyword
-                prelude = tinycss2.serialize(
-                    rule.prelude
-                ).strip()
-
-                at_rules.append({
-                    "name": name,
-                    "prelude": prelude or None,
-                    "has_block": rule.content is not None,
-                })
-
-                if name == "import":
-                    imports.append(prelude)
-
-                if rule.content is not None:
                     extract_declarations(
                         rule.content,
-                        selector=f"@{name} {prelude}".strip(),
+                        selector=selector,
                     )
 
-            elif rule.type == "comment":
-                comments.append(rule.value.strip())
+                elif rule.type == "at-rule":
+                    name = rule.lower_at_keyword
+                    prelude = tinycss2.serialize(
+                        rule.prelude
+                    ).strip()
 
-            elif rule.type == "error":
-                raise ValueError(
-                    f"CSS parsing error: {rule.message}"
-                )
+                    at_rules.append({
+                        "name": name,
+                        "prelude": prelude or None,
+                        "has_block": rule.content is not None,
+                    })
+
+                    if name == "import":
+                        imports.append(prelude)
+
+                    if rule.content is not None:
+                        nested_rules = tinycss2.parse_rule_list(
+                            rule.content,
+                            skip_comments=False,
+                            skip_whitespace=True,
+                        )
+
+                        extract_rules(nested_rules)
+
+                elif rule.type == "comment":
+                    comments.append(rule.value.strip())
+
+                elif rule.type == "error":
+                    raise ValueError(
+                        f"CSS parsing error: {rule.message}"
+                    )
+
+        extract_rules(rules)
 
         tokens = tinycss2.parse_component_value_list(source)
 
@@ -117,19 +155,24 @@ def cssextract(packet: Packet) -> Packet:
                 elif token.type == "function":
                     if token.lower_name == "url":
                         urls.append(
-                            tinycss2.serialize(token.arguments).strip(
-                                " \t\n\r\"'"
-                            )
+                            tinycss2.serialize(
+                                token.arguments
+                            ).strip(" \t\n\r\"'")
                         )
 
                     walk_tokens(token.arguments)
 
-                elif token.type in {"{} block", "[] block", "() block"}:
+                elif token.type in {
+                    "{} block",
+                    "[] block",
+                    "() block",
+                }:
                     walk_tokens(token.content)
 
         walk_tokens(tokens)
 
         result.data = {
+            "source_type": source_type,
             "source_length": len(source),
             "line_count": len(source.splitlines()),
             "selectors": selectors,

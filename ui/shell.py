@@ -3,14 +3,14 @@ from typing import Any
 
 from rich.prompt import Prompt
 
-from ui.terminal import console, clear, INTERACTIVE
-from ui.status import error, info, system
+from ui.terminal import console, clear
+from ui.status import error, system
 from ui.banner import initialize
 from ui.progress import extraction_progress
 from ui.panels import render_investigation
+from ui.commands import CommandHandler
 
 class TheseusShell:
-
     def __init__(
         self,
         processor: Callable[[Any], dict],
@@ -19,10 +19,9 @@ class TheseusShell:
         self.processor = processor
         self.version = version
         self.running = True
+        self.commands = CommandHandler()
 
     def display_welcome(self) -> None:
-        """Display the persistent terminal interface."""
-
         console.print()
         console.rule(
             "[heading]THESEUS[/heading]",
@@ -30,7 +29,7 @@ class TheseusShell:
         )
 
         console.print(
-            f"[muted]DIGITAL ARTEFACT EXTRACTION SYSTEM[/muted]"
+            "[muted]DIGITAL ARTEFACT EXTRACTION SYSTEM[/muted]"
         )
 
         console.print()
@@ -46,37 +45,27 @@ class TheseusShell:
 
         console.print()
 
-        info("Enter a domain or URL to begin extraction.")
-        info("Type 'help' to view available commands.")
+        console.print(
+            "[label]Enter a domain or URL to begin extraction.[/label]"
+        )
+        console.print(
+            "[label]Type 'help' to view available commands.[/label]"
+        )
 
         console.print()
         console.rule(style="case.separator")
         console.print()
 
     def handle_command(self, value: str) -> bool:
+        handled = self.commands.execute(value)
 
-        command = value.strip().lower()
-
-        if command in {"exit", "quit"}:
+        if not self.commands.running:
             self.running = False
-            system("TERMINATING THESEUS SESSION...")
-            return True
 
-        if command == "clear":
-            clear()
+        if value.strip().lower() == "clear" and handled:
             self.display_welcome()
-            return True
 
-        if command == "help":
-            console.print()
-            console.print("[section]AVAILABLE COMMANDS[/section]")
-            console.print("  help       Display available commands")
-            console.print("  clear      Clear the terminal")
-            console.print("  exit       Terminate the session")
-            console.print()
-            return True
-
-        return False
+        return handled
 
     def process_input(self, value: str) -> None:
         try:
@@ -84,7 +73,9 @@ class TheseusShell:
                 response = self.processor(value)
 
             if not isinstance(response, dict):
-                error("The processing pipeline returned an invalid response.")
+                error(
+                    "The processing pipeline returned an invalid response."
+                )
                 return
 
             console.print()

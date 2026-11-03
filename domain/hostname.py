@@ -1,4 +1,3 @@
-import re
 import socket
 import requests
 import tldextract
@@ -10,14 +9,19 @@ MODULE_NAME = "hostname"
 
 TIMEOUT = 20
 MAX_REVERSE_IP_LOOKUPS = 20
+MAX_NAMESERVER_LOOKUPS = 20
 
 CRT_ENDPOINT = "https://crt.sh/"
 DNS_ENDPOINT = "https://cloudflare-dns.com/dns-query"
 REVERSE_IP_ENDPOINT = "https://api.hackertarget.com/reverseiplookup/"
 
 HEADERS = {
-    "User-Agent": "Theseus/1.0",
-    "Accept": "application/json"
+    "User-Agent": "Theseus/1.0"
+}
+
+DNS_HEADERS = {
+    **HEADERS,
+    "Accept": "application/dns-json"
 }
 
 FIELDS = (
@@ -86,10 +90,7 @@ def unique(values: list) -> list:
             seen.add(key)
             result.append(value)
 
-    return sorted(
-        result,
-        key=lambda item: str(item).lower()
-    )
+    return sorted(result, key=lambda item: str(item).lower())
 
 def add_provenance(
     provenance: list,
@@ -99,16 +100,18 @@ def add_provenance(
     provenance.append({
         "source": source,
         "method": method,
-        "retrieved_at": datetime.now(
-            timezone.utc
-        ).isoformat()
+        "retrieved_at": datetime.now(timezone.utc).isoformat()
     })
 
-def request_json(url: str, params: dict = None) -> dict:
+def request_json(
+    url: str,
+    params: dict = None,
+    headers: dict = None
+) -> dict:
     response = requests.get(
         url,
         params=params,
-        headers=HEADERS,
+        headers=headers or HEADERS,
         timeout=TIMEOUT
     )
 
@@ -133,32 +136,34 @@ def get_dns_records(
             params={
                 "name": domain,
                 "type": record_type
-            }
+            },
+            headers=DNS_HEADERS
         )
 
         if not isinstance(result, dict):
-            raise ValueError(
-                "DNS resolver returned an unexpected response."
-            )
+            raise ValueError("Unexpected DNS response.")
+
+        response_code = result.get("Status")
+
+        if response_code not in (0, 3):
+            raise ValueError("DNS resolver returned an unsuccessful status.")
 
         answers = result.get("Answer", [])
 
-        return [
+        records = [
             record["data"]
             for record in answers
             if isinstance(record, dict) and "data" in record
-        ], [], True
+        ]
+
+        return records, [], True
 
     except (
         requests.RequestException,
         ValueError,
         TypeError
-    ) as exc:
-        return (
-            [],
-            [f"{record_type} lookup for {domain} failed: {exc}"],
-            False
-        )
+    ):
+        return [], [f"{record_type} lookup failed."], False
 
 def resolve_hostname(hostname: str) -> tuple:
     try:
@@ -175,12 +180,8 @@ def resolve_hostname(hostname: str) -> tuple:
 
         return addresses, [], True
 
-    except socket.gaierror as exc:
-        return (
-            [],
-            [f"Hostname resolution for {hostname} failed: {exc}"],
-            False
-        )
+    except OSError:
+        return [], ["Hostname resolution failed."], False
 
 def get_certificate_records(domain: str) -> tuple:
     try:
@@ -193,9 +194,7 @@ def get_certificate_records(domain: str) -> tuple:
         )
 
         if not isinstance(result, list):
-            raise ValueError(
-                "Certificate Transparency returned an unexpected response."
-            )
+            raise ValueError("Unexpected Certificate Transparency response.")
 
         return result, [], True
 
@@ -203,12 +202,8 @@ def get_certificate_records(domain: str) -> tuple:
         requests.RequestException,
         ValueError,
         TypeError
-    ) as exc:
-        return (
-            [],
-            [f"Certificate retrieval failed: {exc}"],
-            False
-        )
+    ):
+        return [], ["Certificate retrieval failed."], False
 
 def normalise_hostname(value: str):
     if not isinstance(value, str):
@@ -272,9 +267,7 @@ def get_reverse_ip_domains(ip: str) -> tuple:
         response.raise_for_status()
 
         if "error" in response.text.lower():
-            raise ValueError(
-                f"Reverse-IP service returned an error for {ip}."
-            )
+            raise ValueError("Reverse-IP service returned an error.")
 
         domains = set()
 
@@ -294,12 +287,8 @@ def get_reverse_ip_domains(ip: str) -> tuple:
     except (
         requests.RequestException,
         ValueError
-    ) as exc:
-        return (
-            set(),
-            [f"Reverse-IP lookup for {ip} failed: {exc}"],
-            False
-        )
+    ):
+        return set(), ["Reverse-IP lookup failed."], False
 
 def get_redirect_destination(domain: str) -> tuple:
     for scheme in ("https", "http"):
@@ -331,11 +320,7 @@ def get_redirect_destination(domain: str) -> tuple:
             if response is not None:
                 response.close()
 
-    return (
-        None,
-        [f"Unable to resolve redirect destination for {domain}."],
-        False
-    )
+    return None, ["Redirect resolution failed."], False
 
 def get_nameservers(domain: str):
     records, errors, succeeded = get_dns_records(
@@ -362,9 +347,7 @@ def get_mail_servers(domain: str):
         parts = record.split()
 
         if parts:
-            servers.add(
-                parts[-1].rstrip(".").lower()
-            )
+            servers.add(parts[-1].rstrip(".").lower())
 
     return sorted(servers), errors, succeeded
 
@@ -388,7 +371,13 @@ def find_shared_nameservers(
     shared = set()
     errors = []
 
-    for candidate in candidates:
+    if not target_nameservers:
+        return [], errors
+
+    ordered_candidates = sorted(candidates)
+    limited_candidates = ordered_candidates[:MAX_NAMESERVER_LOOKUPS]
+
+    for candidate in limited_candidates:
         candidate_nameservers, lookup_errors, succeeded = (
             get_nameservers(candidate)
         )
@@ -399,6 +388,9 @@ def find_shared_nameservers(
             set(candidate_nameservers) & target_nameservers
         ):
             shared.add(candidate)
+
+    if len(ordered_candidates) > MAX_NAMESERVER_LOOKUPS:
+        errors.append("Nameserver comparison limit reached.")
 
     return sorted(shared), errors
 
@@ -430,8 +422,6 @@ def run(domain: str) -> dict:
     related_entities = []
     errors = []
 
-    successful_sources = 0
-
     try:
         domain = domain.lower().rstrip(".")
 
@@ -441,9 +431,7 @@ def run(domain: str) -> dict:
         registered_domain = get_registered_domain(domain)
 
         if not registered_domain:
-            raise ValueError(
-                "Unable to identify registered domain."
-            )
+            raise ValueError("Unable to identify registered domain.")
 
         data["registered_domain"] = registered_domain
 
@@ -452,26 +440,20 @@ def run(domain: str) -> dict:
         if extracted.subdomain:
             data["parent_domain"] = registered_domain
 
-        nameservers, source_errors, ns_success = (
-            get_nameservers(domain)
-        )
+        nameservers, source_errors, ns_success = get_nameservers(domain)
         errors.extend(source_errors)
 
         if ns_success:
-            successful_sources += 1
             add_provenance(
                 provenance,
                 DNS_ENDPOINT,
                 "Nameserver record retrieval"
             )
 
-        mail_servers, source_errors, mx_success = (
-            get_mail_servers(domain)
-        )
+        mail_servers, source_errors, mx_success = get_mail_servers(domain)
         errors.extend(source_errors)
 
         if mx_success:
-            successful_sources += 1
             add_provenance(
                 provenance,
                 DNS_ENDPOINT,
@@ -484,7 +466,6 @@ def run(domain: str) -> dict:
         errors.extend(source_errors)
 
         if cname_success:
-            successful_sources += 1
             add_provenance(
                 provenance,
                 DNS_ENDPOINT,
@@ -505,7 +486,6 @@ def run(domain: str) -> dict:
         )
 
         if crt_success:
-            successful_sources += 1
             add_provenance(
                 provenance,
                 CRT_ENDPOINT,
@@ -516,31 +496,31 @@ def run(domain: str) -> dict:
         historical_subdomains = set()
 
         for hostname in certificate_hostnames:
-            if hostname == registered_domain:
-                continue
-
-            if hostname.endswith("." + registered_domain):
+            if (
+                hostname != registered_domain
+                and hostname.endswith("." + registered_domain)
+            ):
                 subdomains.add(hostname)
 
         for record in certificate_records:
+            if not isinstance(record, dict):
+                continue
+
             for name in (
                 record.get("name_value") or ""
             ).splitlines():
                 hostname = normalise_hostname(name)
 
-                if not hostname or hostname == registered_domain:
-                    continue
-
-                if not hostname.endswith("." + registered_domain):
-                    continue
-
-                if record.get("not_after"):
+                if (
+                    hostname
+                    and hostname != registered_domain
+                    and hostname.endswith("." + registered_domain)
+                    and record.get("not_after")
+                ):
                     historical_subdomains.add(hostname)
 
         data["subdomains"] = sorted(subdomains)
-        data["historical_subdomains"] = sorted(
-            historical_subdomains
-        )
+        data["historical_subdomains"] = sorted(historical_subdomains)
 
         redirect, source_errors, redirect_success = (
             get_redirect_destination(domain)
@@ -548,7 +528,6 @@ def run(domain: str) -> dict:
         errors.extend(source_errors)
 
         if redirect_success:
-            successful_sources += 1
             add_provenance(
                 provenance,
                 "HTTP",
@@ -564,7 +543,6 @@ def run(domain: str) -> dict:
         errors.extend(source_errors)
 
         if resolution_success:
-            successful_sources += 1
             add_provenance(
                 provenance,
                 "System DNS resolver",
@@ -581,24 +559,22 @@ def run(domain: str) -> dict:
             errors.extend(source_errors)
 
             if reverse_success:
-                successful_sources += 1
                 shared_ip_domains.update(discovered)
+
+        if len(domain_ips) > MAX_REVERSE_IP_LOOKUPS:
+            errors.append("Reverse-IP lookup limit reached.")
 
         shared_ip_domains.discard(domain)
         shared_ip_domains.discard(registered_domain)
 
-        data["domains_sharing_ip"] = sorted(
-            shared_ip_domains
-        )
+        data["domains_sharing_ip"] = sorted(shared_ip_domains)
 
         certificate_domains = find_domains_sharing_certificates(
             certificate_groups,
             registered_domain
         )
 
-        data["domains_sharing_certificates"] = (
-            certificate_domains
-        )
+        data["domains_sharing_certificates"] = certificate_domains
 
         related = set(shared_ip_domains)
         related.update(certificate_domains)
@@ -620,9 +596,7 @@ def run(domain: str) -> dict:
         )
         errors.extend(source_errors)
 
-        data["domains_sharing_nameservers"] = (
-            shared_nameservers
-        )
+        data["domains_sharing_nameservers"] = shared_nameservers
 
         for hostname in sorted(subdomains):
             related_entities.append({
@@ -679,13 +653,10 @@ def run(domain: str) -> dict:
 
         if errors and populated_fields:
             status = "partial"
-
         elif errors:
             status = "error"
-
         elif populated_fields:
             status = "success"
-
         else:
             status = "no_results"
 
@@ -697,8 +668,8 @@ def run(domain: str) -> dict:
             errors=errors
         )
 
-    except Exception as exc:
-        errors.append(str(exc))
+    except Exception:
+        errors.append("Hostname extraction failed.")
 
         return make_envelope(
             status="error",

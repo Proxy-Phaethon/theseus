@@ -1,0 +1,4 @@
+requests
+tldextract
+cryptography
+pypdf

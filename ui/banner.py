@@ -5,6 +5,8 @@ from rich.console import Group
 from rich.live import Live
 from rich.spinner import Spinner
 from rich.text import Text
+from rich.table import Table
+from rich.align import Align
 
 from ui.terminal import (
     ANIMATION_ENABLED,
@@ -21,28 +23,31 @@ ASSET_PATH = Path(__file__).parent / "assets" / "minotaur.txt"
 
 def load_logo() -> str:
     try:
-        return ASSET_PATH.read_text(encoding="utf-8").rstrip()
+        return ASSET_PATH.read_text(encoding="utf-8").strip("\n")
     except OSError:
         return "THESEUS"
 
+
 def build_banner() -> Group:
+
     logo = Text(
         load_logo(),
         style="accent",
-        justify="center",
+        no_wrap=True,
+        overflow="ignore",
     )
 
-    title = Text("THESEUS", style="bold white", justify="center")
-    version = Text(f"VERSION {VERSION}", style="muted", justify="center")
-    description = Text(DESCRIPTION, style="muted", justify="center")
+    title = Text("THESEUS", style="bold white")
+    version = Text(f"VERSION {VERSION}", style="muted")
+    description = Text(DESCRIPTION, style="muted")
 
     return Group(
-        logo,
+        Align.center(logo),
         Text(""),
-        title,
-        version,
+        Align.center(title),
+        Align.center(version),
         Text(""),
-        description,
+        Align.center(description),
         Text(""),
     )
 

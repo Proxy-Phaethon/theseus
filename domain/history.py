@@ -1,7 +1,9 @@
 import requests
 
 from datetime import datetime, timezone
-from urllib.parse import quote
+from urllib.parse import urlparse
+
+MODULE_NAME = "history"
 
 CRT_ENDPOINT = "https://crt.sh/"
 WAYBACK_ENDPOINT = "https://web.archive.org/cdx/search/cdx"
@@ -10,6 +12,11 @@ URLSCAN_ENDPOINT = "https://urlscan.io/api/v1/search/"
 TIMEOUT = 20
 MAX_URLSCAN_RESULTS = 100
 MAX_WAYBACK_RESULTS = 1000
+
+HEADERS = {
+    "User-Agent": "Theseus/1.0",
+    "Accept": "application/json"
+}
 
 FIELDS = (
     "previously_associated_ip_addresses",
@@ -33,6 +40,24 @@ def empty_data() -> dict:
     return {
         field: []
         for field in FIELDS
+    }
+
+def make_envelope(
+    status: str,
+    data: dict = None,
+    provenance: list = None,
+    related_entities: list = None,
+    errors: list = None
+) -> dict:
+    return {
+        "module": MODULE_NAME,
+        "status": status,
+        "data": data if data is not None else empty_data(),
+        "provenance": provenance if provenance is not None else [],
+        "related_entities": (
+            related_entities if related_entities is not None else []
+        ),
+        "errors": errors if errors is not None else []
     }
 
 def unique(values: list) -> list:
@@ -62,22 +87,55 @@ def unique(values: list) -> list:
         key=lambda item: str(item).lower()
     )
 
+def parse_timestamp(value: str):
+    if not value:
+        return None
+
+    value = str(value).strip()
+
+    try:
+        return datetime.strptime(
+            value,
+            "%Y%m%d%H%M%S"
+        ).replace(tzinfo=timezone.utc)
+    except ValueError:
+        pass
+
+    try:
+        parsed = datetime.fromisoformat(
+            value.replace("Z", "+00:00")
+        )
+
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+
+        return parsed.astimezone(timezone.utc)
+
+    except ValueError:
+        return None
+
+def record_observation_date(timestamp: str, dates: list):
+    parsed = parse_timestamp(timestamp)
+
+    if parsed:
+        dates.append(parsed)
+
 def request_json(url: str, params: dict = None) -> dict:
     response = requests.get(
         url,
         params=params,
-        headers={
-            "User-Agent": "Theseus/1.0",
-            "Accept": "application/json"
-        },
+        headers=HEADERS,
         timeout=TIMEOUT
     )
 
     response.raise_for_status()
+
     return response.json()
 
-def retrieve_certificates(domain: str) -> list:
+def retrieve_certificates(domain: str) -> tuple:
     certificates = {}
+    errors = []
+    successful_queries = 0
 
     queries = [
         domain,
@@ -86,22 +144,20 @@ def retrieve_certificates(domain: str) -> list:
 
     for query in queries:
         try:
-            response = requests.get(
+            records = request_json(
                 CRT_ENDPOINT,
                 params={
                     "q": query,
                     "output": "json"
-                },
-                headers={"User-Agent": "Theseus/1.0"},
-                timeout=TIMEOUT
+                }
             )
 
-            response.raise_for_status()
-
-            records = response.json()
-
             if not isinstance(records, list):
-                continue
+                raise ValueError(
+                    "Certificate Transparency returned an unexpected response."
+                )
+
+            successful_queries += 1
 
             for record in records:
                 certificate_id = record.get("id")
@@ -109,36 +165,42 @@ def retrieve_certificates(domain: str) -> list:
                 if not certificate_id:
                     continue
 
+                hostnames = sorted(set(
+                    name.strip().lower().rstrip(".")
+                    for name in (
+                        record.get("name_value") or ""
+                    ).splitlines()
+                    if name.strip()
+                ))
+
                 certificates[str(certificate_id)] = {
                     "id": certificate_id,
                     "issuer": record.get("issuer_name"),
                     "common_name": record.get("common_name"),
-                    "hostnames": sorted(set(
-                        name.strip().lower().rstrip(".")
-                        for name in (
-                            record.get("name_value") or ""
-                        ).splitlines()
-                        if name.strip()
-                    )),
+                    "hostnames": hostnames,
                     "not_before": record.get("not_before"),
                     "not_after": record.get("not_after"),
-                    "entry_timestamp": record.get(
-                        "entry_timestamp"
-                    )
+                    "entry_timestamp": record.get("entry_timestamp")
                 }
 
         except (
             requests.RequestException,
             ValueError,
             TypeError
-        ):
-            continue
+        ) as exc:
+            errors.append(
+                f"Certificate Transparency query '{query}' failed: {exc}"
+            )
 
-    return list(certificates.values())
+    return (
+        list(certificates.values()),
+        errors,
+        successful_queries > 0
+    )
 
-def retrieve_wayback_records(domain: str) -> list:
+def retrieve_wayback_records(domain: str) -> tuple:
     try:
-        response = requests.get(
+        records = request_json(
             WAYBACK_ENDPOINT,
             params={
                 "url": f"{domain}/*",
@@ -147,34 +209,39 @@ def retrieve_wayback_records(domain: str) -> list:
                 "filter": "statuscode:200",
                 "collapse": "urlkey",
                 "limit": MAX_WAYBACK_RESULTS
-            },
-            headers={"User-Agent": "Theseus/1.0"},
-            timeout=TIMEOUT
+            }
         )
 
-        response.raise_for_status()
+        if not isinstance(records, list):
+            raise ValueError(
+                "Internet Archive returned an unexpected response."
+            )
 
-        records = response.json()
-
-        if not isinstance(records, list) or len(records) <= 1:
-            return []
+        if len(records) <= 1:
+            return [], [], True
 
         headers = records[0]
 
-        return [
+        results = [
             dict(zip(headers, record))
             for record in records[1:]
             if len(record) == len(headers)
         ]
 
+        return results, [], True
+
     except (
         requests.RequestException,
         ValueError,
         TypeError
-    ):
-        return []
+    ) as exc:
+        return (
+            [],
+            [f"Wayback retrieval failed: {exc}"],
+            False
+        )
 
-def retrieve_urlscan_records(domain: str) -> list:
+def retrieve_urlscan_records(domain: str) -> tuple:
     try:
         result = request_json(
             URLSCAN_ENDPOINT,
@@ -184,27 +251,62 @@ def retrieve_urlscan_records(domain: str) -> list:
             }
         )
 
-        return result.get("results", [])
+        if not isinstance(result, dict):
+            raise ValueError(
+                "URLscan returned an unexpected response."
+            )
+
+        records = result.get("results", [])
+
+        if not isinstance(records, list):
+            raise ValueError(
+                "URLscan returned an invalid results collection."
+            )
+
+        return records, [], True
 
     except (
         requests.RequestException,
         ValueError,
         TypeError
-    ):
-        return []
+    ) as exc:
+        return (
+            [],
+            [f"URLscan retrieval failed: {exc}"],
+            False
+        )
 
-def extract_urlscan_information(records: list, data: dict):
+def extract_urlscan_information(
+    records: list,
+    data: dict,
+    observation_dates: list
+) -> list:
     observations = []
 
     for record in records:
-        page = record.get("page", {})
-        task = record.get("task", {})
-        verdicts = record.get("verdicts", {})
+        if not isinstance(record, dict):
+            continue
+
+        page = record.get("page") or {}
+        task = record.get("task") or {}
+        verdicts = record.get("verdicts") or {}
+
+        if not isinstance(page, dict):
+            page = {}
+
+        if not isinstance(task, dict):
+            task = {}
+
+        if not isinstance(verdicts, dict):
+            verdicts = {}
 
         timestamp = task.get("time")
         ip_address = page.get("ip")
         hostname = page.get("domain")
         url = page.get("url")
+
+        if hostname:
+            hostname = hostname.lower().rstrip(".")
 
         observation = {
             "timestamp": timestamp,
@@ -215,17 +317,28 @@ def extract_urlscan_information(records: list, data: dict):
 
         observations.append(observation)
 
+        if timestamp:
+            record_observation_date(
+                timestamp,
+                observation_dates
+            )
+
         if ip_address:
             data["previously_associated_ip_addresses"].append(
                 ip_address
             )
 
-        if url:
-            data["reported_malicious_urls"].append(url)
+        overall_verdict = verdicts.get("overall") or {}
 
-        overall_verdict = verdicts.get("overall", {})
+        if not isinstance(overall_verdict, dict):
+            overall_verdict = {}
 
-        if overall_verdict.get("malicious") is True:
+        malicious = overall_verdict.get("malicious") is True
+
+        if malicious:
+            if url:
+                data["reported_malicious_urls"].append(url)
+
             data["malware_and_phishing_references"].append({
                 "source": "urlscan.io",
                 "url": url,
@@ -245,7 +358,7 @@ def extract_urlscan_information(records: list, data: dict):
                 "source": "urlscan.io",
                 "scan_id": record.get("_id"),
                 "score": overall_verdict.get("score"),
-                "malicious": overall_verdict.get("malicious"),
+                "malicious": malicious,
                 "timestamp": timestamp
             })
 
@@ -270,7 +383,7 @@ def extract_urlscan_information(records: list, data: dict):
             })
 
         for key in ("engines", "community"):
-            section = verdicts.get(key, {})
+            section = verdicts.get(key) or {}
 
             if section:
                 data["public_abuse_reports"].append({
@@ -283,40 +396,36 @@ def extract_urlscan_information(records: list, data: dict):
 
     return observations
 
-def extract_wayback_information(records: list, data: dict):
-    timestamps = []
-
+def extract_wayback_information(
+    records: list,
+    data: dict,
+    observation_dates: list
+):
     for record in records:
         timestamp = record.get("timestamp")
         original_url = record.get("original")
 
         if timestamp:
-            timestamps.append(timestamp)
+            record_observation_date(
+                timestamp,
+                observation_dates
+            )
 
         if not original_url:
             continue
-
-        from urllib.parse import urlparse
 
         hostname = urlparse(original_url).hostname
 
         if hostname:
             hostname = hostname.lower().rstrip(".")
 
-            data["historical_subdomains"].append(hostname)
-
-    if timestamps:
-        data["first_seen_date"].append(
-            min(timestamps)
-        )
-
-        data["last_seen_date"].append(
-            max(timestamps)
-        )
+            if hostname:
+                data["historical_subdomains"].append(hostname)
 
 def extract_certificate_information(
     certificates: list,
-    data: dict
+    data: dict,
+    observation_dates: list
 ):
     for certificate in certificates:
         data["historical_certificates"].append(
@@ -326,44 +435,78 @@ def extract_certificate_information(
         for hostname in certificate.get("hostnames", []):
             data["historical_subdomains"].append(hostname)
 
-        if certificate.get("entry_timestamp"):
-            data["first_seen_date"].append(
-                certificate["entry_timestamp"]
+        timestamp = certificate.get("entry_timestamp")
+
+        if timestamp:
+            record_observation_date(
+                timestamp,
+                observation_dates
             )
 
-            data["last_seen_date"].append(
-                certificate["entry_timestamp"]
-            )
+def populate_observation_dates(
+    observation_dates: list,
+    data: dict
+):
+    if not observation_dates:
+        return
 
-def extract_observation_dates(observations: list, data: dict):
-    timestamps = [
-        item["timestamp"]
-        for item in observations
-        if item.get("timestamp")
-    ]
+    data["first_seen_date"].append(
+        min(observation_dates).isoformat()
+    )
 
-    if timestamps:
-        data["first_seen_date"].append(
-            min(timestamps)
-        )
+    data["last_seen_date"].append(
+        max(observation_dates).isoformat()
+    )
 
-        data["last_seen_date"].append(
-            max(timestamps)
-        )
+def build_related_entities(
+    domain: str,
+    data: dict
+) -> list:
+    related_entities = []
+
+    for ip_address in data["previously_associated_ip_addresses"]:
+        related_entities.append({
+            "type": "ip_address",
+            "value": ip_address,
+            "relationship": "observed_in_historical_scan"
+        })
+
+    for hostname in data["historical_subdomains"]:
+        if hostname != domain:
+            related_entities.append({
+                "type": "hostname",
+                "value": hostname,
+                "relationship": "observed_in_historical_record"
+            })
+
+    for certificate in data["historical_certificates"]:
+        certificate_id = certificate.get("id")
+
+        if certificate_id is not None:
+            related_entities.append({
+                "type": "certificate",
+                "value": str(certificate_id),
+                "relationship": "logged_in_certificate_transparency"
+            })
+
+    return unique(related_entities)
 
 def run(domain: str) -> dict:
     data = empty_data()
     provenance = []
-    related_entities = []
     errors = []
+    observation_dates = []
 
-    try:
-        certificates = retrieve_certificates(domain)
+    successful_sources = 0
 
-        extract_certificate_information(
-            certificates,
-            data
-        )
+    certificates, source_errors, succeeded = retrieve_certificates(
+        domain
+    )
+
+    errors.extend(source_errors)
+
+    if succeeded:
+        successful_sources += 1
 
         provenance.append({
             "source": CRT_ENDPOINT,
@@ -373,18 +516,20 @@ def run(domain: str) -> dict:
             ).isoformat()
         })
 
-    except Exception as exc:
-        errors.append(
-            f"Certificate history retrieval failed: {exc}"
-        )
+    extract_certificate_information(
+        certificates,
+        data,
+        observation_dates
+    )
 
-    try:
-        wayback_records = retrieve_wayback_records(domain)
+    wayback_records, source_errors, succeeded = (
+        retrieve_wayback_records(domain)
+    )
 
-        extract_wayback_information(
-            wayback_records,
-            data
-        )
+    errors.extend(source_errors)
+
+    if succeeded:
+        successful_sources += 1
 
         provenance.append({
             "source": WAYBACK_ENDPOINT,
@@ -394,23 +539,20 @@ def run(domain: str) -> dict:
             ).isoformat()
         })
 
-    except Exception as exc:
-        errors.append(
-            f"Wayback history retrieval failed: {exc}"
-        )
+    extract_wayback_information(
+        wayback_records,
+        data,
+        observation_dates
+    )
 
-    try:
-        urlscan_records = retrieve_urlscan_records(domain)
+    urlscan_records, source_errors, succeeded = (
+        retrieve_urlscan_records(domain)
+    )
 
-        observations = extract_urlscan_information(
-            urlscan_records,
-            data
-        )
+    errors.extend(source_errors)
 
-        extract_observation_dates(
-            observations,
-            data
-        )
+    if succeeded:
+        successful_sources += 1
 
         provenance.append({
             "source": URLSCAN_ENDPOINT,
@@ -420,39 +562,26 @@ def run(domain: str) -> dict:
             ).isoformat()
         })
 
-    except Exception as exc:
-        errors.append(
-            f"URLscan retrieval failed: {exc}"
-        )
+    extract_urlscan_information(
+        urlscan_records,
+        data,
+        observation_dates
+    )
+
+    populate_observation_dates(
+        observation_dates,
+        data
+    )
 
     for field in FIELDS:
         data[field] = unique(data[field])
 
-    for ip_address in data["previously_associated_ip_addresses"]:
-        related_entities.append({
-            "type": "ip_address",
-            "value": ip_address,
-            "relationship": "historically_observed"
-        })
+    related_entities = build_related_entities(
+        domain,
+        data
+    )
 
-    for hostname in data["historical_subdomains"]:
-        if hostname != domain:
-            related_entities.append({
-                "type": "hostname",
-                "value": hostname,
-                "relationship": "historically_observed"
-            })
-
-    for certificate in data["historical_certificates"]:
-        related_entities.append({
-            "type": "certificate",
-            "value": str(certificate.get("id")),
-            "relationship": "logged_in_certificate_transparency"
-        })
-
-    related_entities = unique(related_entities)
-
-    populated_fields = sum(
+    populated_fields = any(
         bool(value)
         for value in data.values()
     )
@@ -460,27 +589,22 @@ def run(domain: str) -> dict:
     if errors and populated_fields:
         status = "partial"
 
+    elif errors and successful_sources == 0:
+        status = "error"
+
     elif errors:
         status = "error"
 
-    elif populated_fields == len(FIELDS):
-        status = "success"
-
     elif populated_fields:
-        status = "partial"
+        status = "success"
 
     else:
         status = "no_results"
 
-    result = {
-        "status": status,
-        "module": "history",
-        "data": data,
-        "provenance": provenance,
-        "related_entities": related_entities
-    }
-
-    if errors:
-        result["error"] = errors
-
-    return result
+    return make_envelope(
+        status=status,
+        data=data,
+        provenance=provenance,
+        related_entities=related_entities,
+        errors=errors
+    )

@@ -12,6 +12,8 @@ from urllib.parse import urljoin, urlparse
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 
+MODULE_NAME = "technical"
+
 TIMEOUT = 8
 MAX_RESOURCE_SIZE = 5 * 1024 * 1024
 MAX_JAVASCRIPT_FILES = 30
@@ -71,9 +73,36 @@ FIELDS = (
 )
 
 def empty_data() -> dict:
+    return {field: [] for field in FIELDS}
+
+def timestamp() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+def add_provenance(
+    provenance: list,
+    source: str,
+    method: str,
+) -> None:
+    provenance.append({
+        "source": source,
+        "method": method,
+        "retrieved_at": timestamp(),
+    })
+
+def make_envelope(
+    status: str,
+    data: dict,
+    provenance: list,
+    related_entities: list,
+    errors: list,
+) -> dict:
     return {
-        field: []
-        for field in FIELDS
+        "module": MODULE_NAME,
+        "status": status,
+        "data": data,
+        "provenance": provenance,
+        "related_entities": related_entities,
+        "errors": errors,
     }
 
 def unique(values: list) -> list:
@@ -104,7 +133,7 @@ def unique(values: list) -> list:
             json.dumps(item, sort_keys=True)
             if isinstance(item, dict)
             else str(item).lower()
-        )
+        ),
     )
 
 def sha256(content: bytes) -> str:
@@ -117,25 +146,24 @@ def request_resource(url: str):
     response = requests.get(
         url,
         timeout=TIMEOUT,
-        headers={
-            "User-Agent": "Theseus/1.0"
-        },
+        headers={"User-Agent": "Theseus/1.0"},
         allow_redirects=True,
-        stream=True
+        stream=True,
     )
 
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
 
-    content = response.raw.read(
-        MAX_RESOURCE_SIZE + 1
-    )
+        content = response.raw.read(MAX_RESOURCE_SIZE + 1)
 
-    response.close()
+        if len(content) > MAX_RESOURCE_SIZE:
+            raise ValueError("Resource exceeds maximum size.")
 
-    if len(content) > MAX_RESOURCE_SIZE:
-        raise ValueError("Resource exceeds maximum size")
+        return response.url, response, content
 
-    return response, content
+    except Exception:
+        response.close()
+        raise
 
 def get_domain_hostname(domain: str) -> str:
     return domain.lower().rstrip(".")
@@ -154,6 +182,7 @@ def is_same_domain(url: str, domain: str) -> bool:
     )
 
 class TechnicalParser(HTMLParser):
+
     def __init__(self):
         super().__init__()
 
@@ -164,14 +193,12 @@ class TechnicalParser(HTMLParser):
         self.inline_scripts = []
 
         self.in_script = False
-        self.script_attributes = {}
 
     def handle_starttag(self, tag, attrs):
         attributes = dict(attrs)
 
         if tag == "script":
             self.in_script = True
-            self.script_attributes = attributes
 
             source = attributes.get("src")
 
@@ -185,7 +212,7 @@ class TechnicalParser(HTMLParser):
             if href:
                 self.links.append({
                     "href": href,
-                    "rel": rel
+                    "rel": rel,
                 })
 
                 if "icon" in rel:
@@ -219,159 +246,166 @@ class TechnicalParser(HTMLParser):
     def handle_endtag(self, tag):
         if tag == "script":
             self.in_script = False
-            self.script_attributes = {}
 
     def _find_api_candidates(self, value):
         if re.search(
             r"/(?:api|graphql|rest|v\d+/api)(?:/|$|\?)",
             value,
-            re.IGNORECASE
+            re.IGNORECASE,
         ):
             self.api_candidates.append(value)
 
 def get_html(domain: str):
-    url = f"https://{domain}/"
+    errors = []
 
-    try:
-        response = requests.get(
-            url,
-            timeout=TIMEOUT,
-            headers={"User-Agent": "Theseus/1.0"},
-            allow_redirects=True
-        )
+    for scheme in ("https", "http"):
+        url = f"{scheme}://{domain}/"
+        response = None
 
-        response.raise_for_status()
+        try:
+            response = requests.get(
+                url,
+                timeout=TIMEOUT,
+                headers={"User-Agent": "Theseus/1.0"},
+                allow_redirects=True,
+                stream=True,
+            )
 
-        return response, response.content
+            response.raise_for_status()
 
-    except requests.RequestException:
-        response = requests.get(
-            f"http://{domain}/",
-            timeout=TIMEOUT,
-            headers={"User-Agent": "Theseus/1.0"},
-            allow_redirects=True
-        )
+            content = response.raw.read(MAX_RESOURCE_SIZE + 1)
 
-        response.raise_for_status()
+            if len(content) > MAX_RESOURCE_SIZE:
+                raise ValueError("HTML resource exceeds maximum size.")
 
-        return response, response.content
+            return response, content
+
+        except (
+            requests.RequestException,
+            ValueError,
+        ) as exc:
+            errors.append(f"{scheme.upper()} retrieval failed: {exc}")
+
+            if response is not None:
+                response.close()
+
+    raise RuntimeError("; ".join(errors))
 
 def extract_favicon_urls(
     parser: TechnicalParser,
-    base_url: str
+    base_url: str,
 ) -> list:
     favicons = []
 
     for link in parser.links:
-        rel = link.get("rel", "")
-
-        if "icon" in rel:
-            favicons.append(
-                urljoin(base_url, link["href"])
-            )
+        if "icon" in link.get("rel", ""):
+            favicons.append(urljoin(base_url, link["href"]))
 
     if not favicons:
-        favicons.append(
-            urljoin(base_url, "/favicon.ico")
-        )
+        favicons.append(urljoin(base_url, "/favicon.ico"))
 
     return unique(favicons)
 
 def retrieve_favicon_hashes(
     favicon_urls: list,
-    data: dict
-):
+    data: dict,
+    errors: list,
+) -> None:
     for url in favicon_urls:
         try:
-            _, content = request_resource(url)
+            final_url, response, content = request_resource(url)
 
-            data["favicon_hashes"].append({
-                "url": url,
-                "md5": md5(content),
-                "sha256": sha256(content),
-                "size_bytes": len(content)
-            })
+            try:
+                data["favicon_hashes"].append({
+                    "url": final_url,
+                    "md5": md5(content),
+                    "sha256": sha256(content),
+                    "size_bytes": len(content),
+                })
+            finally:
+                response.close()
 
         except (
             requests.RequestException,
-            ValueError
-        ):
-            continue
+            ValueError,
+        ) as exc:
+            errors.append(f"Favicon retrieval failed for {url}: {exc}")
 
 def retrieve_javascript_hashes(
     parser: TechnicalParser,
     base_url: str,
     domain: str,
-    data: dict
-):
+    data: dict,
+    errors: list,
+) -> None:
     scripts = unique([
         urljoin(base_url, source)
         for source in parser.scripts
     ])
+
+    source_map_pattern = re.compile(
+        r"sourceMappingURL\s*=\s*([^\s*]+)"
+    )
 
     for url in scripts[:MAX_JAVASCRIPT_FILES]:
         if not is_same_domain(url, domain):
             continue
 
         try:
-            response, content = request_resource(url)
+            final_url, response, content = request_resource(url)
 
-            data["javascript_file_hashes"].append({
-                "url": response.url,
-                "sha256": sha256(content),
-                "size_bytes": len(content)
-            })
-
-            source_map_pattern = re.compile(
-                r"sourceMappingURL\s*=\s*([^\s*]+)"
-            )
-
-            matches = source_map_pattern.findall(
-                content.decode("utf-8", errors="ignore")
-            )
-
-            for source_map in matches:
-                if source_map.startswith("data:"):
+            try:
+                if not is_same_domain(final_url, domain):
+                    errors.append(
+                        f"JavaScript redirect left target domain: {url}"
+                    )
                     continue
 
-                map_url = urljoin(
-                    response.url,
-                    source_map
-                )
+                data["javascript_file_hashes"].append({
+                    "url": final_url,
+                    "sha256": sha256(content),
+                    "size_bytes": len(content),
+                })
 
-                data["public_source_map_urls"].append(
-                    map_url
-                )
+                text = content.decode("utf-8", errors="ignore")
+
+                for source_map in source_map_pattern.findall(text):
+                    if source_map.startswith("data:"):
+                        continue
+
+                    map_url = urljoin(final_url, source_map)
+
+                    if is_same_domain(map_url, domain):
+                        data["public_source_map_urls"].append(map_url)
+
+            finally:
+                response.close()
 
         except (
             requests.RequestException,
-            ValueError
-        ):
-            continue
+            ValueError,
+        ) as exc:
+            errors.append(f"JavaScript retrieval failed for {url}: {exc}")
 
     for script in parser.inline_scripts:
-        matches = re.findall(
-            r"sourceMappingURL\s*=\s*([^\s*]+)",
-            script
-        )
-
-        for source_map in matches:
+        for source_map in source_map_pattern.findall(script):
             if not source_map.startswith("data:"):
-                data["public_source_map_urls"].append(
-                    urljoin(base_url, source_map)
-                )
+                map_url = urljoin(base_url, source_map)
 
-def retrieve_tls_information(domain: str, data: dict):
+                if is_same_domain(map_url, domain):
+                    data["public_source_map_urls"].append(map_url)
+
+def retrieve_tls_information(domain: str, data: dict) -> None:
     context = ssl.create_default_context()
 
     with socket.create_connection(
         (domain, 443),
-        timeout=TIMEOUT
+        timeout=TIMEOUT,
     ) as connection:
 
         with context.wrap_socket(
             connection,
-            server_hostname=domain
+            server_hostname=domain,
         ) as secure_connection:
 
             certificate_der = secure_connection.getpeercert(
@@ -384,24 +418,28 @@ def retrieve_tls_information(domain: str, data: dict):
 
             public_key_der = certificate.public_key().public_bytes(
                 encoding=serialization.Encoding.DER,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
             )
+
+            cipher = secure_connection.cipher()
 
             data["public_key_fingerprints"].append({
                 "algorithm": "SHA-256",
-                "fingerprint": hashlib.sha256(
-                    public_key_der
-                ).hexdigest()
+                "fingerprint": sha256(public_key_der),
             })
 
             data["tls_fingerprints"].append({
                 "certificate_sha256": sha256(certificate_der),
                 "protocol": secure_connection.version(),
-                "cipher": secure_connection.cipher()[0],
-                "cipher_protocol": secure_connection.cipher()[1],
+                "cipher": cipher[0] if cipher else None,
+                "cipher_protocol": cipher[1] if cipher else None,
             })
 
-def retrieve_dns_fingerprint(domain: str, data: dict):
+def retrieve_dns_fingerprint(
+    domain: str,
+    data: dict,
+    errors: list,
+) -> None:
     record_types = (
         "A",
         "AAAA",
@@ -413,6 +451,7 @@ def retrieve_dns_fingerprint(domain: str, data: dict):
     )
 
     records = {}
+    successful_queries = 0
 
     for record_type in record_types:
         try:
@@ -420,70 +459,74 @@ def retrieve_dns_fingerprint(domain: str, data: dict):
                 DNS_ENDPOINT,
                 params={
                     "name": domain,
-                    "type": record_type
+                    "type": record_type,
                 },
-                headers={
-                    "Accept": "application/dns-json"
-                },
-                timeout=TIMEOUT
+                headers={"Accept": "application/dns-json"},
+                timeout=TIMEOUT,
             )
 
             response.raise_for_status()
-
             result = response.json()
 
             records[record_type] = sorted(
                 record.get("data", "")
                 for record in result.get("Answer", [])
+                if record.get("data") is not None
             )
+
+            successful_queries += 1
 
         except (
             requests.RequestException,
-            ValueError
-        ):
+            ValueError,
+        ) as exc:
             records[record_type] = []
+            errors.append(
+                f"DNS {record_type} query failed: {exc}"
+            )
+
+    if successful_queries == 0:
+        return
 
     fingerprint_input = json.dumps(
         records,
-        sort_keys=True
+        sort_keys=True,
     ).encode("utf-8")
 
     data["dns_configuration_fingerprints"].append({
         "algorithm": "SHA-256",
         "fingerprint": sha256(fingerprint_input),
-        "record_sets": records
+        "record_sets": records,
     })
 
-def retrieve_server_information(
-    response,
-    data: dict
-):
+def retrieve_server_information(response, data: dict) -> None:
+    content = response.content
+
     data["http_response_hashes"].append({
         "url": response.url,
-        "sha256": sha256(response.content),
-        "size_bytes": len(response.content),
-        "status_code": response.status_code
+        "sha256": sha256(content),
+        "size_bytes": len(content),
+        "status_code": response.status_code,
     })
 
     headers = response.headers
-
     server = headers.get("Server")
 
     if server:
         data["server_banners"].append({
             "type": "HTTP Server",
-            "value": server
+            "value": server,
         })
 
         version_match = re.search(
             r"([A-Za-z_-]+)/([\d.]+)",
-            server
+            server,
         )
 
         if version_match:
             data["service_versions"].append({
                 "service": version_match.group(1),
-                "version": version_match.group(2)
+                "version": version_match.group(2),
             })
 
     for header in (
@@ -497,19 +540,15 @@ def retrieve_server_information(
         if value:
             data["server_banners"].append({
                 "type": header,
-                "value": value
+                "value": value,
             })
 
-def retrieve_open_ports(domain: str, data: dict):
-    try:
-        addresses = socket.getaddrinfo(
-            domain,
-            None,
-            type=socket.SOCK_STREAM
-        )
-
-    except socket.gaierror:
-        return
+def retrieve_open_ports(domain: str, data: dict) -> None:
+    addresses = socket.getaddrinfo(
+        domain,
+        None,
+        type=socket.SOCK_STREAM,
+    )
 
     ip_addresses = sorted({
         address[4][0]
@@ -521,22 +560,19 @@ def retrieve_open_ports(domain: str, data: dict):
             try:
                 with socket.create_connection(
                     (ip_address, port),
-                    timeout=2
+                    timeout=2,
                 ):
                     data["open_ports"].append({
                         "ip_address": ip_address,
                         "port": port,
                         "service": service,
-                        "protocol": "TCP"
+                        "protocol": "TCP",
                     })
 
-            except (
-                OSError,
-                socket.timeout
-            ):
+            except OSError:
                 continue
 
-def retrieve_service_versions(domain: str, data: dict):
+def retrieve_service_versions(data: dict) -> None:
     for item in data["open_ports"]:
         port = item["port"]
         service = item["service"]
@@ -547,7 +583,7 @@ def retrieve_service_versions(domain: str, data: dict):
         try:
             with socket.create_connection(
                 (item["ip_address"], port),
-                timeout=TIMEOUT
+                timeout=TIMEOUT,
             ) as connection:
 
                 connection.settimeout(3)
@@ -555,31 +591,32 @@ def retrieve_service_versions(domain: str, data: dict):
                 try:
                     banner = connection.recv(1024).decode(
                         "utf-8",
-                        errors="replace"
+                        errors="replace",
                     ).strip()
-
                 except socket.timeout:
                     banner = ""
 
-                if banner:
-                    data["server_banners"].append({
-                        "type": "TCP service banner",
+                if not banner:
+                    continue
+
+                data["server_banners"].append({
+                    "type": "TCP service banner",
+                    "service": service,
+                    "port": port,
+                    "value": banner,
+                })
+
+                version = re.search(
+                    r"\b(\d+(?:\.\d+){1,3})\b",
+                    banner,
+                )
+
+                if version:
+                    data["service_versions"].append({
                         "service": service,
+                        "version": version.group(1),
                         "port": port,
-                        "value": banner
                     })
-
-                    version = re.search(
-                        r"\b(\d+(?:\.\d+){1,3})\b",
-                        banner
-                    )
-
-                    if version:
-                        data["service_versions"].append({
-                            "service": service,
-                            "version": version.group(1),
-                            "port": port
-                        })
 
         except OSError:
             continue
@@ -588,11 +625,12 @@ def retrieve_public_resources(
     parser: TechnicalParser,
     base_url: str,
     domain: str,
-    data: dict
-):
+    data: dict,
+    errors: list,
+) -> None:
     candidates = set(parser.api_candidates)
 
-    for source in parser.scripts:
+    for source in parser.scripts[:MAX_JAVASCRIPT_FILES]:
         if source.startswith("data:"):
             continue
 
@@ -602,27 +640,30 @@ def retrieve_public_resources(
             continue
 
         try:
-            _, content = request_resource(url)
+            final_url, response, content = request_resource(url)
 
-            text = content.decode(
-                "utf-8",
-                errors="ignore"
-            )
+            try:
+                if not is_same_domain(final_url, domain):
+                    continue
 
-            patterns = (
-                r"""["']((?:https?://[^"' ]+)?/(?:api|graphql|rest|v\d+/api)[^"' ]*)["']""",
-                r"""["']((?:https?://[^"' ]+)?/api/[^"' ]*)["']""",
-            )
+                text = content.decode("utf-8", errors="ignore")
 
-            for pattern in patterns:
-                for match in re.findall(pattern, text):
-                    candidates.add(match)
+                patterns = (
+                    r"""["']((?:https?://[^"' ]+)?/(?:api|graphql|rest|v\d+/api)[^"' ]*)["']""",
+                    r"""["']((?:https?://[^"' ]+)?/api/[^"' ]*)["']""",
+                )
+
+                for pattern in patterns:
+                    candidates.update(re.findall(pattern, text))
+
+            finally:
+                response.close()
 
         except (
             requests.RequestException,
-            ValueError
-        ):
-            continue
+            ValueError,
+        ) as exc:
+            errors.append(f"Public resource inspection failed for {url}: {exc}")
 
     for candidate in candidates:
         endpoint = urljoin(base_url, candidate)
@@ -633,6 +674,9 @@ def retrieve_public_resources(
     for link in parser.links:
         url = urljoin(base_url, link["href"])
 
+        if not is_same_domain(url, domain):
+            continue
+
         path = urlparse(url).path.lower()
 
         if path.endswith(DOCUMENT_EXTENSIONS):
@@ -641,19 +685,21 @@ def retrieve_public_resources(
 def retrieve_sitemaps_and_robots(
     base_url: str,
     domain: str,
-    data: dict
-):
+    data: dict,
+    errors: list,
+) -> None:
     robots_url = urljoin(base_url, "/robots.txt")
 
     try:
-        response = requests.get(
-            robots_url,
-            timeout=TIMEOUT,
-            headers={"User-Agent": "Theseus/1.0"}
-        )
+        final_url, response, content = request_resource(robots_url)
 
-        if response.status_code == 200:
-            for line in response.text.splitlines():
+        try:
+            if not is_same_domain(final_url, domain):
+                raise ValueError("robots.txt redirected outside target domain.")
+
+            text = content.decode("utf-8", errors="replace")
+
+            for line in text.splitlines():
                 line = line.strip()
 
                 if not line or line.startswith("#"):
@@ -665,22 +711,24 @@ def retrieve_sitemaps_and_robots(
                     sitemap = line.split(":", 1)[1].strip()
 
                     if sitemap:
-                        data["sitemap_urls"].append(
-                            urljoin(base_url, sitemap)
-                        )
+                        sitemap_url = urljoin(base_url, sitemap)
 
-    except requests.RequestException:
-        pass
+                        if is_same_domain(sitemap_url, domain):
+                            data["sitemap_urls"].append(sitemap_url)
 
-    conventional_sitemap = urljoin(
-        base_url,
-        "/sitemap.xml"
-    )
+        finally:
+            response.close()
 
-    if conventional_sitemap not in data["sitemap_urls"]:
-        data["sitemap_urls"].append(
-            conventional_sitemap
-        )
+    except (
+        requests.RequestException,
+        ValueError,
+    ) as exc:
+        errors.append(f"robots.txt retrieval failed: {exc}")
+
+    conventional_sitemap = urljoin(base_url, "/sitemap.xml")
+
+    if is_same_domain(conventional_sitemap, domain):
+        data["sitemap_urls"].append(conventional_sitemap)
 
 def run(domain: str) -> dict:
     data = empty_data()
@@ -689,9 +737,20 @@ def run(domain: str) -> dict:
     errors = []
 
     domain = get_domain_hostname(domain)
-    base_url = f"https://{domain}/"
 
+    if not domain:
+        return make_envelope(
+            "error",
+            data,
+            provenance,
+            related_entities,
+            ["No valid domain was provided."],
+        )
+
+    base_url = f"https://{domain}/"
     parser = None
+    successful_sources = 0
+
     response = None
 
     try:
@@ -700,163 +759,161 @@ def run(domain: str) -> dict:
         data["html_content_hashes"].append({
             "url": response.url,
             "sha256": sha256(html_content),
-            "size_bytes": len(html_content)
+            "size_bytes": len(html_content),
         })
 
         parser = TechnicalParser()
-        parser.feed(html_content.decode(
-            response.encoding or "utf-8",
-            errors="replace"
-        ))
-
-        retrieve_server_information(
-            response,
-            data
+        parser.feed(
+            html_content.decode(
+                response.encoding or "utf-8",
+                errors="replace",
+            )
         )
+
+        retrieve_server_information(response, data)
 
         base_url = response.url
 
-        provenance.append({
-            "source": base_url,
-            "method": "HTTP response and HTML inspection",
-            "retrieved_at": datetime.now(
-                timezone.utc
-            ).isoformat()
-        })
+        add_provenance(
+            provenance,
+            base_url,
+            "HTTP response and HTML inspection",
+        )
+
+        successful_sources += 1
 
     except (
         requests.RequestException,
+        RuntimeError,
         ValueError,
-        UnicodeError
+        UnicodeError,
     ) as exc:
-        errors.append(
-            f"Website retrieval failed: {exc}"
-        )
+        errors.append(f"Website retrieval failed: {exc}")
+
+    finally:
+        if response is not None:
+            response.close()
 
     if parser is not None:
         try:
-            favicon_urls = extract_favicon_urls(
-                parser,
-                base_url
-            )
-
             retrieve_favicon_hashes(
-                favicon_urls,
-                data
+                extract_favicon_urls(parser, base_url),
+                data,
+                errors,
             )
 
+            if data["favicon_hashes"]:
+                add_provenance(
+                    provenance,
+                    base_url,
+                    "Favicon retrieval and hashing",
+                )
         except Exception as exc:
-            errors.append(
-                f"Favicon retrieval failed: {exc}"
-            )
+            errors.append(f"Favicon inspection failed: {exc}")
 
         try:
             retrieve_javascript_hashes(
                 parser,
                 base_url,
                 domain,
-                data
+                data,
+                errors,
             )
 
+            if data["javascript_file_hashes"] or data["public_source_map_urls"]:
+                add_provenance(
+                    provenance,
+                    base_url,
+                    "JavaScript retrieval and source map inspection",
+                )
         except Exception as exc:
-            errors.append(
-                f"JavaScript inspection failed: {exc}"
-            )
+            errors.append(f"JavaScript inspection failed: {exc}")
 
         try:
             retrieve_public_resources(
                 parser,
                 base_url,
                 domain,
-                data
+                data,
+                errors,
             )
 
+            if (
+                data["public_api_endpoints"]
+                or data["public_document_urls"]
+            ):
+                add_provenance(
+                    provenance,
+                    base_url,
+                    "Public API and document discovery",
+                )
         except Exception as exc:
-            errors.append(
-                f"Public resource discovery failed: {exc}"
+            errors.append(f"Public resource discovery failed: {exc}")
+
+    try:
+        retrieve_tls_information(domain, data)
+
+        add_provenance(
+            provenance,
+            f"{domain}:443",
+            "TLS certificate and connection inspection",
+        )
+
+        successful_sources += 1
+
+    except Exception as exc:
+        errors.append(f"TLS inspection failed: {exc}")
+
+    dns_errors_before = len(errors)
+
+    try:
+        retrieve_dns_fingerprint(domain, data, errors)
+
+        if data["dns_configuration_fingerprints"]:
+            add_provenance(
+                provenance,
+                DNS_ENDPOINT,
+                "DNS record set fingerprinting",
             )
 
-    try:
-        retrieve_tls_information(
-            domain,
-            data
-        )
-
-        provenance.append({
-            "source": f"https://{domain}:443",
-            "method": "TLS certificate and connection inspection",
-            "retrieved_at": datetime.now(
-                timezone.utc
-            ).isoformat()
-        })
+            successful_sources += 1
 
     except Exception as exc:
-        errors.append(
-            f"TLS inspection failed: {exc}"
-        )
+        errors.append(f"DNS fingerprinting failed: {exc}")
 
     try:
-        retrieve_dns_fingerprint(
+        retrieve_open_ports(domain, data)
+        retrieve_service_versions(data)
+
+        add_provenance(
+            provenance,
             domain,
-            data
+            "Limited TCP connectivity checks",
         )
 
-        provenance.append({
-            "source": DNS_ENDPOINT,
-            "method": "DNS record set fingerprinting",
-            "retrieved_at": datetime.now(
-                timezone.utc
-            ).isoformat()
-        })
+        successful_sources += 1
 
     except Exception as exc:
-        errors.append(
-            f"DNS fingerprinting failed: {exc}"
-        )
-
-    try:
-        retrieve_open_ports(
-            domain,
-            data
-        )
-
-        retrieve_service_versions(
-            domain,
-            data
-        )
-
-        provenance.append({
-            "source": domain,
-            "method": "Limited TCP connectivity checks",
-            "retrieved_at": datetime.now(
-                timezone.utc
-            ).isoformat()
-        })
-
-    except Exception as exc:
-        errors.append(
-            f"Port inspection failed: {exc}"
-        )
+        errors.append(f"Port inspection failed: {exc}")
 
     try:
         retrieve_sitemaps_and_robots(
             base_url,
             domain,
-            data
+            data,
+            errors,
         )
 
-        provenance.append({
-            "source": base_url,
-            "method": "Sitemap and robots.txt inspection",
-            "retrieved_at": datetime.now(
-                timezone.utc
-            ).isoformat()
-        })
+        add_provenance(
+            provenance,
+            base_url,
+            "Sitemap and robots.txt inspection",
+        )
+
+        successful_sources += 1
 
     except Exception as exc:
-        errors.append(
-            f"Sitemap and robots inspection failed: {exc}"
-        )
+        errors.append(f"Sitemap and robots inspection failed: {exc}")
 
     for field in FIELDS:
         data[field] = unique(data[field])
@@ -865,28 +922,28 @@ def run(domain: str) -> dict:
         related_entities.append({
             "type": "service",
             "value": f"{item['service']}:{item['port']}",
-            "relationship": "exposed_on_domain_infrastructure"
+            "relationship": "exposed service",
         })
 
     for endpoint in data["public_api_endpoints"]:
         related_entities.append({
             "type": "url",
             "value": endpoint,
-            "relationship": "public_api_endpoint"
+            "relationship": "public API endpoint",
         })
 
     for url in data["public_document_urls"]:
         related_entities.append({
             "type": "url",
             "value": url,
-            "relationship": "public_document"
+            "relationship": "public document",
         })
 
-    for hostname in data["sitemap_urls"]:
+    for url in data["sitemap_urls"]:
         related_entities.append({
             "type": "url",
-            "value": hostname,
-            "relationship": "sitemap_resource"
+            "value": url,
+            "relationship": "sitemap resource",
         })
 
     related_entities = unique(related_entities)
@@ -898,28 +955,19 @@ def run(domain: str) -> dict:
 
     if errors and populated_fields:
         status = "partial"
-
-    elif errors:
+    elif errors and successful_sources == 0:
+        status = "error"
+    elif populated_fields:
+        status = "success"
+    elif successful_sources:
+        status = "no_results"
+    else:
         status = "error"
 
-    elif populated_fields == len(FIELDS):
-        status = "success"
-
-    elif populated_fields:
-        status = "partial"
-
-    else:
-        status = "no_results"
-
-    result = {
-        "status": status,
-        "module": "technical",
-        "data": data,
-        "provenance": provenance,
-        "related_entities": related_entities
-    }
-
-    if errors:
-        result["error"] = errors
-
-    return result
+    return make_envelope(
+        status,
+        data,
+        provenance,
+        related_entities,
+        errors,
+    )

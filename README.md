@@ -32,281 +32,160 @@
 
 # Theseus
 
-**Digital Artefact Extraction Tool**
+**A Digital Artefact Extraction and Discovery Tool**
 
-Theseus is a modular command-line tool for identifying and extracting structured information from digital artefacts.
+Theseus is a modular digital artefact extraction tool designed to identify, retrieve, and organise useful information from digital artefacts.
 
-It accepts artefacts as input, validates their type, and dispatches them to specialised extractors. A single input may be processed by multiple compatible extractors, each returning its results through a standardised Packet structure.
+Starting with a single input, Theseus identifies the underlying artefact, executes specialised extraction modules, and returns structured information gathered from multiple sources. Extracted information can also reveal additional artefacts that serve as starting points for further scans.
 
-Extracted information retains its source context, provenance, and explicitly identified entities or related entities.
+A domain, for example, can reveal associated IP addresses, hostnames, email infrastructure, geographical information, certificate records, historical data, and other technical details. These findings can then provide new inputs for further extraction using Theseus.
 
-The artefact is the starting point. The entities it reveals are the leads.
+**The artefact is the starting point. Every extracted artefact is another lead.**
+
+---
 
 ## Features
 
-- **Artefact identification**: Validates supplied input against supported artefact types.
-- **Modular extraction**: Dispatches inputs to specialised extractors according to their type.
-- **Multi-extractor processing**: Allows multiple compatible extractors to process the same input.
-- **Structured output**: Returns extraction results through a consistent Packet format.
-- **Entity extraction**: Records entities explicitly identified within source artefacts.
-- **Provenance tracking**: Preserves the origin and context of extracted information.
-- **Error handling**: Records extraction failures and supports partial results when individual extractors encounter errors.
-- **Extensible architecture**: Keeps extraction logic independent from the core processing pipeline.
-- **Terminal interface**: Provides an interactive command-line environment with formatted output and processing status.
+- **Artefact Identification:** Accepts digital inputs and identifies the artefact type and relevant extraction target.
+- **Modular Extraction:** Uses specialised modules to retrieve information from different sources.
+- **Structured Results:** Returns extracted information in a consistent, structured format.
+- **Source Provenance:** Records where information originated and when it was retrieved.
+- **Related Entity Discovery:** Identifies explicitly observed entities associated with the original artefact.
+- **Further Scan Opportunities:** Highlights extracted artefacts that can be supplied as inputs for additional Theseus scans.
+- **Terminal Interface:** Provides an interactive command-line environment for running extractions and viewing results.
 
-## Architecture
+## Current Artefact Support
 
-Theseus follows a sequential processing architecture. Each component has a defined responsibility and communicates through a shared Packet structure.
+### Domain Extraction
+
+The current implementation focuses on domain-based extraction.
+
+Theseus can accept:
+- Registered domains
+- Subdomains
+- Full URLs
+
+Inputs are identified and normalised to determine the relevant domain before extraction begins.
+
+The domain extraction process uses nine specialised modules to retrieve information across several categories.
+
+| Module | Extracted information |
+|---|---|
+| Identity | Domain registration and registrant information |
+| Geography | Published geographical information and associated IP addresses |
+| Network | IP addresses, DNS records, network allocations and autonomous systems |
+| Hostname | Subdomains, nameservers, mail servers, redirects and associated domains |
+| Certificate Transparency | Certificate records, observed hostnames and certificate associations |
+| Email | Email addresses, mail infrastructure and email authentication records |
+| Website | Website metadata, published identities, technologies and external resources |
+| History | Historical records, archived URLs and certificate observations |
+| Technical | DNS fingerprints, TLS information, public resources and common service availability |
+
+Each module operates independently and returns its findings through a shared response structure.
+
+## Extraction Workflow
 
 ```mermaid
 flowchart TD
-    USER([User Input])
+    A["User Input"] --> B["Artefact Identifier"]
+    B --> C["Domain Resolution"]
+    C --> D["Extraction Orchestrator"]
 
-    subgraph UI["UI Layer"]
-        COMMANDS["Command Handler"]
-        TERMINAL["Terminal Interface"]
-        PROGRESS["Progress Display"]
-        PRESENTATION["Panels and Status"]
-    end
+    D --> E["Identity"]
+    D --> F["Geography"]
+    D --> G["Network"]
+    D --> H["Hostname"]
+    D --> I["Certificate Transparency"]
+    D --> J["Email"]
+    D --> K["Website"]
+    D --> L["History"]
+    D --> M["Technical"]
 
-    subgraph CORE["Core Processing"]
-        MAIN["main.py"]
-        IDENTIFIER["core/identifier.py"]
-        EXECUTOR["core/executor.py"]
-        PACKETS["core/packets.py"]
-        RESPONDER["core/responder.py"]
-    end
+    E --> N["Response Consolidation"]
+    F --> N
+    G --> N
+    H --> N
+    I --> N
+    J --> N
+    K --> N
+    L --> N
+    M --> N
 
-    subgraph EXTRACTORS["Extraction Layer"]
-        EXTRACTOR_A["Compatible Extractor A"]
-        EXTRACTOR_B["Compatible Extractor B"]
-        EXTRACTOR_N["Compatible Extractor N"]
-    end
-
-    USER --> MAIN
-    MAIN <--> COMMANDS
-    MAIN --> IDENTIFIER
-    IDENTIFIER -->|Valid input| EXECUTOR
-    IDENTIFIER -->|Invalid input| RESPONDER
-
-    EXECUTOR --> EXTRACTOR_A
-    EXECUTOR --> EXTRACTOR_B
-    EXECUTOR --> EXTRACTOR_N
-
-    EXTRACTOR_A --> RESPONDER
-    EXTRACTOR_B --> RESPONDER
-    EXTRACTOR_N --> RESPONDER
-
-    RESPONDER --> MAIN
-    MAIN --> TERMINAL
-    MAIN -.-> PROGRESS
-    MAIN -.-> PRESENTATION
-    PACKETS -.-> CORE
-    PACKETS -.-> EXTRACTORS
+    N --> O["Structured Results"]
+    O --> P["Further Scan Opportunities"]
+    O --> Q["Terminal Output"]
 ```
 
-## Packet Structure
+## Further Scan Opportunities
 
-All processing stages communicate through a standardised Packet envelope.
+One of Theseus's central capabilities is identifying additional artefacts that can be used to initiate further extractions.
 
-The Packet provides a consistent structure for requests, extraction results, and errors, regardless of the artefact being processed.
+For example, a domain extraction may return:
+
+- IP addresses
+- Email addresses
+- Subdomains
+- Hostnames
+- Related domains
+- Other identifiable digital artefacts
+
+These values are not merely supplementary information. Where supported by the identifier and extraction system, they can become inputs for subsequent scans.
+
+This creates an expandable extraction workflow in which each artefact can reveal additional starting points without requiring Theseus to infer relationships or perform investigative analysis.
+
+## Response Structure
+
+Every extraction module returns a standardised response envelope.
 
 | Field | Description |
 |---|---|
-| `request_id` | Identifies the original request. |
-| `task_id` | Identifies the current processing task. |
-| `parent_task_id` | Identifies the parent task, where applicable. |
-| `stage` | Indicates the current processing stage. |
-| `artefact_type` | Identifies the artefact being processed. |
-| `input` | Contains the supplied input. |
-| `source` | Records the source of the artefact. |
-| `status` | Represents the processing state. |
-| `data` | Stores extracted information. |
-| `entities` | Stores entities explicitly identified in the artefact. |
-| `related_entities` | Stores explicitly identified related information. |
-| `provenance` | Records the origin and context of extracted data. |
-| `errors` | Records errors and warnings encountered during processing. |
-| `metadata` | Stores supplementary processing information. |
+| `module` | Identifies the module responsible for the extraction |
+| `status` | Indicates the extraction outcome |
+| `data` | Contains the extracted information |
+| `provenance` | Records the sources and retrieval methods |
+| `related_entities` | Contains explicitly observed associated entities |
+| `errors` | Records errors encountered during extraction |
 
-### Packet statuses
+Module statuses include:
 
-| Status | Description |
+- `success`
+- `partial`
+- `no_results`
+- `error`
+
+Maintaining a shared response structure allows modules to operate independently while keeping their outputs consistent and manageable.
+
+## Architecture
+
+Theseus follows a modular architecture that separates input identification, extraction, response handling, and terminal presentation.
+
+| Component | Responsibility |
 |---|---|
-| `PENDING` | Processing has not yet started. |
-| `RUNNING` | Processing is currently underway. |
-| `SUCCESS` | Extraction completed successfully. |
-| `PARTIAL_SUCCESS` | Extraction completed with some errors or incomplete results. |
-| `FAILED` | Extraction failed. |
-| `NOT_SUPPORTED` | The input or operation is not supported. |
-| `NOT_IMPLEMENTED` | No corresponding extractor is currently implemented. |
+| `main.py` | Application entry point |
+| `core/identifier.py` | Identifies and validates incoming artefacts |
+| `core/domain.py` | Coordinates domain extraction |
+| `core/responder.py` | Consolidates and normalises module responses |
+| `domain/` | Contains the specialised domain extraction modules |
+| `ui/` | Provides the terminal interface and output presentation |
 
-Each extractor returns its own Packet. This allows multiple extraction results to be collected independently while maintaining a consistent response structure.
+Each extraction module is responsible for retrieving its own information, recording its provenance, and identifying explicitly observed related entities.
 
-## Supported Inputs and Flags
-
-Theseus accepts input through command flags. Each flag represents an accepted input type rather than an individual extraction operation.
-
-The identifier validates the input, after which the executor dispatches it to the compatible extractor or extractors.
-
-### Network and Infrastructure
-
-| Flag | Accepted input |
-|---|---|
-| `--url` | URL |
-| `--domain` | Domain name |
-| `--hostname` | Hostname |
-| `--ip` | IPv4 or IPv6 address |
-| `--cidr` | CIDR network range |
-| `--port` | Port number |
-| `--mac-address` | MAC address |
-| `--asn` | Autonomous System Number |
-| `--tls-host` | Hostname or HTTPS URL for TLS inspection |
-| `--certificate` | X.509 certificate |
-| `--http-message` | Structured HTTP message |
-| `--network-capture` | PCAP or PCAPNG file |
-
-### Web and Browser
-
-| Flag | Accepted input |
-|---|---|
-| `--html-document` | HTML source |
-| `--javascript-source` | JavaScript source |
-| `--css-source` | CSS source |
-| `--http-archive` | HAR file or HAR JSON source |
-| `--browser-profile` | Supported Chromium or Firefox browser profile |
-
-### Files and Documents
-
-| Flag | Accepted input |
-|---|---|
-| `--file` | File path |
-| `--directory` | Directory path |
-| `--hash` | Hash digest |
-| `--binary-file` | Binary file |
-| `--pdf` | PDF file |
-| `--office-document` | DOCX, XLSX, or PPTX file |
-| `--archive` | Supported compressed archive |
-| `--font` | TTF, OTF, TTC, WOFF, or WOFF2 file |
-| `--shortcut` | LNK, URL shortcut, or desktop entry file |
-
-### Media
-
-| Flag | Accepted input |
-|---|---|
-| `--image` | Supported image file |
-| `--audio` | Supported audio file |
-| `--video` | Supported video file |
-
-### Email and Communications
-
-| Flag | Accepted input |
-|---|---|
-| `--email` | Raw email source, EML file, or MBOX file |
-| `--contact` | Email address, phone number, or vCard source |
-| `--calendar` | iCalendar source or ICS file |
-
-### Software and Development
-
-| Flag | Accepted input |
-|---|---|
-| `--git-repository` | Local Git repository |
-| `--git-commit` | Commit hash or repository path with commit hash |
-| `--package-manifest` | Supported package manifest or lockfile |
-| `--sbom-document` | Supported CycloneDX or SPDX document |
-| `--container-artefact` | Supported container configuration or artefact |
-
-### Structured Data
-
-| Flag | Accepted input |
-|---|---|
-| `--json-document` | JSON source or file |
-| `--xml-document` | XML source or file |
-| `--csv-document` | CSV source or file |
-| `--sqlite-database` | SQLite database file |
-
-### System Artefacts
-
-| Flag | Accepted input |
-|---|---|
-| `--config-file` | INI, TOML, YAML, or JSON configuration |
-| `--environment-file` | Environment variable source or `.env` file |
-| `--registry-artefact` | Windows Registry hive or REG export |
-| `--log` | Supported log source or file |
-
-## Extractor Scope
-
-The supported extractors cover a range of digital artefacts, including:
-
-| Category | Extraction capabilities |
-|---|---|
-| Web and Browser | URL components, redirects, HTTP messages, HTML structure, JavaScript, CSS, HAR data, browser history, bookmarks, cookies, and autofill metadata. |
-| Network and Infrastructure | IP addresses, CIDR ranges, hostnames, domains, DNS records, ASNs, MAC addresses, BSSIDs, ports, TLS information, certificates, PCAP metadata, and network flows. |
-| Files and Documents | File metadata, hashes, binary characteristics, PDF contents and metadata, office document contents, archives, fonts, shortcuts, and directory contents. |
-| Media | Image metadata and EXIF information, audio metadata and tags, video streams, codecs, and container metadata. |
-| Email and Communications | Email messages, headers, Message-IDs, contacts, vCards, calendars, and scheduling components. |
-| Software and Development | Git repositories, commits, package manifests, SBOM documents, and container artefacts. |
-| Structured Data | JSON, XML, CSV, SQLite databases, and configuration formats. |
-| Operating Systems | Environment variables, Windows Registry artefacts, logs, and browser profile data. |
-
-Extraction is limited to information available within the supplied artefact or through the specific extractor's documented retrieval behaviour. Theseus does not infer relationships or perform investigative analysis on extracted entities.
-
-## Example
-
-A URL can be submitted through the interactive terminal:
-
-```text
-theseus > --url https://github.com
-```
-
-A simplified example of the resulting extraction output:
-
-```text
-Artefact    url
-Status      SUCCESS
-
-Results
-  Url               https://github.com
-  Scheme            https
-  Hostname          github.com
-  Domain            github.com
-  Port              None
-  Path              None
-  Query Parameters  None
-  Fragment          None
-```
-
-An input may produce multiple extraction results when more than one extractor is compatible with its artefact type.
-
-For example, a URL may be processed by both the URL extractor and redirect extractor.
-
-Output fields vary according to the artefact type and the information available in the source.
+The shared architecture allows individual modules to be developed and maintained independently without requiring changes to the overall response contract.
 
 ## Installation
-
-Theseus requires Python 3.11 or later.
 
 Clone the repository:
 
 ```bash
 git clone <repository-url>
-cd theseus
+cd Theseus
 ```
 
-Install the Python dependencies:
+Install the project dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
-
-Alternatively, install the project and its declared dependencies:
-
-```bash
-pip install .
-```
-
-Some extractors rely on external software. In particular, the video extractor requires FFmpeg's `ffprobe` executable to be available on the system PATH.
-
-## Usage
 
 Start Theseus:
 
@@ -314,29 +193,35 @@ Start Theseus:
 python main.py
 ```
 
-Enter a supported flag followed by its corresponding input:
+## Usage
+
+Launch Theseus and enter a domain, subdomain, or URL when prompted.
 
 ```text
-theseus > --ip 8.8.8.8
-theseus > --domain example.com
-theseus > --url https://example.com
+> example.com
 ```
 
-The terminal interface displays extraction status and the results returned by the compatible extractors.
+Theseus identifies the relevant domain and initiates the available extraction modules.
 
-## Dependencies
+The resulting information is presented in the terminal, organised by module and accompanied by extraction status and source information.
 
-Theseus uses Python libraries for parsing, metadata extraction, file processing, network operations, and terminal presentation.
+Use `help` within the application to view available commands.
 
-External dependencies may be required for particular extraction capabilities. See `requirements.txt` for the Python dependency list.
+## Project Status
 
-## Limitations
+**Version:** 1.0.0
 
-- Extraction depends on the structure, format, and completeness of the supplied artefact.
-- Unsupported or malformed inputs may return validation errors or failed extraction Packets.
-- Some extraction capabilities require external software or network access.
-- Browser, email, environment, and other system artefacts may contain sensitive information.
-- Theseus extracts information present in its source artefacts. It does not independently establish the accuracy, ownership, or significance of that information.
+Theseus v1.0.0 establishes the domain extraction framework, its modular architecture, and its shared response structure.
+
+The project is designed to accommodate additional artefact types and specialised extraction modules as development progresses.
+
+## Disclaimer
+
+Theseus is intended for educational, research, and authorised information-gathering purposes.
+
+Users are responsible for ensuring that their use of the tool and the information it retrieves complies with applicable laws, regulations, and third-party service policies.
+
+Information returned by external sources may be incomplete, outdated, or inaccurate. Extracted results should be interpreted in the context of their recorded provenance.
 
 ## Contributing
 

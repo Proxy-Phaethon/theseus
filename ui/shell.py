@@ -57,15 +57,24 @@ class TheseusShell:
         console.print()
 
     def handle_command(self, value: str) -> bool:
-        handled = self.commands.execute(value)
+        command = value.strip().lower()
 
-        if not self.commands.running:
+        if command in {"exit", "quit"}:
+            self.commands.execute(command)
             self.running = False
+            return True
 
-        if value.strip().lower() == "clear" and handled:
+        if command == "clear":
+            self.commands.execute(command)
+            clear()
             self.display_welcome()
+            return True
 
-        return handled
+        if command in {"help", "input"}:
+            self.commands.execute(command)
+            return True
+
+        return False
 
     def process_input(self, value: str) -> None:
         try:

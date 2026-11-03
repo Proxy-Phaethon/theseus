@@ -1,4 +1,5 @@
 from rich.table import Table
+from rich.panel import Panel
 from rich import box
 
 from ui.terminal import console, clear
@@ -53,9 +54,14 @@ class CommandHandler:
 
         console.print()
         console.print(
-            table,
-            title="[section]AVAILABLE COMMANDS[/section]",
-            title_justify="left",
+            Panel(
+                table,
+                title="[section]AVAILABLE COMMANDS[/section]",
+                title_align="left",
+                border_style="border",
+                box=box.SIMPLE,
+                padding=(0, 1),
+            )
         )
         console.print()
 

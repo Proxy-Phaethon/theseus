@@ -14,42 +14,33 @@ class Responder:
         "not found",
     }
 
-    STATUS_PRIORITY = {
-        "SUCCESS": 0,
-        "PARTIAL": 1,
-        "FAILED": 2,
+    VALID_STATUSES = {
+        "success",
+        "partial",
+        "no_results",
+        "error",
     }
 
     @staticmethod
     def _is_empty(value) -> bool:
-
         if value is None:
             return True
 
         if isinstance(value, str):
             return value.strip().lower() in Responder.EMPTY_VALUES
 
-        if isinstance(value, (list, tuple, set, dict)):
-            return len(value) == 0
-
         return False
 
     @classmethod
     def _normalise_value(cls, value):
-
         if cls._is_empty(value):
             return None
 
-        if isinstance(value, dict):
-            result = {
-                key: cls._normalise_value(item)
+        if isinstance(value, Mapping):
+            return {
+                str(key): cls._normalise_value(item)
                 for key, item in value.items()
             }
-
-            if all(item is None for item in result.values()):
-                return None
-
-            return result
 
         if isinstance(value, (list, tuple, set)):
             result = []
@@ -57,22 +48,18 @@ class Responder:
             for item in value:
                 normalised = cls._normalise_value(item)
 
-                if normalised is None:
-                    continue
-
                 if not any(
                     cls._equivalent(normalised, existing)
                     for existing in result
                 ):
                     result.append(normalised)
 
-            return result or None
+            return result
 
         return value
 
     @staticmethod
     def _equivalent(first, second) -> bool:
-
         try:
             return json.dumps(
                 first,
@@ -88,7 +75,6 @@ class Responder:
 
     @classmethod
     def _merge_values(cls, existing, incoming):
-
         if existing is None:
             return deepcopy(incoming)
 
@@ -118,45 +104,38 @@ class Responder:
         return cls._normalise_value([existing, incoming])
 
     @classmethod
-    def _normalise_status(cls, status: str) -> str:
-        status = str(status or "").strip().upper()
+    def _normalise_status(cls, status) -> str:
+        status = str(status or "").strip().lower()
 
-        if status in {"SUCCESS", "COMPLETE", "COMPLETED"}:
-            return "SUCCESS"
+        aliases = {
+            "complete": "success",
+            "completed": "success",
+            "incomplete": "partial",
+            "failed": "error",
+            "failure": "error",
+        }
 
-        if status in {"PARTIAL", "INCOMPLETE"}:
-            return "PARTIAL"
+        status = aliases.get(status, status)
 
-        if status in {"FAILED", "FAILURE", "ERROR"}:
-            return "FAILED"
+        if status not in cls.VALID_STATUSES:
+            return "error"
 
-        return "PARTIAL"
-
-    @classmethod
-    def _combine_statuses(cls, statuses: list[str]) -> str:
-        if not statuses:
-            return "PARTIAL"
-
-        return max(
-            statuses,
-            key=lambda status: cls.STATUS_PRIORITY[status],
-        )
+        return status
 
     @classmethod
     def _normalise_list(cls, value) -> list:
         if value is None:
             return []
 
-        if not isinstance(value, list):
-            value = [value]
+        if isinstance(value, (list, tuple, set)):
+            items = value
+        else:
+            items = [value]
 
         result = []
 
-        for item in value:
+        for item in items:
             normalised = cls._normalise_value(item)
-
-            if normalised is None:
-                continue
 
             if not any(
                 cls._equivalent(normalised, existing)
@@ -167,8 +146,15 @@ class Responder:
         return result
 
     @classmethod
-    def _normalise_module(cls, envelope: dict) -> dict:
-        module = str(envelope.get("module") or "unknown").strip()
+    def _normalise_module(
+        cls,
+        envelope: dict,
+        fallback_name: str = "unknown",
+    ) -> dict:
+
+        module = str(
+            envelope.get("module") or fallback_name
+        ).strip().lower()
 
         raw_data = envelope.get("data", {})
 
@@ -201,21 +187,20 @@ class Responder:
             envelope.get("status")
         )
 
-        if errors and status == "SUCCESS":
-            status = "PARTIAL"
+        if errors and status == "success":
+            status = "partial"
 
-        result = {
+        if errors and status == "no_results":
+            status = "error"
+
+        return {
             "module": module,
             "status": status,
             "data": data,
             "provenance": provenance,
             "related_entities": related_entities,
+            "errors": errors,
         }
-
-        if errors:
-            result["errors"] = errors
-
-        return result
 
     @classmethod
     def _merge_modules(
@@ -244,49 +229,94 @@ class Responder:
             + incoming["related_entities"]
         )
 
-        merged["status"] = cls._combine_statuses([
-            merged["status"],
-            incoming["status"],
-        ])
-
         merged["errors"] = cls._normalise_list(
-            merged.get("errors", [])
-            + incoming.get("errors", [])
+            merged["errors"] + incoming["errors"]
         )
 
-        if not merged["errors"]:
-            merged.pop("errors", None)
+        statuses = {
+            merged["status"],
+            incoming["status"],
+        }
+
+        if "partial" in statuses:
+            merged["status"] = "partial"
+        elif "error" in statuses:
+            merged["status"] = "partial"
+        elif "success" in statuses:
+            merged["status"] = "success"
+        else:
+            merged["status"] = "no_results"
 
         return merged
 
     @classmethod
+    def _overall_status(cls, modules: list) -> str:
+        if not modules:
+            return "no_results"
+
+        statuses = [module["status"] for module in modules]
+
+        if all(status == "no_results" for status in statuses):
+            return "no_results"
+
+        if all(status == "error" for status in statuses):
+            return "error"
+
+        if "partial" in statuses or "error" in statuses:
+            return "partial"
+
+        return "success"
+
+    @classmethod
     def respond(cls, response: dict) -> dict:
         if not isinstance(response, dict):
-            raise TypeError("Responder expected a dictionary.")
+            raise TypeError(
+                "Responder expected a dictionary."
+            )
 
         domain = response.get("domain")
 
         if not isinstance(domain, str) or not domain.strip():
-            raise ValueError("Response is missing a valid domain.")
+            raise ValueError(
+                "Response is missing a valid domain."
+            )
 
         raw_modules = response.get("modules", [])
 
-        if not isinstance(raw_modules, list):
-            raw_modules = []
+        if isinstance(raw_modules, Mapping):
+            module_items = list(raw_modules.items())
+        elif isinstance(raw_modules, list):
+            module_items = [
+                (None, envelope)
+                for envelope in raw_modules
+            ]
+        else:
+            module_items = []
 
         consolidated = {}
 
-        for index, envelope in enumerate(raw_modules):
+        for index, (fallback_name, envelope) in enumerate(
+            module_items,
+            start=1,
+        ):
             if not isinstance(envelope, dict):
                 envelope = {
-                    "module": f"unknown_{index + 1}",
-                    "status": "FAILED",
+                    "module": fallback_name or f"unknown_{index}",
+                    "status": "error",
                     "data": {},
-                    "error": "Invalid module response envelope.",
+                    "provenance": [],
+                    "related_entities": [],
+                    "errors": [
+                        "Invalid module response envelope."
+                    ],
                 }
 
-            module_result = cls._normalise_module(envelope)
-            module_name = module_result["module"].lower()
+            module_result = cls._normalise_module(
+                envelope,
+                fallback_name=fallback_name or f"unknown_{index}",
+            )
+
+            module_name = module_result["module"]
 
             if module_name in consolidated:
                 consolidated[module_name] = cls._merge_modules(
@@ -298,13 +328,9 @@ class Responder:
 
         modules = list(consolidated.values())
 
-        overall_status = cls._combine_statuses([
-            module["status"] for module in modules
-        ])
-
         return {
             "domain": domain.strip().lower(),
-            "status": overall_status,
+            "status": cls._overall_status(modules),
             "modules": modules,
         }
 

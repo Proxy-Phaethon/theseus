@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "theseus"
+version = "1.0.0"
+description = "A digital artefact extraction and discovery tool."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "requests",
+    "tldextract",
+    "cryptography",
+    "pypdf",
+    "rich",
+]
+
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Security",
+]
+
+
+[project.scripts]
+theseus = "main:main"
+
+
+[tool.setuptools]
+py-modules = ["main"]
+
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "domain*", "ui*"]

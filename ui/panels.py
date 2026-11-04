@@ -42,8 +42,10 @@ def format_value(value, limit: int = DISPLAY_LIMIT) -> tuple[str, bool]:
     if not value:
         return "", False
 
-    if len(value) > limit * 100:
-        return value[:limit * 100].rstrip() + "...", True
+    max_length = limit * 100
+
+    if len(value) > max_length:
+        return value[:max_length].rstrip() + "...", True
 
     return value, False
 
@@ -61,21 +63,6 @@ def _has_content(value) -> bool:
         return any(_has_content(item) for item in value)
 
     return True
-
-def _flatten_values(value):
-    if not _has_content(value):
-        return
-
-    if isinstance(value, Mapping):
-        for item in value.values():
-            yield from _flatten_values(item)
-
-    elif isinstance(value, (list, tuple, set)):
-        for item in value:
-            yield from _flatten_values(item)
-
-    else:
-        yield value
 
 def _section_title(number: str, title: str) -> Text:
     text = Text()
@@ -115,27 +102,32 @@ def build_case_header(domain: str, case_reference=None) -> Panel:
         padding=(1, 2),
     )
 
-def build_identification(identification: Mapping) -> Panel | None:
+def build_identification(
+    identification: Mapping,
+) -> tuple[Panel | None, bool]:
     if not isinstance(identification, Mapping) or not identification:
-        return None
+        return None, False
 
     table = Table.grid(padding=(0, 2))
     table.add_column(style="cyan", no_wrap=True)
     table.add_column(ratio=1, style="white")
 
+    truncated = False
+
     for label, value in identification.items():
         if not _has_content(value):
             continue
 
-        formatted, _ = format_value(value)
+        formatted, was_truncated = format_value(value)
 
         if formatted:
             table.add_row(str(label), formatted)
+            truncated = truncated or was_truncated
 
     if not table.row_count:
-        return None
+        return None, False
 
-    return Panel(
+    panel = Panel(
         table,
         title=_section_title("01", "Identification"),
         border_style="blue",
@@ -143,13 +135,15 @@ def build_identification(identification: Mapping) -> Panel | None:
         padding=(1, 2),
     )
 
+    return panel, truncated
+
 def build_findings_section(
     number: str,
     title: str,
     findings: list,
-) -> Panel | None:
+) -> tuple[Panel | None, bool]:
     if not findings:
-        return None
+        return None, False
 
     table = Table(
         box=None,
@@ -162,6 +156,7 @@ def build_findings_section(
     table.add_column("Value", style="white", ratio=1)
 
     displayed = 0
+    total = 0
     truncated = False
 
     for finding in findings:
@@ -174,32 +169,36 @@ def build_findings_section(
         if not _has_content(value):
             continue
 
+        total += 1
+
+        if displayed >= DISPLAY_LIMIT:
+            continue
+
         formatted, was_truncated = format_value(value)
 
         if not formatted:
             continue
-
-        if displayed >= DISPLAY_LIMIT:
-            truncated = True
-            break
 
         table.add_row(str(label), formatted)
         displayed += 1
         truncated = truncated or was_truncated
 
     if not displayed:
-        return None
+        return None, False
 
-    if len(findings) > displayed:
+    omitted = total - displayed
+
+    if omitted > 0:
         truncated = True
-
-    if truncated:
         table.add_row(
             Text(""),
-            Text("Additional values available in the full extraction data.", style="dim"),
+            Text(
+                f"{omitted} additional entries available in the full report.",
+                style="dim",
+            ),
         )
 
-    return Panel(
+    panel = Panel(
         table,
         title=_section_title(number, title),
         border_style="blue",
@@ -207,9 +206,13 @@ def build_findings_section(
         padding=(1, 2),
     )
 
-def build_investigation_leads(leads: list) -> Panel | None:
+    return panel, truncated
+
+def build_investigation_leads(
+    leads: list,
+) -> tuple[Panel | None, bool]:
     if not leads:
-        return None
+        return None, False
 
     table = Table(
         box=box.SIMPLE,
@@ -223,6 +226,7 @@ def build_investigation_leads(leads: list) -> Panel | None:
     table.add_column("BASIS", style="dim", ratio=1)
 
     displayed = 0
+    total = 0
 
     for lead in leads:
         if not isinstance(lead, Mapping):
@@ -233,8 +237,10 @@ def build_investigation_leads(leads: list) -> Panel | None:
         if not _has_content(value):
             continue
 
+        total += 1
+
         if displayed >= DISPLAY_LIMIT:
-            break
+            continue
 
         basis = lead.get("basis", [])
 
@@ -257,14 +263,17 @@ def build_investigation_leads(leads: list) -> Panel | None:
         displayed += 1
 
     if not displayed:
-        return None
+        return None, False
 
-    if len(leads) > displayed:
+    omitted = total - displayed
+    truncated = omitted > 0
+
+    if truncated:
         table.caption = (
-            f"{len(leads) - displayed} additional leads available in the full report."
+            f"{omitted} additional leads available in the full report."
         )
 
-    return Panel(
+    panel = Panel(
         table,
         title=_section_title("08", "Investigation Leads"),
         border_style="cyan",
@@ -272,33 +281,45 @@ def build_investigation_leads(leads: list) -> Panel | None:
         padding=(1, 2),
     )
 
-def build_supporting_data(supporting_data: Mapping) -> Panel | None:
+    return panel, truncated
+
+def build_supporting_data(
+    supporting_data: Mapping,
+) -> tuple[Panel | None, bool]:
     if not isinstance(supporting_data, Mapping) or not supporting_data:
-        return None
+        return None, False
 
     table = Table.grid(padding=(0, 2))
     table.add_column(style="cyan", no_wrap=True)
     table.add_column(ratio=1, style="white")
 
+    truncated = False
+
     for label, value in supporting_data.items():
         if not _has_content(value):
             continue
 
-        formatted, _ = format_value(value)
+        formatted, was_truncated = format_value(value)
 
         if formatted:
-            table.add_row(str(label).replace("_", " ").title(), formatted)
+            table.add_row(
+                str(label).replace("_", " ").title(),
+                formatted,
+            )
+            truncated = truncated or was_truncated
 
     if not table.row_count:
-        return None
+        return None, False
 
-    return Panel(
+    panel = Panel(
         table,
         title=_section_title("09", "Supporting Data"),
         border_style="dim",
         box=box.ROUNDED,
         padding=(1, 2),
     )
+
+    return panel, truncated
 
 def render_investigation(response: Mapping) -> bool:
 
@@ -315,17 +336,17 @@ def render_investigation(response: Mapping) -> bool:
     domain = response.get("domain", "Unknown target")
     case_reference = response.get("case_reference")
 
-    panels = []
+    panels = [build_case_header(domain, case_reference)]
+    truncated = False
 
-    header = build_case_header(domain, case_reference)
-    panels.append(header)
-
-    identification = build_identification(
+    identification, was_truncated = build_identification(
         report.get("identification", {})
     )
 
     if identification:
         panels.append(identification)
+
+    truncated = truncated or was_truncated
 
     findings = report.get("findings", {})
 
@@ -339,7 +360,7 @@ def render_investigation(response: Mapping) -> bool:
     ]
 
     for number, title, key in section_order:
-        panel = build_findings_section(
+        panel, was_truncated = build_findings_section(
             number,
             title,
             findings.get(key, []),
@@ -348,26 +369,34 @@ def render_investigation(response: Mapping) -> bool:
         if panel:
             panels.append(panel)
 
-    leads = build_investigation_leads(
+        truncated = truncated or was_truncated
+
+    leads, was_truncated = build_investigation_leads(
         report.get("investigation_leads", [])
     )
 
     if leads:
         panels.append(leads)
 
-    supporting = build_supporting_data(
+    truncated = truncated or was_truncated
+
+    supporting, was_truncated = build_supporting_data(
         report.get("supporting_data", {})
     )
 
     if supporting:
         panels.append(supporting)
 
+    truncated = truncated or was_truncated
+
     console.print(Group(*panels))
 
-    return False
+    return truncated
 
 def render_provenance(response: Mapping):
+    """Provenance is retained in module envelopes, not shown in the main report."""
     return None
 
 def render_related_entities(response: Mapping):
+    """Related entities are incorporated into investigation leads."""
     return None

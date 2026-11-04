@@ -28,15 +28,17 @@ classifiers = [
     "Topic :: Security",
 ]
 
-
 [project.scripts]
 theseus = "main:main"
-
 
 [tool.setuptools]
 py-modules = ["main"]
 
-
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["core*", "domain*", "ui*"]
+include = [
+    "core*",
+    "domain*",
+    "executors*",
+    "ui*",
+]

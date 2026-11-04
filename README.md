@@ -32,196 +32,145 @@
 
 # Theseus
 
-**A Digital Artefact Extraction and Discovery Tool**
+**Digital Artefact Discovery & Extraction**
 
-Theseus is a modular digital artefact extraction tool designed to identify, retrieve, and organise useful information from digital artefacts.
+Theseus is a modular digital artefact extraction tool designed to identify, extract, and organise information exposed by digital assets.
 
-Starting with a single input, Theseus identifies the underlying artefact, executes specialised extraction modules, and returns structured information gathered from multiple sources. Extracted information can also reveal additional artefacts that serve as starting points for further scans.
+Starting with an input such as a domain, subdomain, or URL, Theseus identifies the relevant artefact types and dispatches specialised extraction modules to retrieve associated information. Extracted values are organised into structured findings, with their provenance preserved and related entities identified where explicitly observed.
 
-A domain, for example, can reveal associated IP addresses, hostnames, email infrastructure, geographical information, certificate records, historical data, and other technical details. These findings can then provide new inputs for further extraction using Theseus.
+The result is a collection of verifiable data points that can serve as starting points for further discovery.
 
-**The artefact is the starting point. Every extracted artefact is another lead.**
-
----
+> The artefact is the starting point. Every extracted artefact is another lead.
 
 ## Features
 
-- **Artefact Identification:** Accepts digital inputs and identifies the artefact type and relevant extraction target.
-- **Modular Extraction:** Uses specialised modules to retrieve information from different sources.
-- **Structured Results:** Returns extracted information in a consistent, structured format.
-- **Source Provenance:** Records where information originated and when it was retrieved.
-- **Related Entity Discovery:** Identifies explicitly observed entities associated with the original artefact.
-- **Further Scan Opportunities:** Highlights extracted artefacts that can be supplied as inputs for additional Theseus scans.
-- **Terminal Interface:** Provides an interactive command-line environment for running extractions and viewing results.
+- **Artefact identification:** Identifies supported input types and determines which extraction modules are applicable.
+- **Modular extraction:** Runs specialised modules according to the identified artefacts.
+- **Entity discovery:** Extracts identifiable values such as IP addresses, hostnames, email addresses, and other digital entities.
+- **Structured findings:** Organises extracted information into consistent output formats.
+- **Provenance tracking:** Preserves the source of extracted information.
+- **Related entities:** Records explicitly observed associations between entities.
+- **Further discovery:** Surfaces extracted artefacts that can be used as inputs for subsequent scans.
+- **JSON export:** Exports the complete extraction response, including module data and supporting metadata.
 
-## Current Artefact Support
+## Extraction Modules
 
-### Domain Extraction
+Theseus includes nine specialised extraction modules:
 
-The current implementation focuses on domain-based extraction.
-
-Theseus can accept:
-- Registered domains
-- Subdomains
-- Full URLs
-
-Inputs are identified and normalised to determine the relevant domain before extraction begins.
-
-The domain extraction process uses nine specialised modules to retrieve information across several categories.
-
-| Module | Extracted information |
+| Module | Purpose |
 |---|---|
-| Identity | Domain registration and registrant information |
-| Geography | Published geographical information and associated IP addresses |
-| Network | IP addresses, DNS records, network allocations and autonomous systems |
-| Hostname | Subdomains, nameservers, mail servers, redirects and associated domains |
-| Certificate Transparency | Certificate records, observed hostnames and certificate associations |
-| Email | Email addresses, mail infrastructure and email authentication records |
-| Website | Website metadata, published identities, technologies and external resources |
-| History | Historical records, archived URLs and certificate observations |
-| Technical | DNS fingerprints, TLS information, public resources and common service availability |
+| Identity | Retrieves domain registration and ownership information. |
+| Geography | Identifies geographical information associated with digital assets. |
+| Network | Retrieves IP addresses, network ownership, and related infrastructure information. |
+| Hostnames | Discovers associated hostnames and subdomains. |
+| Certificate Transparency | Retrieves information from SSL/TLS certificate records. |
+| Email | Extracts email addresses and associated information. |
+| Website | Retrieves information from website content and HTTP responses. |
+| Historical | Retrieves historical records associated with digital assets. |
+| Technical | Identifies exposed services, open ports, server information, and available technical indicators. |
 
 Each module operates independently and returns its findings through a shared response structure.
 
-## Extraction Workflow
+## How It Works
 
-```mermaid
-flowchart TD
-    A["User Input"] --> B["Artefact Identifier"]
-    B --> C["Domain Resolution"]
-    C --> D["Extraction Orchestrator"]
+Theseus follows a modular extraction pipeline:
 
-    D --> E["Identity"]
-    D --> F["Geography"]
-    D --> G["Network"]
-    D --> H["Hostname"]
-    D --> I["Certificate Transparency"]
-    D --> J["Email"]
-    D --> K["Website"]
-    D --> L["History"]
-    D --> M["Technical"]
+1. **Input:** Receives a digital artefact, such as a domain, subdomain, or URL.
+2. **Identification:** Determines the artefact type and identifies compatible extraction modules.
+3. **Execution:** Dispatches the relevant requests to specialised modules.
+4. **Extraction:** Modules retrieve information and return structured results.
+5. **Consolidation:** Findings are collected, organised, and presented in a unified report.
+6. **Discovery:** Extracted entities are surfaced as potential inputs for further scans.
 
-    E --> N["Response Consolidation"]
-    F --> N
-    G --> N
-    H --> N
-    I --> N
-    J --> N
-    K --> N
-    L --> N
-    M --> N
+## Output
 
-    N --> O["Structured Results"]
-    O --> P["Further Scan Opportunities"]
-    O --> Q["Terminal Output"]
-```
+Theseus produces a consolidated report containing:
 
-## Further Scan Opportunities
+- Identification information
+- Geographical findings
+- Network information
+- Digital identities
+- Infrastructure records
+- Historical observations
+- Technical findings
+- Investigation leads
+- Supporting data
 
-One of Theseus's central capabilities is identifying additional artefacts that can be used to initiate further extractions.
+Empty sections are omitted from the readable report. Large result sets may be shortened for terminal display, with additional entries indicated in the output.
 
-For example, a domain extraction may return:
-
-- IP addresses
-- Email addresses
-- Subdomains
-- Hostnames
-- Related domains
-- Other identifiable digital artefacts
-
-These values are not merely supplementary information. Where supported by the identifier and extraction system, they can become inputs for subsequent scans.
-
-This creates an expandable extraction workflow in which each artefact can reveal additional starting points without requiring Theseus to infer relationships or perform investigative analysis.
-
-## Response Structure
-
-Every extraction module returns a standardised response envelope.
-
-| Field | Description |
-|---|---|
-| `module` | Identifies the module responsible for the extraction |
-| `status` | Indicates the extraction outcome |
-| `data` | Contains the extracted information |
-| `provenance` | Records the sources and retrieval methods |
-| `related_entities` | Contains explicitly observed associated entities |
-| `errors` | Records errors encountered during extraction |
-
-Module statuses include:
-
-- `success`
-- `partial`
-- `no_results`
-- `error`
-
-Maintaining a shared response structure allows modules to operate independently while keeping their outputs consistent and manageable.
-
-## Architecture
-
-Theseus follows a modular architecture that separates input identification, extraction, response handling, and terminal presentation.
-
-| Component | Responsibility |
-|---|---|
-| `main.py` | Application entry point |
-| `core/identifier.py` | Identifies and validates incoming artefacts |
-| `core/domain.py` | Coordinates domain extraction |
-| `core/responder.py` | Consolidates and normalises module responses |
-| `domain/` | Contains the specialised domain extraction modules |
-| `ui/` | Provides the terminal interface and output presentation |
-
-Each extraction module is responsible for retrieving its own information, recording its provenance, and identifying explicitly observed related entities.
-
-The shared architecture allows individual modules to be developed and maintained independently without requiring changes to the overall response contract.
+The complete extraction response remains available through JSON export. This includes individual module envelopes, extracted data, provenance, related entities, statuses, and errors.
 
 ## Installation
 
-Clone the repository:
+**Requirements**
+
+- Python 3.10 or later
+
+Clone the repository and install the project dependencies:
 
 ```bash
-git clone <repository-url>
-cd Theseus
+git clone https://github.com/Proxy-Phaethon/theseus.git
+cd theseus
+pip install .
 ```
 
-Install the project dependencies:
+## Usage
+
+Launch Theseus:
 
 ```bash
-pip install -r requirements.txt
+theseus
 ```
 
-Start Theseus:
+Alternatively:
 
 ```bash
 python main.py
 ```
 
-## Usage
+Enter a supported target when prompted.
 
-Launch Theseus and enter a domain, subdomain, or URL when prompted.
+For example:
 
 ```text
-> example.com
+github.com
 ```
 
-Theseus identifies the relevant domain and initiates the available extraction modules.
+Theseus identifies the input, executes the compatible extraction modules, and displays the consolidated findings.
 
-The resulting information is presented in the terminal, organised by module and accompanied by extraction status and source information.
+## JSON Export
 
-Use `help` within the application to view available commands.
+Theseus supports exporting the complete extraction response as JSON.
+
+Exports preserve the underlying module results rather than only the information displayed in the terminal report. This allows the extracted data to be retained and examined independently of the terminal presentation.
+
+## Design Principles
+
+**Modularity**
+
+Each extraction module is independent. New extraction capabilities can be introduced without redesigning the shared execution and response framework.
+
+**Consistency**
+
+All modules use a common response structure, keeping extracted information predictable and compatible across the system.
+
+**Provenance**
+
+Extracted information retains its source context. Findings should remain traceable to the module and artefact from which they originated.
+
+**Explicit relationships**
+
+Theseus records relationships supported by observed information. It does not present inferred associations as established facts.
+
+**Extraction over interpretation**
+
+Theseus retrieves, organises, and presents information. It does not attempt to determine the significance of findings or make investigative conclusions on behalf of the user.
 
 ## Project Status
 
-**Version:** 1.0.0
+**Version 1.0.0**
 
-Theseus v1.0.0 establishes the domain extraction framework, its modular architecture, and its shared response structure.
-
-The project is designed to accommodate additional artefact types and specialised extraction modules as development progresses.
-
-## Disclaimer
-
-Theseus is intended for educational, research, and authorised information-gathering purposes.
-
-Users are responsible for ensuring that their use of the tool and the information it retrieves complies with applicable laws, regulations, and third-party service policies.
-
-Information returned by external sources may be incomplete, outdated, or inaccurate. Extracted results should be interpreted in the context of their recorded provenance.
+Theseus v1.0.0 establishes the modular extraction framework, shared response structure, specialised extraction modules, and unified reporting system.
 
 ## Contributing
 

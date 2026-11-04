@@ -463,27 +463,30 @@ class Responder:
         if cls._is_empty(value):
             return
 
-        values = list(cls._iter_values(value))
+        if isinstance(value, Mapping):
+            values = [value]
+        elif isinstance(value, (list, tuple, set)):
+            values = list(value)
+        else:
+            values = [value]
+
+        source = {
+            "module": module,
+            "field": field,
+        }
 
         for item in values:
-            if isinstance(item, (Mapping, list)):
+            if cls._is_empty(item):
                 continue
-
-            key = cls._normalise_key(item)
 
             existing = next(
                 (
                     entry
                     for entry in collection
-                    if cls._normalise_key(entry["value"]) == key
+                    if cls._equivalent(entry["value"], item)
                 ),
                 None,
             )
-
-            source = {
-                "module": module,
-                "field": field,
-            }
 
             if existing:
                 if source not in existing["sources"]:
@@ -492,7 +495,7 @@ class Responder:
 
             collection.append({
                 "label": label,
-                "value": item,
+                "value": deepcopy(item),
                 "sources": [source],
             })
 

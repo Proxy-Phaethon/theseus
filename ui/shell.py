@@ -12,11 +12,7 @@ from ui.terminal import console, clear
 from ui.status import error, system
 from ui.banner import initialize
 from ui.progress import extraction_progress
-from ui.panels import (
-    render_investigation,
-    render_provenance,
-    render_related_entities,
-)
+from ui.panels import render_investigation
 from ui.commands import CommandHandler
 
 class TheseusShell:
@@ -122,10 +118,7 @@ class TheseusShell:
                 "%Y%m%d_%H%M%S"
             )
 
-            filename = (
-                f"{safe_domain}_{timestamp}.json"
-            )
-
+            filename = f"{safe_domain}_{timestamp}.json"
             filepath = self.EXPORT_DIRECTORY / filename
 
             with filepath.open(
@@ -147,31 +140,6 @@ class TheseusShell:
         except (OSError, TypeError, ValueError) as exc:
             error(f"Could not export response: {exc}")
 
-    def handle_supplementary_information(
-        self,
-        response: dict,
-    ) -> None:
-
-        modules = response.get("modules", [])
-
-        has_provenance = any(
-            isinstance(module, dict) and module.get("provenance")
-            for module in modules
-        )
-
-        has_related_entities = any(
-            isinstance(module, dict) and module.get("related_entities")
-            for module in modules
-        )
-
-        if has_provenance:
-            if self.ask_yes_no("Print provenance?"):
-                render_provenance(response)
-
-        if has_related_entities:
-            if self.ask_yes_no("Print related entities?"):
-                render_related_entities(response)
-
     def process_input(self, value: str) -> None:
         try:
             with extraction_progress():
@@ -187,13 +155,11 @@ class TheseusShell:
 
             truncated = render_investigation(response)
 
-            self.handle_supplementary_information(response)
-
             if truncated:
                 console.print()
 
                 if self.ask_yes_no(
-                    "Display full response through a JSON export?"
+                    "Export full extraction response as JSON?"
                 ):
                     self.export_response(response)
 

@@ -9,343 +9,365 @@ from rich.console import Group
 
 from ui.terminal import console
 
-DISPLAY_LIMIT = 8
+DISPLAY_LIMIT = 5
 
 def format_value(value, limit: int = DISPLAY_LIMIT) -> tuple[str, bool]:
-
     if value is None:
-        return "N/A", False
-
-    if isinstance(value, bool):
-        return ("YES" if value else "NO"), False
+        return "", False
 
     if isinstance(value, Mapping):
-        if not value:
-            return "N/A", False
+        parts = []
 
-        items = list(value.items())
-        truncated = len(items) > limit
-        visible_items = items[:limit]
+        for key, item in value.items():
+            if item is None or item == "":
+                continue
 
-        formatted = []
+            parts.append(f"{key}: {item}")
 
-        for key, item in visible_items:
-            item_text, item_truncated = format_value(item, limit)
+        value = "; ".join(parts)
 
-            formatted.append(
-                f"{str(key).replace('_', ' ').title()}: {item_text}"
-            )
+    elif isinstance(value, (list, tuple, set)):
+        parts = [
+            str(item)
+            for item in value
+            if item is not None and item != ""
+        ]
+        value = ", ".join(parts)
 
-            truncated = truncated or item_truncated
+    else:
+        value = str(value)
 
-        if truncated and len(items) > limit:
-            formatted.append(
-                f"... {len(items) - limit} additional entries omitted."
-            )
+    value = value.strip()
 
-        return "\n".join(formatted), truncated
+    if not value:
+        return "", False
+
+    if len(value) > limit * 100:
+        return value[:limit * 100].rstrip() + "...", True
+
+    return value, False
+
+def _has_content(value) -> bool:
+    if value is None:
+        return False
+
+    if isinstance(value, str):
+        return bool(value.strip())
+
+    if isinstance(value, Mapping):
+        return any(_has_content(item) for item in value.values())
 
     if isinstance(value, (list, tuple, set)):
-        if not value:
-            return "N/A", False
+        return any(_has_content(item) for item in value)
 
-        items = list(value)
-        truncated = len(items) > limit
-        visible_items = items[:limit]
+    return True
 
-        formatted = []
+def _flatten_values(value):
+    if not _has_content(value):
+        return
 
-        for item in visible_items:
-            item_text, item_truncated = format_value(item, limit)
+    if isinstance(value, Mapping):
+        for item in value.values():
+            yield from _flatten_values(item)
 
-            formatted.append(f"• {item_text}")
-            truncated = truncated or item_truncated
+    elif isinstance(value, (list, tuple, set)):
+        for item in value:
+            yield from _flatten_values(item)
 
-        if len(items) > limit:
-            formatted.append(
-                f"... {len(items) - limit} additional entries omitted."
-            )
+    else:
+        yield value
 
-        return "\n".join(formatted), truncated
+def _section_title(number: str, title: str) -> Text:
+    text = Text()
+    text.append(f"{number}  ", style="bold cyan")
+    text.append(title.upper(), style="bold white")
+    return text
 
-    return str(value), False
+def build_case_header(domain: str, case_reference=None) -> Panel:
+    timestamp = datetime.now().astimezone().strftime(
+        "%Y-%m-%d %H:%M:%S %Z"
+    )
 
-def build_case_header(
-    domain: str,
-    case_reference: str | None = None,
-    status: str = "success",
-) -> Panel:
+    header = Table.grid(expand=True)
+    header.add_column(ratio=1)
+    header.add_column(justify="right")
 
-    table = Table.grid(padding=(0, 2))
-    table.add_column(style="label", width=20)
-    table.add_column(style="value")
+    header.add_row(
+        Text("TARGET", style="bold cyan"),
+        Text("INVESTIGATION RECORD", style="bold cyan"),
+    )
 
-    table.add_row("TARGET", domain)
-
-    table.add_row(
-        "DATE",
-        datetime.now().astimezone().strftime(
-            "%Y-%m-%d %H:%M:%S %Z"
-        ),
+    header.add_row(
+        Text(str(domain), style="bold white"),
+        Text(timestamp, style="dim"),
     )
 
     if case_reference:
-        table.add_row("CASE REFERENCE", case_reference)
-
-    status = status.lower()
-
-    status_styles = {
-        "success": "success",
-        "no_results": "muted",
-        "partial": "warning",
-        "error": "error",
-    }
-
-    table.add_row(
-        "STATUS",
-        Text(
-            status.replace("_", " ").upper(),
-            style=status_styles.get(status, "warning"),
-        ),
-    )
+        header.add_row(
+            Text("CASE REFERENCE", style="dim"),
+            Text(str(case_reference), style="dim"),
+        )
 
     return Panel(
-        table,
-        title="[heading]INVESTIGATION RECORD[/heading]",
-        border_style="accent",
+        header,
+        border_style="cyan",
         box=box.DOUBLE,
         padding=(1, 2),
     )
 
-def build_section(
-    number: int,
-    module_name: str,
-    data: dict,
-    status: str = "success",
-    errors: list | None = None,
-) -> tuple[Panel, bool]:
+def build_identification(identification: Mapping) -> Panel | None:
+    if not isinstance(identification, Mapping) or not identification:
+        return None
 
-    title = module_name.replace("_", " ").upper()
+    table = Table.grid(padding=(0, 2))
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column(ratio=1, style="white")
+
+    for label, value in identification.items():
+        if not _has_content(value):
+            continue
+
+        formatted, _ = format_value(value)
+
+        if formatted:
+            table.add_row(str(label), formatted)
+
+    if not table.row_count:
+        return None
+
+    return Panel(
+        table,
+        title=_section_title("01", "Identification"),
+        border_style="blue",
+        box=box.ROUNDED,
+        padding=(1, 2),
+    )
+
+def build_findings_section(
+    number: str,
+    title: str,
+    findings: list,
+) -> Panel | None:
+    if not findings:
+        return None
 
     table = Table(
+        box=None,
         show_header=False,
-        show_edge=False,
-        show_lines=False,
-        box=None,
-        padding=(0, 1),
         expand=True,
+        padding=(0, 1),
     )
 
-    table.add_column(
-        "Field",
-        style="label",
-        width=28,
-        no_wrap=False,
-    )
+    table.add_column("Finding", style="cyan", no_wrap=True)
+    table.add_column("Value", style="white", ratio=1)
 
-    table.add_column(
-        "Value",
-        style="value",
-        overflow="fold",
-    )
+    displayed = 0
+    truncated = False
 
-    has_truncated_data = False
+    for finding in findings:
+        if not isinstance(finding, Mapping):
+            continue
 
-    for field, value in data.items():
-        formatted, truncated = format_value(value)
+        label = finding.get("label", "Finding")
+        value = finding.get("value")
 
-        table.add_row(
-            field.replace("_", " ").upper(),
-            formatted,
-        )
+        if not _has_content(value):
+            continue
 
-        has_truncated_data = has_truncated_data or truncated
+        formatted, was_truncated = format_value(value)
 
-    if errors:
-        error_text = "\n".join(
-            f"• {format_value(error)[0]}"
-            for error in errors
-        )
+        if not formatted:
+            continue
 
-        table.add_row(
-            "ERRORS",
-            Text(error_text, style="error"),
-        )
+        if displayed >= DISPLAY_LIMIT:
+            truncated = True
+            break
 
-    status = status.lower()
+        table.add_row(str(label), formatted)
+        displayed += 1
+        truncated = truncated or was_truncated
 
-    status_styles = {
-        "success": "success",
-        "no_results": "muted",
-        "partial": "warning",
-        "error": "error",
-    }
-
-    content = Group(
-        Text(
-            f"STATUS: {status.replace('_', ' ').upper()}",
-            style=status_styles.get(status, "warning"),
-        ),
-        Text(""),
-        table,
-    )
-
-    panel = Panel(
-        content,
-        title=f"[section][{number:02d}] {title}[/section]",
-        border_style="border",
-        box=box.ROUNDED,
-        padding=(1, 2),
-    )
-
-    return panel, has_truncated_data
-
-def build_provenance(provenance: list) -> Panel | None:
-
-    if not provenance:
+    if not displayed:
         return None
 
-    content = "\n".join(
-        f"• {format_value(source)[0]}"
-        for source in provenance
-    )
+    if len(findings) > displayed:
+        truncated = True
+
+    if truncated:
+        table.add_row(
+            Text(""),
+            Text("Additional values available in the full extraction data.", style="dim"),
+        )
 
     return Panel(
-        content,
-        title="[section]DATA PROVENANCE[/section]",
-        border_style="border",
+        table,
+        title=_section_title(number, title),
+        border_style="blue",
         box=box.ROUNDED,
         padding=(1, 2),
     )
 
-def build_related_entities(entities: list) -> Panel | None:
-    if not entities:
+def build_investigation_leads(leads: list) -> Panel | None:
+    if not leads:
         return None
 
     table = Table(
-        show_header=True,
-        box=None,
+        box=box.SIMPLE,
         expand=True,
+        show_lines=False,
+        padding=(0, 1),
     )
 
-    table.add_column("TYPE", style="label")
-    table.add_column("ENTITY", style="value")
-    table.add_column("RELATIONSHIP", style="muted")
+    table.add_column("TYPE", style="cyan", no_wrap=True)
+    table.add_column("VALUE", style="white", ratio=2)
+    table.add_column("BASIS", style="dim", ratio=1)
 
-    for entity in entities:
-        if isinstance(entity, dict):
-            entity_type = entity.get("type", "UNKNOWN")
-            value = entity.get(
-                "value",
-                entity.get("name", "N/A"),
-            )
-            relationship = entity.get("relationship", "N/A")
+    displayed = 0
 
-            table.add_row(
-                str(entity_type).upper(),
-                format_value(value)[0],
-                format_value(relationship)[0],
-            )
+    for lead in leads:
+        if not isinstance(lead, Mapping):
+            continue
+
+        value = lead.get("value")
+
+        if not _has_content(value):
+            continue
+
+        if displayed >= DISPLAY_LIMIT:
+            break
+
+        basis = lead.get("basis", [])
+
+        if isinstance(basis, str):
+            basis = [basis]
+
+        if "explicit_relationship" in basis:
+            basis_label = "Explicit relationship"
+        elif "extracted_value" in basis:
+            basis_label = "Extracted value"
         else:
-            table.add_row(
-                "UNKNOWN",
-                format_value(entity)[0],
-                "N/A",
-            )
+            basis_label = "Extracted entity"
+
+        table.add_row(
+            str(lead.get("type", "entity")).upper(),
+            str(value),
+            basis_label,
+        )
+
+        displayed += 1
+
+    if not displayed:
+        return None
+
+    if len(leads) > displayed:
+        table.caption = (
+            f"{len(leads) - displayed} additional leads available in the full report."
+        )
 
     return Panel(
         table,
-        title="[section]RELATED ENTITIES[/section]",
-        border_style="border",
+        title=_section_title("08", "Investigation Leads"),
+        border_style="cyan",
         box=box.ROUNDED,
         padding=(1, 2),
     )
 
-def render_investigation(response: dict) -> bool:
-    domain = response.get("domain", "UNKNOWN")
-    modules = response.get("modules", [])
+def build_supporting_data(supporting_data: Mapping) -> Panel | None:
+    if not isinstance(supporting_data, Mapping) or not supporting_data:
+        return None
 
-    console.print()
-    console.print(
-        build_case_header(
-            domain=domain,
-            status=response.get("status", "success"),
-        )
+    table = Table.grid(padding=(0, 2))
+    table.add_column(style="cyan", no_wrap=True)
+    table.add_column(ratio=1, style="white")
+
+    for label, value in supporting_data.items():
+        if not _has_content(value):
+            continue
+
+        formatted, _ = format_value(value)
+
+        if formatted:
+            table.add_row(str(label).replace("_", " ").title(), formatted)
+
+    if not table.row_count:
+        return None
+
+    return Panel(
+        table,
+        title=_section_title("09", "Supporting Data"),
+        border_style="dim",
+        box=box.ROUNDED,
+        padding=(1, 2),
     )
 
-    has_truncated_data = False
+def render_investigation(response: Mapping) -> bool:
 
-    for index, result in enumerate(modules, start=1):
-        if not isinstance(result, dict):
-            continue
+    if not isinstance(response, Mapping):
+        console.print("[red]Invalid investigation response.[/red]")
+        return False
 
-        module_name = result.get(
-            "module",
-            f"MODULE {index}",
-        )
+    report = response.get("report")
 
-        data = result.get("data", {})
-        status = result.get("status", "error")
-        errors = result.get("errors", [])
+    if not isinstance(report, Mapping):
+        console.print("[red]No investigation report available.[/red]")
+        return False
 
-        if not isinstance(data, dict):
-            data = {"result": data}
+    domain = response.get("domain", "Unknown target")
+    case_reference = response.get("case_reference")
 
-        if not isinstance(errors, list):
-            errors = [errors]
+    panels = []
 
-        panel, truncated = build_section(
-            number=index,
-            module_name=module_name,
-            data=data,
-            status=status,
-            errors=errors,
-        )
+    header = build_case_header(domain, case_reference)
+    panels.append(header)
 
-        console.print()
-        console.print(panel)
-
-        has_truncated_data = (
-            has_truncated_data or truncated
-        )
-
-    console.print()
-    console.rule(
-        "[muted]END OF INVESTIGATION RECORD[/muted]",
-        style="case.separator",
+    identification = build_identification(
+        report.get("identification", {})
     )
-    console.print()
 
-    return has_truncated_data
+    if identification:
+        panels.append(identification)
 
-def render_provenance(response: dict) -> None:
-    for result in response.get("modules", []):
-        if not isinstance(result, dict):
-            continue
+    findings = report.get("findings", {})
 
-        provenance = build_provenance(
-            result.get("provenance", [])
+    section_order = [
+        ("02", "Geography", "geography"),
+        ("03", "Network", "network"),
+        ("04", "Digital Identities", "digital_identities"),
+        ("05", "Infrastructure", "infrastructure"),
+        ("06", "Historical Records", "historical"),
+        ("07", "Technical Indicators", "technical"),
+    ]
+
+    for number, title, key in section_order:
+        panel = build_findings_section(
+            number,
+            title,
+            findings.get(key, []),
         )
 
-        if provenance:
-            console.print()
-            console.print(
-                f"[heading]{result.get('module', 'UNKNOWN').upper()}[/heading]"
-            )
-            console.print(provenance)
+        if panel:
+            panels.append(panel)
 
-def render_related_entities(response: dict) -> None:
-    for result in response.get("modules", []):
-        if not isinstance(result, dict):
-            continue
+    leads = build_investigation_leads(
+        report.get("investigation_leads", [])
+    )
 
-        entities = build_related_entities(
-            result.get("related_entities", [])
-        )
+    if leads:
+        panels.append(leads)
 
-        if entities:
-            console.print()
-            console.print(
-                f"[heading]{result.get('module', 'UNKNOWN').upper()}[/heading]"
-            )
-            console.print(entities)
+    supporting = build_supporting_data(
+        report.get("supporting_data", {})
+    )
+
+    if supporting:
+        panels.append(supporting)
+
+    console.print(Group(*panels))
+
+    return False
+
+def render_provenance(response: Mapping):
+    return None
+
+def render_related_entities(response: Mapping):
+    return None
